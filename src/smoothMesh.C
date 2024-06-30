@@ -34,15 +34,25 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     // Points for smoothing, starting from all points
     bitSet isMovingPoint(mesh.nPoints(), true);
 
-    // Remove points on boundary patches
+    // Remove points on boundary patches, except not processor patches
     const faceList& faces = mesh.faces();
-    for (label faceI = mesh.nInternalFaces(); faceI < mesh.nFaces(); faceI++)
+    forAll(mesh.boundary(), patchI)
     {
-	const face& f = mesh.faces()[faceI];
-	forAll (f, pointI)
-	{
-	    const label i = faces[faceI][pointI];
-	    isMovingPoint.unset(i);
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+        if (! isA<processorPolyPatch>(pp))
+        {
+	    const label startI = mesh.boundary()[patchI].start();
+	    const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+	    for (label faceI = startI; faceI < endI; faceI++)
+	    {
+		const face& f = mesh.faces()[faceI];
+		forAll (f, pointI)
+		{
+		    const label i = faces[faceI][pointI];
+		    isMovingPoint.unset(i);
+		}
+	    }
         }
     }
 
@@ -101,8 +111,8 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 	}
     }
 
-    Info << "Centroidal smoothing iteration " << nIter
-	 << " smoothed " << returnReduce(nPoints, sumOp<label>())
+    Info << "Iteration " << nIter << ": centroidal smoothing of "
+         << returnReduce(nPoints, sumOp<label>())
          << " points" << endl;
 
     return tnewPoints;
@@ -164,7 +174,7 @@ int main(int argc, char *argv[])
 	Info << "Use -centroidalIters option to specify the number "
 	     << "of iteration rounds. Doing nothing."
              << nl << endl
-	     << nl << "End" << nl << endl;
+	     << "End" << nl << endl;
 	return 0;
     }
 
@@ -172,7 +182,6 @@ int main(int argc, char *argv[])
     {
 	tmp<pointField> newPoints = centroidalSmoothing(mesh, i);
 	mesh.movePoints(newPoints);
-	// TODO: find out how to update mesh changes among processors
     }
 
     // Save mesh
