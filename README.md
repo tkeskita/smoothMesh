@@ -7,7 +7,7 @@ Warning: Work in progress.
 ## Current restrictions
 
 - Smoothing of internal mesh points only
-- Applies centroidal smoothing algorithm
+- Applies centroidal smoothing algorithm with given number of iterations
 - Developed on OpenFOAM.com v2312
 
 ## Compilation instructions
@@ -22,4 +22,4 @@ wmake
 ## Usage examples
 
 - Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 50 -parallel`
-- Serial run example: smoothMesh -centroidalIters 50`
+- Serial run example: `smoothMesh -centroidalIters 50`
