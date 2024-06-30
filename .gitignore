@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# Ignore build files
+src/Make/linux*

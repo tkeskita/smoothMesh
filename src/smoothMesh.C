@@ -27,7 +27,8 @@ using namespace Foam;
 
 Foam::tmp<Foam::pointField> centroidalSmoothing
 (
-    const fvMesh& mesh
+    const fvMesh& mesh,
+    const label nIter
 )
 {
     // Points for smoothing, starting from all points
@@ -100,8 +101,9 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 	}
     }
 
-    Info << "Smoothed " << returnReduce(nPoints, sumOp<label>())
-         << " points." << endl;
+    Info << "Centroidal smoothing iteration " << nIter
+	 << " smoothed " << returnReduce(nPoints, sumOp<label>())
+         << " points" << endl;
 
     return tnewPoints;
 }
@@ -122,6 +124,13 @@ int main(int argc, char *argv[])
         "time",
         "time",
         "Specify the time (default is latest)"
+    );
+
+    argList::addOption
+    (
+        "centroidalIters",
+        "label",
+        "Number of centroidal smoothing iterations"
     );
 
     #include "addOverwriteOption.H"
@@ -147,8 +156,24 @@ int main(int argc, char *argv[])
     }
 
     // Calculate new point locations and apply to mesh
-    tmp<pointField> newPoints = centroidalSmoothing(mesh);
-    mesh.movePoints(newPoints);
+    label centroidalIters(0);
+    args.readIfPresent("centroidalIters", centroidalIters);
+
+    if (centroidalIters == 0)
+    {
+	Info << "Use -centroidalIters option to specify the number "
+	     << "of iteration rounds. Doing nothing."
+             << nl << endl
+	     << nl << "End" << nl << endl;
+	return 0;
+    }
+
+    for (label i = 0; i < centroidalIters; ++i)
+    {
+	tmp<pointField> newPoints = centroidalSmoothing(mesh, i);
+	mesh.movePoints(newPoints);
+	// TODO: find out how to update mesh changes among processors
+    }
 
     // Save mesh
     {
