@@ -39,7 +39,7 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     forAll(mesh.boundary(), patchI)
     {
         const polyPatch& pp = mesh.boundaryMesh()[patchI];
-        if (! isA<processorPolyPatch>(pp))
+        if ((! isA<processorPolyPatch>(pp)) and (! isA<emptyPolyPatch>(pp)))
         {
 	    const label startI = mesh.boundary()[patchI].start();
 	    const label endI = startI + mesh.boundary()[patchI].Cf().size();
