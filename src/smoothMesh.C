@@ -4,6 +4,11 @@ Application
 
 Description
     Smooth internal mesh points to improve mesh quality
+
+IDEA: Add maximum step length control (e.g. limit step length to a
+fraction of minimum edge length? Centroidal smoothing and orthogonal
+point blending can now make far too big jumps for relaxation process
+to be stable.
 \*---------------------------------------------------------------------------*/
 
 #include "argList.H"
@@ -17,6 +22,7 @@ Description
 #include "syncTools.H"
 #include "weightedPosition.H"
 #include "meshTools.H"
+#include <float.h>
 
 #include "orthogonalBoundaryBlending.C"
 
@@ -137,6 +143,100 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     return tnewPoints;
 }
 
+// Help function to return distance to mesh point from argument
+// coordinates
+
+double getPointDistance
+(
+    const fvMesh& mesh,
+    const label pointI,
+    const vector coords
+)
+{
+    const vector v = mesh.points()[pointI] - coords;
+    return mag(v);
+}
+
+// Prohibits decrease of shortest edge length. This is necessary to
+// limit squishing or compression of cells near concave features.
+
+int constrainEdgeLength
+(
+    const fvMesh& mesh,
+    pointField& origPoints,
+    const bitSet isMovingPoint
+)
+{
+    // Copy original points for temporary working point field
+    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    // tmp<pointField> tNewPoints(new pointField(origPoints)); // TODO: test, not good?
+    pointField& newPoints = tNewPoints.ref();
+
+    forAll(newPoints, pointI)
+        newPoints[pointI] = origPoints[pointI];
+
+    forAll(origPoints, pointI)
+    {
+        if (! isMovingPoint.test(pointI))
+            continue;
+
+        const vector cCoords = mesh.points()[pointI];
+        vector nCoords = origPoints[pointI];
+
+        // Calculate shortest edge length
+        double shortestEdgeLength = DBL_MAX;
+        forAll(mesh.pointPoints(pointI), pointPpI)
+        {
+            const label neighI = mesh.pointPoints(pointI)[pointPpI];
+            const double testLength = getPointDistance(mesh, neighI, cCoords);
+            if (testLength < shortestEdgeLength)
+                shortestEdgeLength = testLength;
+        }
+
+        // Project the new coordinate position away from neighbour
+        // points until the length to all neighbour points is bigger
+        // than current shortest edge length.
+        label i = 0;
+        while (true)
+        {
+            // Info << "Constraining point " << pointI << " iter " << i << endl;
+            bool innerConvergence = true;
+            forAll(mesh.pointPoints(pointI), pointPpI)
+            {
+                i++;
+                const label neighI = mesh.pointPoints(pointI)[pointPpI];
+                const double testLength = getPointDistance(mesh, neighI, nCoords);
+                if (testLength < shortestEdgeLength)
+                {
+                    Info << "Constraining point " << pointI << " length "
+                         << testLength << "<" << shortestEdgeLength << endl;
+                    innerConvergence = false;
+                    const vector pushBackDir = nCoords - mesh.points()[neighI];
+                    const double scale = 1.01 * shortestEdgeLength / testLength;
+                    nCoords = mesh.points()[neighI] + scale * pushBackDir;
+                }
+            }
+            if (i > 100)
+                FatalError << "constrainEdgeLength() failed to converge"
+                           << endl << abort(FatalError);
+            if (innerConvergence == true)
+                break;
+        }
+
+        // Save the constrained point
+        newPoints[pointI] = nCoords;
+    }
+
+    // Save new point coordinates to original point field
+    forAll(origPoints, pointI)
+    {
+        origPoints[pointI] = newPoints[pointI];
+    }
+
+    return 0;
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main(int argc, char *argv[])
@@ -232,6 +332,10 @@ int main(int argc, char *argv[])
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 
+        // WIP disabled: Constrain smoothing by shortest edge length
+        // constrainEdgeLength(mesh, newPoints, isInternalPoint);
+
+        // Orthogonal point blending
         if (orthogonalBlendingFraction > SMALL)
         {
             blendWithOrthogonalPoints(mesh, newPoints, uniValenceBoundaryMap, hasPointNormals, pointNormals, orthogonalBlendingFraction);

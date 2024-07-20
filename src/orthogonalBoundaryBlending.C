@@ -18,6 +18,15 @@ Description
     main smoothing method and the Orthogonal point coordinate using
     a blending weight factor (orthogonalBlendingFraction).
 
+IDEA: Extend orthogonality to also internal points with more than one
+boundary edges. Orthogonality should be encouraged only to the
+shortest edge. Possibly only if the edge length is 30%(?) or less of
+the length of the second shortest edge.
+
+IDEA: For multivalent edge points: Don't allow distance to boundary to
+decrease. Distance calculation by assuming an edge for 2-valent and a
+plane for 3-valent (or more) points.
+
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"
@@ -57,6 +66,7 @@ int calculatePointNormals
             if (visitedPoint.test(pointI))
             {
                 hasPointNormal.unset(pointI);
+                pointNormals[pointI] = Zero;
             }
             else
             {
@@ -67,6 +77,11 @@ int calculatePointNormals
             }        
         }
     }
+
+    // Make sure first point has no point normal, as it is used as
+    // a no data marker.
+    hasPointNormal.unset(0);
+    pointNormals[0] = Zero;
 
     return 0;
 }
@@ -129,15 +144,15 @@ int blendWithOrthogonalPoints
 {
     for (label pointI = 0; pointI < mesh.nPoints(); pointI++)
     {
-        if (uniValenceBoundaryMap[pointI] == 0)
+        const label boundaryPointI = uniValenceBoundaryMap[pointI];
+        if (boundaryPointI == 0)
             continue;
 
-        // TODO: OK to discard hasPointNormals? Not needed after all?
-        if (! hasPointNormals.test(pointI))
-            FatalError << "Sanity broken, point " << pointI
-                       << " has no point normal" << endl;
+        if (! hasPointNormals.test(boundaryPointI))
+            FatalError << "Sanity broken, point " << boundaryPointI
+                       << " should have a point normal" << endl
+                       << abort(FatalError);
 
-        const label boundaryPointI = uniValenceBoundaryMap[pointI];
         const vector cCoords = mesh.points()[pointI];
         const vector bCoords = mesh.points()[boundaryPointI];
         const vector cb = cCoords - bCoords;
