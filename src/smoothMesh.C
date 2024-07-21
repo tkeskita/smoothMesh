@@ -4,11 +4,6 @@ Application
 
 Description
     Smooth internal mesh points to improve mesh quality
-
-IDEA: Add maximum step length control (e.g. limit step length to a
-fraction of minimum edge length? Centroidal smoothing and orthogonal
-point blending can now make far too big jumps for relaxation process
-to be stable.
 \*---------------------------------------------------------------------------*/
 
 #include "argList.H"
@@ -164,7 +159,8 @@ int constrainEdgeLength
 (
     const fvMesh& mesh,
     pointField& origPoints,
-    const bitSet isMovingPoint
+    const bitSet isMovingPoint,
+    const double minimumEdgeLength
 )
 {
     // Copy original points for temporary working point field
@@ -201,26 +197,142 @@ int constrainEdgeLength
         {
             // Info << "Constraining point " << pointI << " iter " << i << endl;
             bool innerConvergence = true;
+            i++;
             forAll(mesh.pointPoints(pointI), pointPpI)
             {
-                i++;
                 const label neighI = mesh.pointPoints(pointI)[pointPpI];
                 const double testLength = getPointDistance(mesh, neighI, nCoords);
-                if (testLength < shortestEdgeLength)
+                if ((testLength < shortestEdgeLength) and
+                    (testLength < minimumEdgeLength))
                 {
-                    Info << "Constraining point " << pointI << " length "
-                         << testLength << "<" << shortestEdgeLength << endl;
+                    // Info << "Constraining point " << pointI << " length "
+                    //      << testLength << "<" << shortestEdgeLength << endl;
                     innerConvergence = false;
                     const vector pushBackDir = nCoords - mesh.points()[neighI];
                     const double scale = 1.01 * shortestEdgeLength / testLength;
                     nCoords = mesh.points()[neighI] + scale * pushBackDir;
                 }
             }
-            if (i > 100)
-                FatalError << "constrainEdgeLength() failed to converge"
-                           << endl << abort(FatalError);
+            // Stop after a few iterations or if converged
+            if (i > 2)
+                break;
             if (innerConvergence == true)
                 break;
+        }
+
+        // Save the constrained point
+        newPoints[pointI] = nCoords;
+    }
+
+    // Save new point coordinates to original point field
+    forAll(origPoints, pointI)
+    {
+        origPoints[pointI] = newPoints[pointI];
+    }
+
+    return 0;
+}
+
+// Constrain the length of a step jump to new coordinates by fraction
+// of minimum edge length. This increases the stability of the
+// relaxation process, in case target coordinates are far off.
+
+int constrainLocalStepLength
+(
+    const fvMesh& mesh,
+    pointField& origPoints,
+    const bitSet isMovingPoint,
+    const double relaxationFactor
+)
+{
+    // Copy original points for temporary working point field
+    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    pointField& newPoints = tNewPoints.ref();
+    forAll(newPoints, pointI)
+        newPoints[pointI] = origPoints[pointI];
+
+    forAll(origPoints, pointI)
+    {
+        if (! isMovingPoint.test(pointI))
+            continue;
+
+        const vector cCoords = mesh.points()[pointI];
+        vector nCoords = origPoints[pointI];
+
+        // Calculate shortest edge length
+        double shortestEdgeLength = DBL_MAX;
+        forAll(mesh.pointPoints(pointI), pointPpI)
+        {
+            const label neighI = mesh.pointPoints(pointI)[pointPpI];
+            const double testLength = getPointDistance(mesh, neighI, cCoords);
+            if (testLength < shortestEdgeLength)
+            {
+                shortestEdgeLength = testLength;
+            }
+        }
+
+        // Scale down the length of the jump from current coordinates
+        // towards new coordinates if jump would be otherwise too long
+        const vector stepDir = nCoords - cCoords;
+        const double stepLength = mag(stepDir);
+        const double maxLength = relaxationFactor * shortestEdgeLength;
+        if (stepLength > maxLength)
+        {
+            const double scale = maxLength / stepLength;
+            nCoords = cCoords + scale * stepDir;
+            // Info << "pointI " << pointI << " maxLength " << maxLength << " stepLength "
+            //      << stepLength << " scale " << scale << endl;
+        }
+
+        // Save the constrained point
+        newPoints[pointI] = nCoords;
+    }
+
+    // Save new point coordinates to original point field
+    forAll(origPoints, pointI)
+    {
+        origPoints[pointI] = newPoints[pointI];
+    }
+
+    return 0;
+}
+
+// Constrain the length of a step jump to new coordinates by an
+// absolute length value. This increases the stability of the
+// relaxation process, in case target coordinates are far off.
+
+int constrainMaxStepLength
+(
+    const fvMesh& mesh,
+    pointField& origPoints,
+    const bitSet isMovingPoint,
+    const double maxStepLength
+)
+{
+    // Copy original points for temporary working point field
+    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    pointField& newPoints = tNewPoints.ref();
+    forAll(newPoints, pointI)
+        newPoints[pointI] = origPoints[pointI];
+
+    forAll(origPoints, pointI)
+    {
+        if (! isMovingPoint.test(pointI))
+            continue;
+
+        const vector cCoords = mesh.points()[pointI];
+        vector nCoords = origPoints[pointI];
+
+        // Scale down the length of the jump from current coordinates
+        // towards new coordinates if jump would be otherwise too long
+        const vector stepDir = nCoords - cCoords;
+        const double stepLength = mag(stepDir);
+        if (stepLength > maxStepLength)
+        {
+            const double scale = maxStepLength / stepLength;
+            nCoords = cCoords + scale * stepDir;
+            // Info << "pointI " << pointI << " maxLength " << maxLength << " stepLength "
+            //      << stepLength << " scale " << scale << endl;
         }
 
         // Save the constrained point
@@ -264,9 +376,16 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "maxStepLength",
+        "double",
+        "Maximum absolute step length applied in smoothing (default 0.001)"
+    );
+
+    argList::addOption
+    (
         "orthogonalBlendingFraction",
         "double",
-        "Fraction to force orthogonal side edges on the boundary (default 0.5)"
+        "Fraction to force orthogonal side edges on the boundary (default 0.3)"
     );
 
     #include "addOverwriteOption.H"
@@ -291,8 +410,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    double orthogonalBlendingFraction(0.5);
+    double orthogonalBlendingFraction(0.3);
     args.readIfPresent("orthogonalBlendingFraction", orthogonalBlendingFraction);
+
+    double maxStepLength(0.001);
+    args.readIfPresent("maxStepLength", maxStepLength);
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints());
@@ -332,14 +454,20 @@ int main(int argc, char *argv[])
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 
-        // WIP disabled: Constrain smoothing by shortest edge length
-        // constrainEdgeLength(mesh, newPoints, isInternalPoint);
-
         // Orthogonal point blending
         if (orthogonalBlendingFraction > SMALL)
         {
             blendWithOrthogonalPoints(mesh, newPoints, uniValenceBoundaryMap, hasPointNormals, pointNormals, orthogonalBlendingFraction);
         }
+
+        // Constrain absolute length of jump to new coordinates
+        constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
+
+        // WIP disabled: constrain local step length by fraction of shortest edge length
+        // constrainLocalStepLength(mesh, newPoints, isInternalPoint, 0.05);
+
+        // WIP disabled: Constrain smoothing by shortest edge length
+        // constrainEdgeLength(mesh, newPoints, isInternalPoint, minimumEdgeLength);
 
         mesh.movePoints(tNewPoints);
     }
