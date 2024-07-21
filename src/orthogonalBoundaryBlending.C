@@ -145,13 +145,13 @@ int blendWithOrthogonalPoints
     for (label pointI = 0; pointI < mesh.nPoints(); pointI++)
     {
         const label boundaryPointI = uniValenceBoundaryMap[pointI];
+
+        // Skip the point if there's no known boundary point or if the
+        // boundary point doesn't have a good point normal.
         if (boundaryPointI == 0)
             continue;
-
         if (! hasPointNormals.test(boundaryPointI))
-            FatalError << "Sanity broken, point " << boundaryPointI
-                       << " should have a point normal" << endl
-                       << abort(FatalError);
+            continue;
 
         const vector cCoords = mesh.points()[pointI];
         const vector bCoords = mesh.points()[boundaryPointI];
