@@ -17,16 +17,6 @@ Description
     point location is a weighted average of the point coordinate from
     main smoothing method and the Orthogonal point coordinate using
     a blending weight factor (orthogonalBlendingFraction).
-
-IDEA: Extend orthogonality to also internal points with more than one
-boundary edges. Orthogonality should be encouraged only to the
-shortest edge. Possibly only if the edge length is 30%(?) or less of
-the length of the second shortest edge.
-
-IDEA: For multivalent edge points: Don't allow distance to boundary to
-decrease. Distance calculation by assuming an edge for 2-valent and a
-plane for 3-valent (or more) points.
-
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"

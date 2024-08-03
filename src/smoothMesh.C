@@ -152,15 +152,19 @@ double getPointDistance
     return mag(v);
 }
 
-// Prohibits decrease of shortest edge length. This is necessary to
-// limit squishing or compression of cells near concave features.
+// Prohibits decrease of edge length by freezing points to current
+// locations. Edge points are fully frozen below minEdgeLength, and
+// fully free to move above maxEdgeLength, with linear interpolation
+// in between. This feature can be used to limit the squishing or
+// compression of cells near concave features.
 
-int constrainEdgeLength
+int restrictEdgeShortening
 (
     const fvMesh& mesh,
     pointField& origPoints,
     const bitSet isMovingPoint,
-    const double minimumEdgeLength
+    const double minEdgeLength,
+    const double maxEdgeLength
 )
 {
     // Copy original points for temporary working point field
@@ -189,39 +193,37 @@ int constrainEdgeLength
                 shortestEdgeLength = testLength;
         }
 
-        // Project the new coordinate position away from neighbour
-        // points until the length to all neighbour points is bigger
-        // than current shortest edge length.
-        label i = 0;
-        while (true)
+        // Info << "Constraining point " << pointI << " iter " << i << endl;
+
+        // Find the smallest (worst case) blending fraction of current
+        // and new point coordinates
+        double smallestFrac = 1.0;
+        forAll(mesh.pointPoints(pointI), pointPpI)
         {
-            // Info << "Constraining point " << pointI << " iter " << i << endl;
-            bool innerConvergence = true;
-            i++;
-            forAll(mesh.pointPoints(pointI), pointPpI)
+            const label neighI = mesh.pointPoints(pointI)[pointPpI];
+            const double testLength = getPointDistance(mesh, neighI, nCoords);
+
+            // Full freeze below minEdgeLength
+            if (testLength < minEdgeLength)
             {
-                const label neighI = mesh.pointPoints(pointI)[pointPpI];
-                const double testLength = getPointDistance(mesh, neighI, nCoords);
-                if ((testLength < shortestEdgeLength) and
-                    (testLength < minimumEdgeLength))
-                {
-                    // Info << "Constraining point " << pointI << " length "
-                    //      << testLength << "<" << shortestEdgeLength << endl;
-                    innerConvergence = false;
-                    const vector pushBackDir = nCoords - mesh.points()[neighI];
-                    const double scale = 1.01 * shortestEdgeLength / testLength;
-                    nCoords = mesh.points()[neighI] + scale * pushBackDir;
-                }
+                smallestFrac = 0.0;
             }
-            // Stop after a few iterations or if converged
-            if (i > 2)
-                break;
-            if (innerConvergence == true)
-                break;
+
+            // Partial freeze below maxEdgeLength
+            else if (testLength < maxEdgeLength)
+            {
+                const double frac =
+                    (testLength - minEdgeLength) / (maxEdgeLength - minEdgeLength);
+                if (frac < smallestFrac)
+                    smallestFrac = frac;
+            }
         }
 
+        // Blend current and new coordinates
+        const vector newCoords = ((1.0 - smallestFrac) * cCoords) + (smallestFrac * nCoords);
+
         // Save the constrained point
-        newPoints[pointI] = nCoords;
+        newPoints[pointI] = newCoords;
     }
 
     // Save new point coordinates to original point field
@@ -371,14 +373,28 @@ int main(int argc, char *argv[])
     (
         "centroidalIters",
         "label",
-        "Number of centroidal smoothing iterations"
+        "Number of centroidal smoothing iterations (default 20)"
     );
 
     argList::addOption
     (
         "maxStepLength",
         "double",
-        "Maximum absolute step length applied in smoothing (default 0.001)"
+        "Maximum absolute step length applied in smoothing (default 0.01)"
+    );
+
+    argList::addOption
+    (
+        "minEdgeLength",
+        "double",
+        "Edge length below which edge vertices are fully frozen (default 0.02)"
+    );
+
+    argList::addOption
+    (
+        "maxEdgeLength",
+        "double",
+        "Edge length above which edge vertices are fully free to move (default: 1.001 * minEdegeLength)"
     );
 
     argList::addOption
@@ -413,8 +429,14 @@ int main(int argc, char *argv[])
     double orthogonalBlendingFraction(0.3);
     args.readIfPresent("orthogonalBlendingFraction", orthogonalBlendingFraction);
 
-    double maxStepLength(0.001);
+    double maxStepLength(0.01);
     args.readIfPresent("maxStepLength", maxStepLength);
+
+    double minEdgeLength(0.02);
+    args.readIfPresent("minEdgeLength", minEdgeLength);
+
+    double maxEdgeLength(1.001 * minEdgeLength);
+    args.readIfPresent("maxEdgeLength", maxEdgeLength);
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints());
@@ -433,10 +455,7 @@ int main(int argc, char *argv[])
     calculatePointNormals(mesh, pointNormals, hasPointNormals);
     calculateUniValenceBoundaryMap(mesh, uniValenceBoundaryMap, isInternalPoint);
 
-    // return 0;
-
-    // Calculate new point locations and apply to mesh
-    label centroidalIters(0);
+    label centroidalIters(20);
     args.readIfPresent("centroidalIters", centroidalIters);
 
     if (centroidalIters == 0)
@@ -460,14 +479,15 @@ int main(int argc, char *argv[])
             blendWithOrthogonalPoints(mesh, newPoints, uniValenceBoundaryMap, hasPointNormals, pointNormals, orthogonalBlendingFraction);
         }
 
-        // Constrain absolute length of jump to new coordinates
+        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
 
-        // WIP disabled: constrain local step length by fraction of shortest edge length
+        // Old step length control disabled: Constrain the local step
+        // length by fraction of shortest edge length
         // constrainLocalStepLength(mesh, newPoints, isInternalPoint, 0.05);
 
-        // WIP disabled: Constrain smoothing by shortest edge length
-        // constrainEdgeLength(mesh, newPoints, isInternalPoint, minimumEdgeLength);
+        // Avoid shortening of edge length
+        restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
 
         mesh.movePoints(tNewPoints);
     }
