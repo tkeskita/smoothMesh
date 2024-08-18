@@ -24,8 +24,13 @@ wmake
 
 - `-centroidalIters` specifies the number of smoothing iterations (default 20)
 - `-maxStepLength` is the maximum length for moving a point in one iteration (default 0.01)
-- `-orthogonalBlendingFraction` is the fraction by which the edges touching
-  the boundary faces are forced towards orthogonal direction (default 0.3)
+- `-orthogonalBlendingFraction` (**Warning: experimental feature!**)
+  is the fraction by which the edges touching the boundary faces are
+  forced towards orthogonal direction (default 0.3)
+- `-qualityControl true` (**Warning: experimental feature!**) enables the
+  point quality criteria, which freezes point to current location if
+  moving the point would decrease the point quality (if variance of
+  edge-edge angles of all faces meeting at the point would increase)
 
 The following parameters are applied to limit squishing of cells near concave features:
 
@@ -36,3 +41,8 @@ The following parameters are applied to limit squishing of cells near concave fe
 
 - Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 20 -parallel`
 - Serial run example: `smoothMesh -centroidalIters 20`
+
+## Getting help and feedback
+
+Please use Github issues section for asking help. If you like this
+tool, please star this repository in Github!

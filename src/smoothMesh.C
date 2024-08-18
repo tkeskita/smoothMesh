@@ -356,22 +356,34 @@ int constrainMaxStepLength
     return 0;
 }
 
-// Calculate the cosine of the edge angle of two connected edges.
-// The common shared point is cCoords argument. Edge end point
-// coordinates are p1Coords and p2Coords.
-double cosAlphaEdgeAngle
+// Calculate and return the edge-edge angle (in radians) of two edges
+// which share a common point. The angle is calculated as a sum of
+// angles between each edge and a hypothetical edge from shared point
+// to face center coordinates. This allows proper quantification for
+// concave angles (>180 deg). The common shared edge point is cCoords
+// argument. The two edge end point coordinates are p1Coords and
+// p2Coords. fCoords is the face center coordinates.
+double edgeEdgeAngle
 (
     const vector cCoords,
     const vector p1Coords,
-    const vector p2Coords
+    const vector p2Coords,
+    const vector fCoords
 )
 {
     vector vec1 = (p1Coords - cCoords);
     vector vec2 = (p2Coords - cCoords);
+    vector vec0 = (fCoords - cCoords);
+    vec0.normalise();
     vec1.normalise();
     vec2.normalise();
-    const double cosAlpha = vec1 & vec2;
-    return cosAlpha;
+    const double cosA1 = vec0 & vec1;
+    const double cosA2 = vec0 & vec2;
+    // Ensure values are in sane range before calling arc cos
+    const double cosAlpha1 = std::max(-0.999, std::min(0.999, cosA1));
+    const double cosAlpha2 = std::max(-0.999, std::min(0.999, cosA2));
+    const double angle = std::acos(cosAlpha1) + std::acos(cosAlpha2);
+    return angle;
 }
 
 // Find the neighbour point indices neighPI1 and neighPI2 for the
@@ -486,6 +498,7 @@ double restrictAngleVarianceIncrease
             nMovingPoints++;
             const vector cCoords = mesh.points()[pointI];
             vector nCoords = origPoints[pointI];
+            bool isConcavePoint = false; // marker for concave points
 
             // Calculate edge-edge cosine angles and their variance for
             // all faces meeting at the current point coordinates
@@ -502,11 +515,20 @@ double restrictAngleVarianceIncrease
                 getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
 
                 // Use current mesh point locations to calculate current angle variance
-                const double cosAlpha = cosAlphaEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
+                const vector fCoords = mesh.Cf()[faceI];
+                const double edgeAngle = edgeEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2], fCoords);
 
-                cosAngles0[pointFI] = cosAlpha;
+                cosAngles0[pointFI] = edgeAngle;
+
+                // If any edge-edge angle > pi radians, then the edges
+                // form a concave angle, and point quality can't be
+                // asserted, otherwise concavity will just increase
+                // during smoothing.
+                if (edgeAngle > 3.14)
+                    isConcavePoint = true;
+
                 // Info << "Indices " << pointI << ":" << neighPI1 << "-"
-                //    << neighPI2 << " - " << cosAlpha << endl;
+                //    << neighPI2 << " - " << edgeAngle << endl;
             }
             const double variance0 = calcVariance(cosAngles0, nPointFaces);
 
@@ -532,15 +554,17 @@ double restrictAngleVarianceIncrease
                 if (isFrozenPoint.test(neighPI2))
                     point2 = mesh.points()[neighPI2];
 
-                const double cosAlpha = cosAlphaEdgeAngle(nCoords, point1, point2);
-                cosAngles1[pointFI] = cosAlpha;
+                const vector fCoords = mesh.Cf()[faceI];
+                const double edgeAngle = edgeEdgeAngle(nCoords, point1, point2, fCoords);
+                cosAngles1[pointFI] = edgeAngle;
             }
             const double variance1 = calcVariance(cosAngles1, nPointFaces);
 
+            // Concave points are never frozen. For other points:
             // If variance increases when moving point to new coordinates,
-            // then freeze the point to current coordinates, othewise leave
+            // then freeze the point to current coordinates, otherwise leave
             // the new point coordinates unchanged.
-            if (variance1 > variance0)
+            if ((! isConcavePoint) and (variance1 > variance0))
             {
                 nFrozenPoints++;
                 isFrozenPoint.set(pointI);
@@ -623,6 +647,13 @@ int main(int argc, char *argv[])
         "Fraction to force orthogonal side edges on the boundary (default 0.3)"
     );
 
+    argList::addOption
+    (
+        "qualityControl",
+        "bool",
+        "Enable or disable the point quality control (default: disabled)"
+    );
+
     #include "addOverwriteOption.H"
     #include "setRootCase.H"
     #include "createTime.H"
@@ -656,6 +687,9 @@ int main(int argc, char *argv[])
 
     double maxEdgeLength(1.001 * minEdgeLength);
     args.readIfPresent("maxEdgeLength", maxEdgeLength);
+
+    bool qualityControl(false);
+    args.readIfPresent("qualityControl", qualityControl);
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints());
@@ -701,9 +735,12 @@ int main(int argc, char *argv[])
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
 
-        // WIP: Avoid increase of angle variance (a simple point quality metric)
-        const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
-        Info << "Total normalized angle variance = " << totVariance << endl;
+        // Avoid increase of angle variance (a simple point quality metric)
+        if (qualityControl)
+        {
+            const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
+            Info << "Total normalized angle variance = " << totVariance << endl;
+        }
 
         // Old step length control disabled: Constrain the local step
         // length by fraction of shortest edge length
