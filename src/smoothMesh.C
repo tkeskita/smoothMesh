@@ -456,6 +456,12 @@ double restrictAngleVarianceIncrease
 {
     double totVariance = 0.0;
     int nMovingPoints = 0;
+    int nFrozenPoints = 0;
+    int nFrozenPointsOld = -1;
+    int nFrozenPointIters = 0;
+
+    // Storage of frozen points
+    bitSet isFrozenPoint(mesh.nPoints(), false);
 
     // Copy original points for temporary working point field
     tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
@@ -463,69 +469,96 @@ double restrictAngleVarianceIncrease
     forAll(newPoints, pointI)
         newPoints[pointI] = origPoints[pointI];
 
-    forAll(origPoints, pointI)
+    // Loop the quality checking and point freezing procedure until no
+    // new points are frozen
+    while (nFrozenPoints > nFrozenPointsOld)
     {
-        if (! isMovingPoint.test(pointI))
-            continue;
+        nFrozenPointIters++;
+        nFrozenPointsOld = nFrozenPoints;
 
-        nMovingPoints++;
-        const vector cCoords = mesh.points()[pointI];
-        vector nCoords = origPoints[pointI];
-
-        // Calculate edge-edge cosine angles and their variance for
-        // all faces meeting at the current point coordinates
-        const label nPointFaces = mesh.pointFaces()[pointI].size();
-        // Info << "Processing point " << pointI << " which has "
-        //      << nPointFaces << " faces" << endl;
-        double cosAngles0[nPointFaces];
-        forAll(mesh.pointFaces()[pointI], pointFI)
+        forAll(origPoints, pointI)
         {
-            // For each edge connected at this point, find the other point
-            label neighPI1 = 0;
-            label neighPI2 = 0;
-            const label faceI = mesh.pointFaces()[pointI][pointFI];
-            getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+            if (! isMovingPoint.test(pointI))
+                continue;
+            if (isFrozenPoint.test(pointI))
+                continue;
 
-            // Use current mesh point locations to calculate current angle variance
-            const double cosAlpha = cosAlphaEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
+            nMovingPoints++;
+            const vector cCoords = mesh.points()[pointI];
+            vector nCoords = origPoints[pointI];
 
-            cosAngles0[pointFI] = cosAlpha;
-            // Info << "Indices " << pointI << ":" << neighPI1 << "-"
-            //    << neighPI2 << " - " << cosAlpha << endl;
+            // Calculate edge-edge cosine angles and their variance for
+            // all faces meeting at the current point coordinates
+            const label nPointFaces = mesh.pointFaces()[pointI].size();
+            // Info << "Processing point " << pointI << " which has "
+            //      << nPointFaces << " faces" << endl;
+            double cosAngles0[nPointFaces];
+            forAll(mesh.pointFaces()[pointI], pointFI)
+            {
+                // For each edge connected at this point, find the other point
+                label neighPI1 = 0;
+                label neighPI2 = 0;
+                const label faceI = mesh.pointFaces()[pointI][pointFI];
+                getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+
+                // Use current mesh point locations to calculate current angle variance
+                const double cosAlpha = cosAlphaEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
+
+                cosAngles0[pointFI] = cosAlpha;
+                // Info << "Indices " << pointI << ":" << neighPI1 << "-"
+                //    << neighPI2 << " - " << cosAlpha << endl;
+            }
+            const double variance0 = calcVariance(cosAngles0, nPointFaces);
+
+            // Calculate edge-edge cosine angles and variance for the
+            // proposed new point coordinates
+            double cosAngles1[nPointFaces];
+            forAll(mesh.pointFaces()[pointI], pointFI)
+            {
+                // For both edges connected at this point, find the other point index
+                label neighPI1 = 0;
+                label neighPI2 = 0;
+                const label faceI = mesh.pointFaces()[pointI][pointFI];
+                getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+
+                // Use neighbour point's new point coordinates, unless
+                // the point is frozen, in which case use the current
+                // mesh point coordinates.
+                vector point1 = origPoints[neighPI1];
+                if (isFrozenPoint.test(neighPI1))
+                    point1 = mesh.points()[neighPI1];
+
+                vector point2 = origPoints[neighPI2];
+                if (isFrozenPoint.test(neighPI2))
+                    point2 = mesh.points()[neighPI2];
+
+                const double cosAlpha = cosAlphaEdgeAngle(nCoords, point1, point2);
+                cosAngles1[pointFI] = cosAlpha;
+            }
+            const double variance1 = calcVariance(cosAngles1, nPointFaces);
+
+            // If variance increases when moving point to new coordinates,
+            // then freeze the point to current coordinates, othewise leave
+            // the new point coordinates unchanged.
+            if (variance1 > variance0)
+            {
+                nFrozenPoints++;
+                isFrozenPoint.set(pointI);
+                nCoords = cCoords;
+                totVariance += variance0;
+            }
+            else
+            {
+                totVariance += variance1;
+            }
+
+            // Save the constrained point
+            newPoints[pointI] = nCoords;
         }
-        const double variance0 = calcVariance(cosAngles0, nPointFaces);
-
-        // Calculate edge-edge cosine angles and variance for the
-        // proposed new point coordinates
-        double cosAngles1[nPointFaces];
-        forAll(mesh.pointFaces()[pointI], pointFI)
-        {
-            // For each edge connected at this point, find the other point
-            label neighPI1 = 0;
-            label neighPI2 = 0;
-            const label faceI = mesh.pointFaces()[pointI][pointFI];
-            getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
-            const double cosAlpha = cosAlphaEdgeAngle(nCoords, origPoints[neighPI1], origPoints[neighPI2]);
-            cosAngles1[pointFI] = cosAlpha;
-        }
-        const double variance1 = calcVariance(cosAngles1, nPointFaces);
-
-        // If variance increases when moving point to new coordinates,
-        // then freeze the point to current coordinates, othewise leave
-        // the new point coordinates unchanged.
-        if (variance1 > variance0)
-        {
-            nCoords = cCoords;
-            totVariance += variance0;
-        }
-        else
-        {
-            totVariance += variance1;
-        }
-
-        // Save the constrained point
-        newPoints[pointI] = nCoords;
     }
+
+    Info << "Froze " << nFrozenPoints << "/" << mesh.nPoints() << " points in "
+         << nFrozenPointIters << " internal loops" << endl;
 
     // Save new point coordinates to original point field
     forAll(origPoints, pointI)
@@ -669,8 +702,8 @@ int main(int argc, char *argv[])
         constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
 
         // WIP: Avoid increase of angle variance (a simple point quality metric)
-        // const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
-        // Info << "Total normalized angle variance = " << totVariance << endl;
+        const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
+        Info << "Total normalized angle variance = " << totVariance << endl;
 
         // Old step length control disabled: Constrain the local step
         // length by fraction of shortest edge length
@@ -680,6 +713,7 @@ int main(int argc, char *argv[])
         restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
 
         mesh.movePoints(tNewPoints);
+        Info << endl;
     }
 
     // Save mesh
