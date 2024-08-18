@@ -485,7 +485,10 @@ double restrictAngleVarianceIncrease
             label neighPI2 = 0;
             const label faceI = mesh.pointFaces()[pointI][pointFI];
             getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
-            const double cosAlpha = cosAlphaEdgeAngle(cCoords, origPoints[neighPI1], origPoints[neighPI2]);
+
+            // Use current mesh point locations to calculate current angle variance
+            const double cosAlpha = cosAlphaEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
+
             cosAngles0[pointFI] = cosAlpha;
             // Info << "Indices " << pointI << ":" << neighPI1 << "-"
             //    << neighPI2 << " - " << cosAlpha << endl;
