@@ -189,18 +189,6 @@ int restrictEdgeShortening
         const vector cCoords = mesh.points()[pointI];
         vector nCoords = origPoints[pointI];
 
-        // Calculate shortest edge length
-        double shortestEdgeLength = DBL_MAX;
-        forAll(mesh.pointPoints(pointI), pointPpI)
-        {
-            const label neighI = mesh.pointPoints(pointI)[pointPpI];
-            const double testLength = getPointDistance(mesh, neighI, cCoords);
-            if (testLength < shortestEdgeLength)
-                shortestEdgeLength = testLength;
-        }
-
-        // Info << "Constraining point " << pointI << " iter " << i << endl;
-
         // Find the smallest (worst case) blending fraction of current
         // and new point coordinates
         double smallestFrac = 1.0;
