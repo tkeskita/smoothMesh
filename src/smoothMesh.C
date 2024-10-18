@@ -491,10 +491,6 @@ bool calc_edge_angles0
 
         angles0[pointFI] = edgeAngle;
 
-        if (pointI == 17)
-            Info << "   Edge0 " << pointFI << " angle " << neighPI1 << " " << neighPI2 << " : " << edgeAngle << " coords: " << cCoords << " - "
-                 << mesh.points()[neighPI1] << " - " << mesh.points()[neighPI2] << " - " << faceCenterCoords << endl;
-
         // If any edge-edge angle > pi radians, then the edges
         // form a concave angle, and the point can't be
         // frozen, otherwise concavity will just increase
@@ -544,10 +540,6 @@ int calc_edge_angles1
         const double edgeAngle = edgeEdgeAngle(nCoords, point1, point2);
 
         angles1[pointFI] = edgeAngle;
-
-        if (pointI == 17)
-            Info << "   Edge1 " << pointFI <<" angle " << neighPI1 << " " << neighPI2 << " : " << edgeAngle << " nCoords: " << nCoords << " - "
-                 << point1 << " - " << point2 << " - " << faceCenterCoords << endl;
     }
 
     return 0;
@@ -599,12 +591,6 @@ double restrictAngleVarianceIncrease
             const vector cCoords = mesh.points()[pointI];
             vector nCoords = newPoints[pointI];
 
-            if (pointI == 17)
-                Info << "Processing point " << pointI
-                     << " cCoords " << cCoords
-                     << " nCoords " << nCoords
-                     << endl;
-
             const label nPointFaces = mesh.pointFaces()[pointI].size();
             bool isConcavePoint = false; // marker for concave points
 
@@ -619,26 +605,6 @@ double restrictAngleVarianceIncrease
             double angles1[nPointFaces];
             calc_edge_angles1(mesh, newPoints, pointI, isFrozenPoint, angles1);
             const double variance1 = calcVariance(angles1, nPointFaces);
-
-            if (pointI == 17)
-            {
-                Info << " variance0 " << variance0
-                     << " from angles0=";
-                for (label i=0; i<nPointFaces; i++)
-                    Info << angles0[i] << " ";
-                Info << endl;
-
-                Info << " variance1 " << variance1
-                     << " from angles1=";
-                for (label i=0; i<nPointFaces; i++)
-                    Info << angles1[i] << " ";
-                Info << endl;
-
-                Info << " isConcave " << isConcavePoint
-                     << " cCoords " << cCoords
-                     << " nCoords " << nCoords
-                     << endl;
-            }
 
             // Concave points are never frozen. For other points:
             // If variance increases when moving point to new coordinates,
@@ -658,8 +624,6 @@ double restrictAngleVarianceIncrease
 
             // Save the constrained point
             newPoints[pointI] = nCoords;
-            if (pointI == 17)
-                Info << " newPoints set to " << newPoints[pointI] << endl;
         }
     }
 
