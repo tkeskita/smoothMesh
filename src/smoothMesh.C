@@ -189,21 +189,38 @@ int restrictEdgeShortening
         const vector cCoords = mesh.points()[pointI];
         vector nCoords = origPoints[pointI];
 
+        // Calculate shortest edge length from original mesh
+        double shortestEdgeLength = DBL_MAX;
+        forAll(mesh.pointPoints(pointI), pointPpI)
+        {
+            const label neighI = mesh.pointPoints(pointI)[pointPpI];
+            const double testLength = getPointDistance(mesh, neighI, cCoords);
+            if (testLength < shortestEdgeLength)
+                shortestEdgeLength = testLength;
+        }
+
         // Find the smallest (worst case) blending fraction of current
         // and new point coordinates
         double smallestFrac = 1.0;
         forAll(mesh.pointPoints(pointI), pointPpI)
         {
             const label neighI = mesh.pointPoints(pointI)[pointPpI];
-            const double testLength = getPointDistance(mesh, neighI, nCoords);
 
-            // Full freeze below minEdgeLength
-            if (testLength < minEdgeLength)
+            // Length from new coordinates to edge end points
+            const vector v = origPoints[neighI] - nCoords;
+            const double testLength = mag(v);
+
+            // Always allow increase of shortest edge length
+            if (testLength > shortestEdgeLength)
+                smallestFrac = 1.0;
+
+            // Otherwise do full freeze below minEdgeLength..
+            else if (testLength < minEdgeLength)
             {
                 smallestFrac = 0.0;
             }
 
-            // Partial freeze below maxEdgeLength
+            // ..or partial freeze below maxEdgeLength
             else if (testLength < maxEdgeLength)
             {
                 const double frac =
@@ -345,32 +362,32 @@ int constrainMaxStepLength
 }
 
 // Calculate and return the edge-edge angle (in radians) of two edges
-// which share a common point. The angle is calculated as a sum of
-// angles between each edge and a hypothetical edge from shared point
-// to face center coordinates. This allows proper quantification for
-// concave angles (>180 deg). The common shared edge point is cCoords
-// argument. The two edge end point coordinates are p1Coords and
-// p2Coords. fCoords is the face center coordinates.
+// which share a common point cCoords. The two edge end point
+// coordinates are p1Coords and p2Coords. fCoords is the face center
+// coordinates, which is needed for deducing if the edge-edge angle is
+// convex (<180 deg) or concave (>180 deg).
 double edgeEdgeAngle
 (
     const vector cCoords,
     const vector p1Coords,
-    const vector p2Coords,
-    const vector fCoords
+    const vector p2Coords
 )
 {
     vector vec1 = (p1Coords - cCoords);
     vector vec2 = (p2Coords - cCoords);
-    vector vec0 = (fCoords - cCoords);
-    vec0.normalise();
     vec1.normalise();
     vec2.normalise();
-    const double cosA1 = vec0 & vec1;
-    const double cosA2 = vec0 & vec2;
-    // Ensure values are in sane range before calling arc cos
-    const double cosAlpha1 = std::max(-0.999, std::min(0.999, cosA1));
-    const double cosAlpha2 = std::max(-0.999, std::min(0.999, cosA2));
-    const double angle = std::acos(cosAlpha1) + std::acos(cosAlpha2);
+
+    const double cosA = vec1 & vec2;
+
+    // Ensure cos angle is in sane range before calling arc cos
+    const double MAX = 0.99999;
+    const double cosAlpha = std::max(-MAX, std::min(MAX, cosA));
+    const double angle = std::acos(cosAlpha);
+
+    // Info << "   Edge angle " << angle << " coords: " << cCoords << " - "
+    //     << p1Coords << " - " << p2Coords << " - " << fCoords << endl;
+
     return angle;
 }
 
@@ -425,6 +442,9 @@ double calcVariance
     label n
 )
 {
+    if (n == 0)
+        FatalError << "n is zero" << abort(FatalError);
+
     double mean_val = 0.0;
     for (label i = 0; i < n; i++)
     {
@@ -442,6 +462,97 @@ double calcVariance
 
     return variance;
 }
+
+
+// Calculate the edge angles of point with index pointI using the
+// current mesh point locations
+bool calc_edge_angles0
+(
+    const fvMesh& mesh,
+    const label pointI,
+    bitSet &isFrozenPoint,
+    double *angles0
+)
+{
+    bool isConcavePoint = false; // marker for concave points
+    const vector cCoords = mesh.points()[pointI];
+
+    forAll(mesh.pointFaces()[pointI], pointFI)
+    {
+        // For each edge connected at this point, find the other point
+        label neighPI1 = 0;
+        label neighPI2 = 0;
+        const label faceI = mesh.pointFaces()[pointI][pointFI];
+        getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+
+        // Use current mesh point locations to calculate current angle variance
+        const vector faceCenterCoords = mesh.Cf()[faceI];
+        const double edgeAngle = edgeEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
+
+        angles0[pointFI] = edgeAngle;
+
+        if (pointI == 17)
+            Info << "   Edge0 " << pointFI << " angle " << neighPI1 << " " << neighPI2 << " : " << edgeAngle << " coords: " << cCoords << " - "
+                 << mesh.points()[neighPI1] << " - " << mesh.points()[neighPI2] << " - " << faceCenterCoords << endl;
+
+        // If any edge-edge angle > pi radians, then the edges
+        // form a concave angle, and the point can't be
+        // frozen, otherwise concavity will just increase
+        // during smoothing.
+        if (edgeAngle > 3.14)
+            isConcavePoint = true;
+
+        // Info << "Indices " << pointI << ":" << neighPI1 << "-"
+        //    << neighPI2 << " - " << edgeAngle << endl;
+    }
+
+    return isConcavePoint;
+}
+
+// Calculate the edge angles of point with index pointI using the
+// current mesh point locations
+int calc_edge_angles1
+(
+    const fvMesh& mesh,
+    const pointField& newPoints,
+    const label pointI,
+    bitSet &isFrozenPoint,
+    double *angles1
+)
+{
+    forAll(mesh.pointFaces()[pointI], pointFI)
+    {
+        // For both edges connected at this point, find the other point index
+        label neighPI1 = 0;
+        label neighPI2 = 0;
+        const label faceI = mesh.pointFaces()[pointI][pointFI];
+        getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+
+        // Use neighbour point's new point coordinates, unless
+        // the neighbour point is frozen, in which case use it's current
+        // mesh point coordinates.
+        vector point1 = newPoints[neighPI1];
+        if (isFrozenPoint.test(neighPI1))
+            point1 = mesh.points()[neighPI1];
+
+        vector point2 = newPoints[neighPI2];
+        if (isFrozenPoint.test(neighPI2))
+            point2 = mesh.points()[neighPI2];
+
+        const vector nCoords = newPoints[pointI];
+        const vector faceCenterCoords = mesh.Cf()[faceI];
+        const double edgeAngle = edgeEdgeAngle(nCoords, point1, point2);
+
+        angles1[pointFI] = edgeAngle;
+
+        if (pointI == 17)
+            Info << "   Edge1 " << pointFI <<" angle " << neighPI1 << " " << neighPI2 << " : " << edgeAngle << " nCoords: " << nCoords << " - "
+                 << point1 << " - " << point2 << " - " << faceCenterCoords << endl;
+    }
+
+    return 0;
+}
+
 
 // Restrict the increase of variance of edge-edge angles of internal
 // faces. This is a mesh quality constraint aimed at avoiding
@@ -473,6 +584,7 @@ double restrictAngleVarianceIncrease
     // new points are frozen
     while (nFrozenPoints > nFrozenPointsOld)
     {
+        nMovingPoints = 0;
         nFrozenPointIters++;
         nFrozenPointsOld = nFrozenPoints;
 
@@ -485,74 +597,54 @@ double restrictAngleVarianceIncrease
 
             nMovingPoints++;
             const vector cCoords = mesh.points()[pointI];
-            vector nCoords = origPoints[pointI];
+            vector nCoords = newPoints[pointI];
+
+            if (pointI == 17)
+                Info << "Processing point " << pointI
+                     << " cCoords " << cCoords
+                     << " nCoords " << nCoords
+                     << endl;
+
+            const label nPointFaces = mesh.pointFaces()[pointI].size();
             bool isConcavePoint = false; // marker for concave points
 
-            // Calculate edge-edge cosine angles and their variance for
-            // all faces meeting at the current point coordinates
-            const label nPointFaces = mesh.pointFaces()[pointI].size();
-            // Info << "Processing point " << pointI << " which has "
-            //      << nPointFaces << " faces" << endl;
-            double cosAngles0[nPointFaces];
-            forAll(mesh.pointFaces()[pointI], pointFI)
-            {
-                // For each edge connected at this point, find the other point
-                label neighPI1 = 0;
-                label neighPI2 = 0;
-                const label faceI = mesh.pointFaces()[pointI][pointFI];
-                getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
-
-                // Use current mesh point locations to calculate current angle variance
-                const vector fCoords = mesh.Cf()[faceI];
-                const double edgeAngle = edgeEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2], fCoords);
-
-                cosAngles0[pointFI] = edgeAngle;
-
-                // If any edge-edge angle > pi radians, then the edges
-                // form a concave angle, and point quality can't be
-                // asserted, otherwise concavity will just increase
-                // during smoothing.
-                if (edgeAngle > 3.14)
-                    isConcavePoint = true;
-
-                // Info << "Indices " << pointI << ":" << neighPI1 << "-"
-                //    << neighPI2 << " - " << edgeAngle << endl;
-            }
-            const double variance0 = calcVariance(cosAngles0, nPointFaces);
+            // Calculate edge-edge angles and their variance for the
+            // current point coordinates
+            double angles0[nPointFaces];
+            isConcavePoint = calc_edge_angles0(mesh, pointI, isFrozenPoint, angles0);
+            const double variance0 = calcVariance(angles0, nPointFaces);
 
             // Calculate edge-edge cosine angles and variance for the
             // proposed new point coordinates
-            double cosAngles1[nPointFaces];
-            forAll(mesh.pointFaces()[pointI], pointFI)
+            double angles1[nPointFaces];
+            calc_edge_angles1(mesh, newPoints, pointI, isFrozenPoint, angles1);
+            const double variance1 = calcVariance(angles1, nPointFaces);
+
+            if (pointI == 17)
             {
-                // For both edges connected at this point, find the other point index
-                label neighPI1 = 0;
-                label neighPI2 = 0;
-                const label faceI = mesh.pointFaces()[pointI][pointFI];
-                getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+                Info << " variance0 " << variance0
+                     << " from angles0=";
+                for (label i=0; i<nPointFaces; i++)
+                    Info << angles0[i] << " ";
+                Info << endl;
 
-                // Use neighbour point's new point coordinates, unless
-                // the point is frozen, in which case use the current
-                // mesh point coordinates.
-                vector point1 = origPoints[neighPI1];
-                if (isFrozenPoint.test(neighPI1))
-                    point1 = mesh.points()[neighPI1];
+                Info << " variance1 " << variance1
+                     << " from angles1=";
+                for (label i=0; i<nPointFaces; i++)
+                    Info << angles1[i] << " ";
+                Info << endl;
 
-                vector point2 = origPoints[neighPI2];
-                if (isFrozenPoint.test(neighPI2))
-                    point2 = mesh.points()[neighPI2];
-
-                const vector fCoords = mesh.Cf()[faceI];
-                const double edgeAngle = edgeEdgeAngle(nCoords, point1, point2, fCoords);
-                cosAngles1[pointFI] = edgeAngle;
+                Info << " isConcave " << isConcavePoint
+                     << " cCoords " << cCoords
+                     << " nCoords " << nCoords
+                     << endl;
             }
-            const double variance1 = calcVariance(cosAngles1, nPointFaces);
 
             // Concave points are never frozen. For other points:
             // If variance increases when moving point to new coordinates,
             // then freeze the point to current coordinates, otherwise leave
             // the new point coordinates unchanged.
-            if ((! isConcavePoint) and (variance1 > variance0))
+            if ((! isConcavePoint) and (variance1 > 0.1) and (variance1 > variance0))
             {
                 nFrozenPoints++;
                 isFrozenPoint.set(pointI);
@@ -566,6 +658,8 @@ double restrictAngleVarianceIncrease
 
             // Save the constrained point
             newPoints[pointI] = nCoords;
+            if (pointI == 17)
+                Info << " newPoints set to " << newPoints[pointI] << endl;
         }
     }
 
@@ -575,10 +669,15 @@ double restrictAngleVarianceIncrease
     // Save new point coordinates to original point field
     forAll(origPoints, pointI)
     {
+        if (origPoints[pointI] != newPoints[pointI])
+            Info << "origPointCoords!=newPointCoords at index " << pointI << endl;
         origPoints[pointI] = newPoints[pointI];
     }
 
-    return (totVariance / static_cast<double>(nMovingPoints));
+    if (nMovingPoints > 0)
+        return (totVariance / static_cast<double>(nMovingPoints));
+    else
+        return 0.0;
 }
 
 
@@ -735,7 +834,7 @@ int main(int argc, char *argv[])
         // constrainLocalStepLength(mesh, newPoints, isInternalPoint, 0.05);
 
         // Avoid shortening of short edge length
-        restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
+        // restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
 
         mesh.movePoints(tNewPoints);
         Info << endl;
