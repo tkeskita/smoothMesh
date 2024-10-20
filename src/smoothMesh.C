@@ -187,51 +187,50 @@ int restrictEdgeShortening
             continue;
 
         const vector cCoords = mesh.points()[pointI];
-        vector nCoords = origPoints[pointI];
+        const vector nCoords = origPoints[pointI];
 
-        // Calculate shortest edge length from original mesh
-        double shortestEdgeLength = DBL_MAX;
+        // Calculate shortest edge length from current mesh point and
+        // new mesh point
+        double shortestCurrentEdgeLength = DBL_MAX;
+        double shortestNewEdgeLength = DBL_MAX;
         forAll(mesh.pointPoints(pointI), pointPpI)
         {
             const label neighI = mesh.pointPoints(pointI)[pointPpI];
-            const double testLength = getPointDistance(mesh, neighI, cCoords);
-            if (testLength < shortestEdgeLength)
-                shortestEdgeLength = testLength;
+            const double testCurrentLength = getPointDistance(mesh, neighI, cCoords);
+            if (testCurrentLength < shortestCurrentEdgeLength)
+                shortestCurrentEdgeLength = testCurrentLength;
+            const double testNewLength = getPointDistance(mesh, neighI, nCoords);
+            if (testNewLength < shortestNewEdgeLength)
+                shortestNewEdgeLength = testNewLength;
         }
 
-        // Find the smallest (worst case) blending fraction of current
-        // and new point coordinates
-        double smallestFrac = 1.0;
-        forAll(mesh.pointPoints(pointI), pointPpI)
+        // Blending fraction of current (0.0) and new (1.0) point coordinates
+        double frac = 1.0;
+
+        // Consider freezing only if edge length decreases
+        if (shortestNewEdgeLength < shortestCurrentEdgeLength)
         {
-            const label neighI = mesh.pointPoints(pointI)[pointPpI];
-
-            // Length from new coordinates to edge end points
-            const vector v = origPoints[neighI] - nCoords;
-            const double testLength = mag(v);
-
-            // Always allow increase of shortest edge length
-            if (testLength > shortestEdgeLength)
-                smallestFrac = 1.0;
-
-            // Otherwise do full freeze below minEdgeLength..
-            else if (testLength < minEdgeLength)
+            // Full freeze below minEdgeLength
+            if (shortestNewEdgeLength < minEdgeLength)
             {
-                smallestFrac = 0.0;
+                frac = 0.0;
             }
 
-            // ..or partial freeze below maxEdgeLength
-            else if (testLength < maxEdgeLength)
+            // Partial freeze below maxEdgeLength
+            else if (shortestNewEdgeLength < maxEdgeLength)
             {
-                const double frac =
-                    (testLength - minEdgeLength) / (maxEdgeLength - minEdgeLength);
-                if (frac < smallestFrac)
-                    smallestFrac = frac;
+                frac = (shortestNewEdgeLength - minEdgeLength) / (maxEdgeLength - minEdgeLength);
+            }
+
+            // No freeze above maxEdgeLength
+            else
+            {
+                frac = 1.0;
             }
         }
 
         // Blend current and new coordinates
-        const vector newCoords = ((1.0 - smallestFrac) * cCoords) + (smallestFrac * nCoords);
+        const vector newCoords = ((1.0 - frac) * cCoords) + (frac * nCoords);
 
         // Save the constrained point
         newPoints[pointI] = newCoords;
@@ -486,7 +485,6 @@ bool calc_edge_angles0
         getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
 
         // Use current mesh point locations to calculate current angle variance
-        const vector faceCenterCoords = mesh.Cf()[faceI];
         const double edgeAngle = edgeEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
 
         angles0[pointFI] = edgeAngle;
@@ -536,7 +534,6 @@ int calc_edge_angles1
             point2 = mesh.points()[neighPI2];
 
         const vector nCoords = newPoints[pointI];
-        const vector faceCenterCoords = mesh.Cf()[faceI];
         const double edgeAngle = edgeEdgeAngle(nCoords, point1, point2);
 
         angles1[pointFI] = edgeAngle;
@@ -789,16 +786,17 @@ int main(int argc, char *argv[])
         // Avoid increase of angle variance (a simple point quality metric)
         if (qualityControl)
         {
-            const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
-            Info << "Total normalized angle variance = " << totVariance << endl;
+            // const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
+            // Info << "Total normalized angle variance = " << totVariance << endl;
+
+            // Old step length control disabled: Constrain the local step
+            // length by fraction of shortest edge length
+            // constrainLocalStepLength(mesh, newPoints, isInternalPoint, 0.05);
+
+            // Avoid shortening of short edge length
+            restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
         }
 
-        // Old step length control disabled: Constrain the local step
-        // length by fraction of shortest edge length
-        // constrainLocalStepLength(mesh, newPoints, isInternalPoint, 0.05);
-
-        // Avoid shortening of short edge length
-        // restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
 
         mesh.movePoints(tNewPoints);
         Info << endl;

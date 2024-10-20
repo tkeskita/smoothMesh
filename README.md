@@ -27,15 +27,11 @@ wmake
 - `-orthogonalBlendingFraction` (**Warning: experimental feature!**)
   is the fraction by which the edges touching the boundary faces are
   forced towards orthogonal direction (default 0.3)
-- `-qualityControl true` (**Warning: experimental feature!**) enables the
-  point quality criteria, which freezes point to current location if
-  moving the point would decrease the point quality (if variance of
-  edge-edge angles of all faces meeting at the point would increase)
 
-The following parameters are applied to limit squishing of cells near concave features:
+- `-qualityControl true` (**Warning: experimental feature! WIP**) enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting faces near concave features. That can happen if the mesh contains skewed faces or cells with low determinant (`cellDeterminant` according to `checkMesh`). When enabled, the following options affect the results:
 
-- `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location (default 0.02)
-- `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength)
+  - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location (default 0.02)
+  - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength)
 
 ## Usage examples
 
