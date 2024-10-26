@@ -1,17 +1,18 @@
 # smoothMesh
 
 OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
-mesh points by using the centroidal smoothing algorithm, optionally
-with heuristic quality constraints to avoid self-intersections.
-No changes to mesh topology are made.
-
-Warning: Work in progress.
+mesh points by using the Centroidal smoothing algorithm (a version of the
+[Laplacian smoothing algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing),
+which uses surrounding cell centers instead of the neighbouring vertex
+locations to calculate the new vertex position). Optional heuristic
+quality control options exist to constrain the smoothing, to avoid
+self-intersections. No changes to mesh topology are made.
 
 ## Current restrictions
 
-- Smoothing of internal mesh points only
-- Applies centroidal smoothing algorithm with given number of iterations (`centroidalIters` option)
-- Encourages orthogonal side edges on the boundary cell layer (`orthogonalBlendingFraction` option)
+- Works on 3D polyhedron meshes
+- Requires a consistent (not self-intersecting or tangled) initial mesh
+- Smoothes internal mesh points only (boundary points are frozen)
 - Developed on OpenFOAM.com v2312
 
 ## Compilation instructions
@@ -19,22 +20,24 @@ Warning: Work in progress.
 ```
 . /usr/lib/openfoam/openfoam2312/etc/bashrc
 cd smoothMesh/src
-wclean
-wmake
+wclean; wmake
 ```
 
 ## Command line options
 
-- `-centroidalIters` specifies the number of smoothing iterations (default 20)
-- `-maxStepLength` is the maximum length for moving a point in one iteration (default 0.01)
-- `-orthogonalBlendingFraction` (**Warning: experimental feature!**)
-  is the fraction by which the edges touching the boundary faces are
-  forced towards orthogonal direction (default 0.3)
+- `-centroidalIters` specifies the number of smoothing iterations (default 20).
 
-- `-qualityControl true` (**Warning: experimental feature! WIP**) enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled, the following options affect the results:
+- `-maxStepLength` is the maximum length (in metres) for moving a point in one iteration (default 0.01). Adjust this value for your case. Smoothing process seems to be stable when this value is smaller than about one tenth of cell side length.
 
-  - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location (default 0.02)
-  - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength)
+- `-orthogonalBlendingFraction` is the fraction (0 <= value <= 1) by which the edges touching the boundary faces are forced towards orthogonal direction. Zero value causes no orthogonal direction for boundary edges (default 0).
+
+- `-qualityControl true` enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled (default is true), the following options affect the results:
+
+  - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location (default 0.002). Adjust this value for your case.
+
+  - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength).
+
+  - `-minAngle` defines the edge-edge angle (in degrees, 0 < value < 180) for face corners below which points are fully frozen (default 45).
 
 ## Usage examples
 

@@ -704,13 +704,15 @@ int calc_min_edge_angles
 }
 
 
-// Restrict decrease of smallest face angles. This is meant to avoid
-// creation of self-intersections for concave features.
+// Restrict decrease of smallest face angles when angle is below
+// minAngle (in degrees). This is meant to avoid creation of
+// self-intersections for concave features.
 int restrictMinAngleDecrease
 (
     const fvMesh& mesh,
     pointField& origPoints,
-    const bitSet isMovingPoint
+    const bitSet isMovingPoint,
+    const double minAngleInDegrees
 )
 {
     // Copy original points to temporary point field
@@ -736,7 +738,7 @@ int restrictMinAngleDecrease
         // If minimum angle is below threshold and would decrease,
         // then don't move the point. Note: This allows angle to
         // increase, so points are not frozen permanently.
-        const double smallAngle = M_PI / 4.0;
+        const double smallAngle = M_PI * minAngleInDegrees / 180.0;
 
         if ((minNAngle < smallAngle) and (minNAngle < minCAngle))
         {
@@ -791,30 +793,37 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "minEdgeLength",
-        "double",
-        "Edge length below which edge vertices are fully frozen (default 0.02)"
-    );
-
-    argList::addOption
-    (
-        "maxEdgeLength",
-        "double",
-        "Edge length above which edge vertices are fully free to move (default: 1.001 * minEdegeLength)"
-    );
-
-    argList::addOption
-    (
         "orthogonalBlendingFraction",
         "double",
-        "Fraction to force orthogonal side edges on the boundary (default 0.3)"
+        "Fraction to force orthogonal side edges on the boundary (default 0 (=no orthogonality is forced))"
     );
 
     argList::addOption
     (
         "qualityControl",
         "bool",
-        "Enable or disable the point quality control (default: disabled)"
+        "Enable or disable all quality control features (default: enabled)"
+    );
+
+    argList::addOption
+    (
+        "minEdgeLength",
+        "double",
+        "A quality control feature: Edge length below which edge vertices are fully frozen (default 0.002)"
+    );
+
+    argList::addOption
+    (
+        "maxEdgeLength",
+        "double",
+        "A quality control feature: Edge length above which edge vertices are fully free to move (default: 1.001 * minEdegeLength)"
+    );
+
+    argList::addOption
+    (
+        "minAngle",
+        "double",
+        "A quality control feature: Edge-edge angle for internal faces below which vertices are fully frozen (in degrees, default: 45)"
     );
 
     #include "addOverwriteOption.H"
@@ -839,19 +848,22 @@ int main(int argc, char *argv[])
         }
     }
 
-    double orthogonalBlendingFraction(0.3);
+    double orthogonalBlendingFraction(0.0);
     args.readIfPresent("orthogonalBlendingFraction", orthogonalBlendingFraction);
 
     double maxStepLength(0.01);
     args.readIfPresent("maxStepLength", maxStepLength);
 
-    double minEdgeLength(0.02);
+    double minEdgeLength(0.002);
     args.readIfPresent("minEdgeLength", minEdgeLength);
 
     double maxEdgeLength(1.001 * minEdgeLength);
     args.readIfPresent("maxEdgeLength", maxEdgeLength);
 
-    bool qualityControl(false);
+    double minAngle(45);
+    args.readIfPresent("minAngle", minAngle);
+
+    bool qualityControl(true);
     args.readIfPresent("qualityControl", qualityControl);
 
     // Storage for markers for internal points
@@ -912,7 +924,7 @@ int main(int argc, char *argv[])
             restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
 
             // Restrict decrease of smallest face angle
-            restrictMinAngleDecrease(mesh, newPoints, isInternalPoint);
+            restrictMinAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
         }
 
 
