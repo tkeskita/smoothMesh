@@ -641,6 +641,121 @@ double restrictAngleVarianceIncrease
         return 0.0;
 }
 
+// Calculate and store the minimum edge angles of point with index
+// pointI for current mesh (minCAngleStorage) and a minimum for new
+// mesh points (minNAngleStorage)
+int calc_min_edge_angles
+(
+    const fvMesh& mesh,
+    const pointField& newPoints,
+    const label pointI,
+    double *minCAngleStorage,
+    double *minNAngleStorage
+)
+{
+    // Current and new minimum angles
+    double minCAngle = DBL_MAX;
+    double minNAngle = DBL_MAX;
+
+    forAll(mesh.pointFaces()[pointI], pointFI)
+    {
+        // For both edges connected at this point, find the other point index
+        label neighPI1 = 0;
+        label neighPI2 = 0;
+        const label faceI = mesh.pointFaces()[pointI][pointFI];
+        getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
+
+        // Current angle from current mesh
+        const vector cp0 = mesh.points()[pointI];
+        const vector cp1 = mesh.points()[neighPI1];
+        const vector cp2 = mesh.points()[neighPI2];
+        const double cAngle = edgeEdgeAngle(cp0, cp1, cp2);
+
+        // New angle from current mesh
+        const vector np0 = newPoints[pointI];
+        const double nAngle0 = edgeEdgeAngle(np0, cp1, cp2);
+
+        // New angle from new mesh points
+        const vector np1 = newPoints[neighPI1];
+        const vector np2 = newPoints[neighPI2];
+        const double nAngle1 = edgeEdgeAngle(np0, np1, np2);
+
+        // New angle from combination of current and new mesh points
+        // Note: These might not be really necessary, but do it for now
+        // for completeness sake.
+        const double nAngle2 = edgeEdgeAngle(np0, cp1, np2);
+        const double nAngle3 = edgeEdgeAngle(np0, np1, cp2);
+
+        // Use smallest of new angles.
+        const double nAngle = min(min(min(nAngle0, nAngle1), nAngle2), nAngle3);
+
+        // Update minimum values
+        if (cAngle < minCAngle)
+            minCAngle = cAngle;
+        if (nAngle < minNAngle)
+            minNAngle = nAngle;
+    }
+
+    // Save minimum angles to storage
+    *minCAngleStorage = minCAngle;
+    *minNAngleStorage = minNAngle;
+
+    return 0;
+}
+
+
+// Restrict decrease of smallest face angles. This is meant to avoid
+// creation of self-intersections for concave features.
+int restrictMinAngleDecrease
+(
+    const fvMesh& mesh,
+    pointField& origPoints,
+    const bitSet isMovingPoint
+)
+{
+    // Copy original points to temporary point field
+    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    pointField& newPoints = tNewPoints.ref();
+
+    forAll(newPoints, pointI)
+        newPoints[pointI] = origPoints[pointI];
+
+    forAll(origPoints, pointI)
+    {
+        if (! isMovingPoint.test(pointI))
+            continue;
+
+        const vector cCoords = mesh.points()[pointI];
+        vector nCoords = origPoints[pointI];
+
+        // Calculate current minimum angle and new minimum angle
+        double minCAngle;
+        double minNAngle;
+        calc_min_edge_angles(mesh, newPoints, pointI, &minCAngle, &minNAngle);
+
+        // If minimum angle is below threshold and would decrease,
+        // then don't move the point. Note: This allows angle to
+        // increase, so points are not frozen permanently.
+        const double smallAngle = M_PI / 4.0;
+
+        if ((minNAngle < smallAngle) and (minNAngle < minCAngle))
+        {
+            nCoords = cCoords;
+        }
+
+        // Save the constrained point
+        newPoints[pointI] = nCoords;
+    }
+
+    // Save new point coordinates to original point field
+    forAll(origPoints, pointI)
+    {
+        origPoints[pointI] = newPoints[pointI];
+    }
+
+    return 0;
+}
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -783,7 +898,7 @@ int main(int argc, char *argv[])
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
 
-        // Avoid increase of angle variance (a simple point quality metric)
+        // Additional constraints aiming to avoid quality issues near concave features
         if (qualityControl)
         {
             // const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
@@ -795,6 +910,9 @@ int main(int argc, char *argv[])
 
             // Avoid shortening of short edge length
             restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
+
+            // Restrict decrease of smallest face angle
+            restrictMinAngleDecrease(mesh, newPoints, isInternalPoint);
         }
 
 

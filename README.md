@@ -1,6 +1,9 @@
 # smoothMesh
 
-OpenFOAM mesh smoothing tool to improve mesh quality.
+OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
+mesh points by using the centroidal smoothing algorithm, optionally
+with heuristic quality constraints to avoid self-intersections.
+No changes to mesh topology are made.
 
 Warning: Work in progress.
 
@@ -28,7 +31,7 @@ wmake
   is the fraction by which the edges touching the boundary faces are
   forced towards orthogonal direction (default 0.3)
 
-- `-qualityControl true` (**Warning: experimental feature! WIP**) enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting faces near concave features. That can happen if the mesh contains skewed faces or cells with low determinant (`cellDeterminant` according to `checkMesh`). When enabled, the following options affect the results:
+- `-qualityControl true` (**Warning: experimental feature! WIP**) enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled, the following options affect the results:
 
   - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location (default 0.02)
   - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength)
