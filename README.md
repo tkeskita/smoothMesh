@@ -37,7 +37,7 @@ wclean; wmake
 
   - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength).
 
-  - `-minAngle` defines the edge-edge angle (in degrees, 0 < value < 180) for face corners below which points are fully frozen (default 45).
+  - `-minAngle` defines the minimum edge-edge angle for face corners (in degrees, 0 < value < 180, default 45) below which points are fully frozen in their current location, if the angle would decrease in smoothing. Points are allowed to move if minimum angle value increases with smoothing, regardless of this value.
 
 ## Usage examples
 
