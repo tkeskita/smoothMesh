@@ -144,8 +144,8 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     return tnewPoints;
 }
 
-// Help function to return distance to mesh point from argument
-// coordinates
+// Help function to return distance to current mesh point with index
+// pointI from argument coords.
 
 double getPointDistance
 (
@@ -245,73 +245,9 @@ int restrictEdgeShortening
     return 0;
 }
 
-// Constrain the length of a step jump to new coordinates by fraction
-// of minimum edge length. This increases the stability of the
-// relaxation process, in case target coordinates are far off.
-
-int constrainLocalStepLength
-(
-    const fvMesh& mesh,
-    pointField& origPoints,
-    const bitSet isMovingPoint,
-    const double relaxationFactor
-)
-{
-    // Copy original points for temporary working point field
-    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
-    pointField& newPoints = tNewPoints.ref();
-    forAll(newPoints, pointI)
-        newPoints[pointI] = origPoints[pointI];
-
-    forAll(origPoints, pointI)
-    {
-        if (! isMovingPoint.test(pointI))
-            continue;
-
-        const vector cCoords = mesh.points()[pointI];
-        vector nCoords = origPoints[pointI];
-
-        // Calculate shortest edge length
-        double shortestEdgeLength = DBL_MAX;
-        forAll(mesh.pointPoints(pointI), pointPpI)
-        {
-            const label neighI = mesh.pointPoints(pointI)[pointPpI];
-            const double testLength = getPointDistance(mesh, neighI, cCoords);
-            if (testLength < shortestEdgeLength)
-            {
-                shortestEdgeLength = testLength;
-            }
-        }
-
-        // Scale down the length of the jump from current coordinates
-        // towards new coordinates if jump would be otherwise too long
-        const vector stepDir = nCoords - cCoords;
-        const double stepLength = mag(stepDir);
-        const double maxLength = relaxationFactor * shortestEdgeLength;
-        if (stepLength > maxLength)
-        {
-            const double scale = maxLength / stepLength;
-            nCoords = cCoords + scale * stepDir;
-            // Info << "pointI " << pointI << " maxLength " << maxLength << " stepLength "
-            //      << stepLength << " scale " << scale << endl;
-        }
-
-        // Save the constrained point
-        newPoints[pointI] = nCoords;
-    }
-
-    // Save new point coordinates to original point field
-    forAll(origPoints, pointI)
-    {
-        origPoints[pointI] = newPoints[pointI];
-    }
-
-    return 0;
-}
-
 // Constrain the length of a step jump to new coordinates by an
 // absolute length value. This increases the stability of the
-// relaxation process, in case target coordinates are far off.
+// smoothing process, in case target coordinates are far off.
 
 int constrainMaxStepLength
 (
@@ -343,8 +279,6 @@ int constrainMaxStepLength
         {
             const double scale = maxStepLength / stepLength;
             nCoords = cCoords + scale * stepDir;
-            // Info << "pointI " << pointI << " maxLength " << maxLength << " stepLength "
-            //      << stepLength << " scale " << scale << endl;
         }
 
         // Save the constrained point
@@ -360,11 +294,11 @@ int constrainMaxStepLength
     return 0;
 }
 
-// Calculate and return the edge-edge angle (in radians) of two edges
-// which share a common point cCoords. The two edge end point
-// coordinates are p1Coords and p2Coords. fCoords is the face center
-// coordinates, which is needed for deducing if the edge-edge angle is
-// convex (<180 deg) or concave (>180 deg).
+// Calculate and return the edge-edge angle (in radians,
+// 0 < angle < pi) of two edges which share a common point
+// at coordinate cCoords. The two edge end point coordinates are
+// p1Coords and p2Coords.
+
 double edgeEdgeAngle
 (
     const vector cCoords,
@@ -384,15 +318,13 @@ double edgeEdgeAngle
     const double cosAlpha = std::max(-MAX, std::min(MAX, cosA));
     const double angle = std::acos(cosAlpha);
 
-    // Info << "   Edge angle " << angle << " coords: " << cCoords << " - "
-    //     << p1Coords << " - " << p2Coords << " - " << fCoords << endl;
-
     return angle;
 }
 
-// Find the neighbour point indices neighPI1 and neighPI2 for the
+// Find the neighbour mesh point indices neighPI1 and neighPI2 for the
 // point with index pointI, where all points are part of face index
 // faceI.
+
 int getNeighbourPoints
 (
     const fvMesh& mesh,
@@ -405,7 +337,7 @@ int getNeighbourPoints
     int i = 0;
     const face facePoints = mesh.faces()[faceI];
     const label nPoints = facePoints.size();
-    // Info << "facePoints are " << facePoints << endl;
+
     forAll(facePoints, pointI)
     {
         if (facePoints[pointI] == centerPointI)
@@ -433,217 +365,10 @@ int getNeighbourPoints
     return 0;
 }
 
-// Compute and return variance for argument vals (array of doubles).
-// Array length is n.
-double calcVariance
-(
-    double* vals,
-    label n
-)
-{
-    if (n == 0)
-        FatalError << "n is zero" << abort(FatalError);
-
-    double mean_val = 0.0;
-    for (label i = 0; i < n; i++)
-    {
-        mean_val += vals[i];
-    }
-    mean_val /= static_cast<double>(n);
-
-    double variance = 0.0;
-    for (label i = 0; i < n; i++)
-    {
-        const double d = vals[i] - mean_val;
-        variance += d * d;
-    }
-    variance /= static_cast<double>(n);
-
-    return variance;
-}
-
-
-// Calculate the edge angles of point with index pointI using the
-// current mesh point locations
-bool calc_edge_angles0
-(
-    const fvMesh& mesh,
-    const label pointI,
-    bitSet &isFrozenPoint,
-    double *angles0
-)
-{
-    bool isConcavePoint = false; // marker for concave points
-    const vector cCoords = mesh.points()[pointI];
-
-    forAll(mesh.pointFaces()[pointI], pointFI)
-    {
-        // For each edge connected at this point, find the other point
-        label neighPI1 = 0;
-        label neighPI2 = 0;
-        const label faceI = mesh.pointFaces()[pointI][pointFI];
-        getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
-
-        // Use current mesh point locations to calculate current angle variance
-        const double edgeAngle = edgeEdgeAngle(cCoords, mesh.points()[neighPI1], mesh.points()[neighPI2]);
-
-        angles0[pointFI] = edgeAngle;
-
-        // If any edge-edge angle > pi radians, then the edges
-        // form a concave angle, and the point can't be
-        // frozen, otherwise concavity will just increase
-        // during smoothing.
-        if (edgeAngle > 3.14)
-            isConcavePoint = true;
-
-        // Info << "Indices " << pointI << ":" << neighPI1 << "-"
-        //    << neighPI2 << " - " << edgeAngle << endl;
-    }
-
-    return isConcavePoint;
-}
-
-// Calculate the edge angles of point with index pointI using the
-// current mesh point locations
-int calc_edge_angles1
-(
-    const fvMesh& mesh,
-    const pointField& newPoints,
-    const label pointI,
-    bitSet &isFrozenPoint,
-    double *angles1
-)
-{
-    forAll(mesh.pointFaces()[pointI], pointFI)
-    {
-        // For both edges connected at this point, find the other point index
-        label neighPI1 = 0;
-        label neighPI2 = 0;
-        const label faceI = mesh.pointFaces()[pointI][pointFI];
-        getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
-
-        // Use neighbour point's new point coordinates, unless
-        // the neighbour point is frozen, in which case use it's current
-        // mesh point coordinates.
-        vector point1 = newPoints[neighPI1];
-        if (isFrozenPoint.test(neighPI1))
-            point1 = mesh.points()[neighPI1];
-
-        vector point2 = newPoints[neighPI2];
-        if (isFrozenPoint.test(neighPI2))
-            point2 = mesh.points()[neighPI2];
-
-        const vector nCoords = newPoints[pointI];
-        const double edgeAngle = edgeEdgeAngle(nCoords, point1, point2);
-
-        angles1[pointFI] = edgeAngle;
-    }
-
-    return 0;
-}
-
-
-// Restrict the increase of variance of edge-edge angles of internal
-// faces. This is a mesh quality constraint aimed at avoiding
-// decrease of point quality during the smoothing process.
-// Returns normalized sum of final angle variances as a return value.
-double restrictAngleVarianceIncrease
-(
-    const fvMesh& mesh,
-    pointField& origPoints,
-    const bitSet isMovingPoint
-)
-{
-    double totVariance = 0.0;
-    int nMovingPoints = 0;
-    int nFrozenPoints = 0;
-    int nFrozenPointsOld = -1;
-    int nFrozenPointIters = 0;
-
-    // Storage of frozen points
-    bitSet isFrozenPoint(mesh.nPoints(), false);
-
-    // Copy original points for temporary working point field
-    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
-    pointField& newPoints = tNewPoints.ref();
-    forAll(newPoints, pointI)
-        newPoints[pointI] = origPoints[pointI];
-
-    // Loop the quality checking and point freezing procedure until no
-    // new points are frozen
-    while (nFrozenPoints > nFrozenPointsOld)
-    {
-        nMovingPoints = 0;
-        nFrozenPointIters++;
-        nFrozenPointsOld = nFrozenPoints;
-
-        forAll(origPoints, pointI)
-        {
-            if (! isMovingPoint.test(pointI))
-                continue;
-            if (isFrozenPoint.test(pointI))
-                continue;
-
-            nMovingPoints++;
-            const vector cCoords = mesh.points()[pointI];
-            vector nCoords = newPoints[pointI];
-
-            const label nPointFaces = mesh.pointFaces()[pointI].size();
-            bool isConcavePoint = false; // marker for concave points
-
-            // Calculate edge-edge angles and their variance for the
-            // current point coordinates
-            double angles0[nPointFaces];
-            isConcavePoint = calc_edge_angles0(mesh, pointI, isFrozenPoint, angles0);
-            const double variance0 = calcVariance(angles0, nPointFaces);
-
-            // Calculate edge-edge cosine angles and variance for the
-            // proposed new point coordinates
-            double angles1[nPointFaces];
-            calc_edge_angles1(mesh, newPoints, pointI, isFrozenPoint, angles1);
-            const double variance1 = calcVariance(angles1, nPointFaces);
-
-            // Concave points are never frozen. For other points:
-            // If variance increases when moving point to new coordinates,
-            // then freeze the point to current coordinates, otherwise leave
-            // the new point coordinates unchanged.
-            if ((! isConcavePoint) and (variance1 > 0.1) and (variance1 > variance0))
-            {
-                nFrozenPoints++;
-                isFrozenPoint.set(pointI);
-                nCoords = cCoords;
-                totVariance += variance0;
-            }
-            else
-            {
-                totVariance += variance1;
-            }
-
-            // Save the constrained point
-            newPoints[pointI] = nCoords;
-        }
-    }
-
-    Info << "Froze " << nFrozenPoints << "/" << mesh.nPoints() << " points in "
-         << nFrozenPointIters << " internal loops" << endl;
-
-    // Save new point coordinates to original point field
-    forAll(origPoints, pointI)
-    {
-        if (origPoints[pointI] != newPoints[pointI])
-            Info << "origPointCoords!=newPointCoords at index " << pointI << endl;
-        origPoints[pointI] = newPoints[pointI];
-    }
-
-    if (nMovingPoints > 0)
-        return (totVariance / static_cast<double>(nMovingPoints));
-    else
-        return 0.0;
-}
-
 // Calculate and store the minimum edge angles of point with index
 // pointI for current mesh (minCAngleStorage) and a minimum for new
-// mesh points (minNAngleStorage)
+// mesh points (minNAngleStorage).
+
 int calc_min_edge_angles
 (
     const fvMesh& mesh,
@@ -703,10 +428,10 @@ int calc_min_edge_angles
     return 0;
 }
 
-
 // Restrict decrease of smallest face angles when angle is below
 // minAngle (in degrees). This is meant to avoid creation of
 // self-intersections for concave features.
+
 int restrictMinAngleDecrease
 (
     const fvMesh& mesh,
@@ -886,15 +611,6 @@ int main(int argc, char *argv[])
     label centroidalIters(20);
     args.readIfPresent("centroidalIters", centroidalIters);
 
-    if (centroidalIters == 0)
-    {
-        Info << "Use -centroidalIters option to specify the number "
-             << "of iteration rounds. Doing nothing."
-             << nl << endl
-             << "End" << nl << endl;
-        return 0;
-    }
-
     // Carry out centroidal smoothing iterations
     for (label i = 0; i < centroidalIters; ++i)
     {
@@ -913,20 +629,12 @@ int main(int argc, char *argv[])
         // Additional constraints aiming to avoid quality issues near concave features
         if (qualityControl)
         {
-            // const double totVariance = restrictAngleVarianceIncrease(mesh, newPoints, isInternalPoint);
-            // Info << "Total normalized angle variance = " << totVariance << endl;
-
-            // Old step length control disabled: Constrain the local step
-            // length by fraction of shortest edge length
-            // constrainLocalStepLength(mesh, newPoints, isInternalPoint, 0.05);
-
             // Avoid shortening of short edge length
             restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
 
             // Restrict decrease of smallest face angle
             restrictMinAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
         }
-
 
         mesh.movePoints(tNewPoints);
         Info << endl;
