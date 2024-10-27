@@ -8,6 +8,15 @@ locations to calculate the new vertex position). Optional heuristic
 quality control options exist to constrain the smoothing, to avoid
 self-intersections. No changes to mesh topology are made.
 
+[smoothMesh demo video](https://vimeo.com/1023687267) illustrates mesh
+smoothing on an example mesh, cross-section from which is shown
+below. Without quality controls, centroidal smoothing would move the
+vertex highlighted in blue to the location highlighted with green,
+which is outside of the domain, and therefore smoothing tends to
+create self-intersecting mesh in the concave part of the geometry in
+this case. Self-intersections like this can be avoided by using
+additional quality controls, which restrict the movement of vertices.
+
 [![smoothMesh demo video](images/base_mesh_with_problematic_vertex.png)](https://vimeo.com/1023687267)
 
 ## Current restrictions
