@@ -8,6 +8,8 @@ locations to calculate the new vertex position). Optional heuristic
 quality control options exist to constrain the smoothing, to avoid
 self-intersections. No changes to mesh topology are made.
 
+[![smoothMesh demo video](images/base_mesh_with_problematic_vertex.png)](https://vimeo.com/1023687267)
+
 ## Current restrictions
 
 - Works on 3D polyhedron meshes
