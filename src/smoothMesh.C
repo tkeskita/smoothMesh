@@ -170,7 +170,8 @@ int restrictEdgeShortening
     pointField& origPoints,
     const bitSet isMovingPoint,
     const double minEdgeLength,
-    const double maxEdgeLength
+    const double maxEdgeLength,
+    const bool totalMinFreeze
 )
 {
     // Copy original points for temporary working point field
@@ -207,8 +208,15 @@ int restrictEdgeShortening
         // Blending fraction of current (0.0) and new (1.0) point coordinates
         double frac = 1.0;
 
-        // Consider freezing only if edge length decreases
-        if (shortestNewEdgeLength < shortestCurrentEdgeLength)
+        // Unconditional freeze below minEdgeLength if required
+        const double shortestLength = min(shortestNewEdgeLength, shortestCurrentEdgeLength);
+        if (totalMinFreeze and (shortestLength < minEdgeLength))
+        {
+            frac = 0.0;
+        }
+
+        // Otherwise consider freezing only if edge length decreases
+        else if (shortestNewEdgeLength < shortestCurrentEdgeLength)
         {
             // Full freeze below minEdgeLength
             if (shortestNewEdgeLength < minEdgeLength)
@@ -534,7 +542,14 @@ int main(int argc, char *argv[])
     (
         "minEdgeLength",
         "double",
-        "A quality control feature: Edge length below which edge vertices are fully frozen (default 0.002)"
+        "A quality control feature: Edge length below which edge vertices are fully frozen, but only if edge length would decrease in smoothing (default 0.002)"
+    );
+
+    argList::addOption
+    (
+        "totalMinFreeze",
+        "bool",
+        "A quality control feature: Make minEdgeLength an absolute requirement, freezing short edges even if edge length would increase in smoothing (default false)"
     );
 
     argList::addOption
@@ -585,6 +600,9 @@ int main(int argc, char *argv[])
     double maxEdgeLength(1.001 * minEdgeLength);
     args.readIfPresent("maxEdgeLength", maxEdgeLength);
 
+    bool totalMinFreeze(false);
+    args.readIfPresent("totalMinFreeze", totalMinFreeze);
+
     double minAngle(45);
     args.readIfPresent("minAngle", minAngle);
 
@@ -630,7 +648,7 @@ int main(int argc, char *argv[])
         if (qualityControl)
         {
             // Avoid shortening of short edge length
-            restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength);
+            restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength, totalMinFreeze);
 
             // Restrict decrease of smallest face angle
             restrictMinAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);

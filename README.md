@@ -33,7 +33,9 @@ wclean; wmake
 
 - `-qualityControl true` enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled (default is true), the following options affect the results:
 
-  - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location (default 0.002). Adjust this value for your case.
+  - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location, but only if edge length would decrease during smoothing (default 0.002). Adjust this value for your case.
+
+  - `-totalMinFreeze` option makes `-minEdgeLength` an absolute requirement, freezing short edges, even if edge length would increase during smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only.
 
   - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength).
 
