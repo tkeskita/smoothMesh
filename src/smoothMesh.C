@@ -436,16 +436,16 @@ int calc_min_edge_angles
     return 0;
 }
 
-// Restrict decrease of smallest face angles when angle is below
+// Restrict decrease of smallest edge-edge angles when angle is below
 // minAngle (in degrees). This is meant to avoid creation of
 // self-intersections for concave features.
 
-int restrictMinAngleDecrease
+int restrictMinEdgeAngleDecrease
 (
     const fvMesh& mesh,
     pointField& origPoints,
     const bitSet isMovingPoint,
-    const double minAngleInDegrees
+    const double minEdgeAngleInDegrees
 )
 {
     // Copy original points to temporary point field
@@ -471,7 +471,190 @@ int restrictMinAngleDecrease
         // If minimum angle is below threshold and would decrease,
         // then don't move the point. Note: This allows angle to
         // increase, so points are not frozen permanently.
-        const double smallAngle = M_PI * minAngleInDegrees / 180.0;
+        const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
+
+        if ((minNAngle < smallAngle) and (minNAngle < minCAngle))
+        {
+            nCoords = cCoords;
+        }
+
+        // Save the constrained point
+        newPoints[pointI] = nCoords;
+    }
+
+    // Save new point coordinates to original point field
+    forAll(origPoints, pointI)
+    {
+        origPoints[pointI] = newPoints[pointI];
+    }
+
+    return 0;
+}
+
+// Calculate and return the minimum angle calculated from argument vectors
+
+double calcMinEdgeAngleOfVecs
+(
+    const vector *pVecs,
+    size_t nVecs
+)
+{
+    double minAngle = M_PI;
+    const vector origin = vector(0, 0, 0);
+
+    for (size_t i = 0; i < nVecs; ++i)
+    {
+        for (size_t j = i + 1; j < nVecs; ++j)
+        {
+            const double ijAngle = edgeEdgeAngle(origin, pVecs[i], pVecs[j]);
+            if (ijAngle < minAngle)
+            {
+                minAngle = ijAngle;
+            }
+        }
+    }
+    return minAngle;
+}
+
+// Calculate the minimum face angles for all mesh edges
+
+int calcMinFaceAnglesForEdges
+(
+    const fvMesh& mesh,
+    double *minFaceAngleStorage,
+    size_t nEdges
+)
+{
+    forAll(mesh.edges(), edgeI)
+    {
+        const List<label> edgeFaces = mesh.edgeFaces(edgeI);
+        const label nFaces = edgeFaces.size();
+
+        // Calculate edge center
+        const edge e = mesh.edges()[edgeI];
+        const vector e0 = mesh.points()[e[0]];
+        const vector e1 = mesh.points()[e[1]];
+        const vector cCoords = 0.5 * (e0 + e1);
+
+        // Edge normal vector
+        const vector eVec = (e1 - e0).normalise();
+
+        // Calculate projected face center vectors
+        vector pVecs[nFaces];
+        forAll(edgeFaces, edgeFaceI)
+        {
+            // Get face center coordinates
+            const label faceI = edgeFaces[edgeFaceI];
+            const vector fCoords = mesh.Cf()[faceI];
+
+            // Project face center to edge normal plane
+            const vector cf = cCoords - fCoords;
+            const double dotProd = cf & eVec;
+            const vector pCoords = fCoords + dotProd * eVec;
+
+            // Save projected face center coordinate vector
+            const vector cp = (pCoords - cCoords).normalise();
+            pVecs[edgeFaceI] = cp;
+        }
+
+        // Calculate minimum angle and save to storage
+        const double minAngle = calcMinEdgeAngleOfVecs(pVecs, nFaces);
+        minFaceAngleStorage[edgeI] = minAngle;
+    }
+
+    return 0;
+}
+
+// Locates and stores the minimum face angle for argument point index
+// in mesh using precalculated minimum face angles for edges in
+// currentMinAngles and newMinAngles to minCAngle and minNAngle
+
+int getMinFaceAngles
+(
+    const fvMesh& mesh,
+    const label pointI,
+    const double *currentMinAngles,
+    const double *newMinAngles,
+    double *minCAngle,
+    double *minNAngle
+)
+{
+    *minCAngle = M_PI;
+    *minNAngle = M_PI;
+    const labelList pointEdges = mesh.pointEdges()[pointI];
+    forAll(pointEdges, pointEdgeI)
+    {
+        const label edgeI = pointEdges[pointEdgeI];
+
+        if (currentMinAngles[edgeI] < *minCAngle)
+        {
+            *minCAngle = currentMinAngles[edgeI];
+        }
+
+        if (newMinAngles[edgeI] < *minNAngle)
+        {
+            *minNAngle = newMinAngles[edgeI];
+        }
+    }
+    return 0;
+}
+
+
+// Restrict decrease of smallest face-face angles when angle is below
+// minAngle (in degrees). This is another angle heuristic, meant to
+// avoid creation of self-intersections for concave features. The
+// edge-edge angle version is not enough for cases where cell is flat
+// and edge directions are misaligned due to edge length decrease
+// (face folding). Face-face angle is a measure which identifies the
+// squished or folded cell shapes.
+
+int restrictMinFaceAngleDecrease
+(
+    fvMesh& mesh,
+    pointField& origPoints,
+    const bitSet isMovingPoint,
+    const double minEdgeAngleInDegrees
+)
+{
+    // Save current mesh points for safe keeping
+    tmp<pointField> tSavedPoints(new pointField(mesh.nPoints(), Zero));
+    pointField& savedPoints = tSavedPoints.ref();
+    forAll(savedPoints, pointI)
+        savedPoints[pointI] = mesh.points()[pointI];
+
+    // Copy new points to temporary point field
+    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    pointField& newPoints = tNewPoints.ref();
+    forAll(newPoints, pointI)
+        newPoints[pointI] = origPoints[pointI];
+
+    // Calculate minimum face angles for all edges from current mesh
+    static const size_t nEdges = size_t(mesh.edges().size());
+    double currentMinAngles[nEdges];
+    calcMinFaceAnglesForEdges(mesh, currentMinAngles, nEdges);
+
+    // Update new points to mesh and recalculate minimum face angles
+    mesh.movePoints(tNewPoints);
+    double newMinAngles[nEdges];
+    calcMinFaceAnglesForEdges(mesh, newMinAngles, nEdges);
+
+    forAll(origPoints, pointI)
+    {
+        if (! isMovingPoint.test(pointI))
+            continue;
+
+        const vector cCoords = savedPoints[pointI];
+        vector nCoords = newPoints[pointI];
+
+        // Calculate current minimum angle and new minimum angle
+        double minCAngle;
+        double minNAngle;
+        getMinFaceAngles(mesh, pointI, currentMinAngles, newMinAngles, &minCAngle, &minNAngle);
+
+        // If minimum angle is below threshold and would decrease,
+        // then don't move the point. Note: This allows angle to
+        // increase, so points are not frozen permanently.
+        const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
 
         if ((minNAngle < smallAngle) and (minNAngle < minCAngle))
         {
@@ -650,8 +833,11 @@ int main(int argc, char *argv[])
             // Avoid shortening of short edge length
             restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength, totalMinFreeze);
 
-            // Restrict decrease of smallest face angle
-            restrictMinAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
+            // Restrict decrease of smallest edge-edge angle
+            restrictMinEdgeAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
+
+            // Restrict decrease of smallest face-face angle
+            restrictMinFaceAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
         }
 
         mesh.movePoints(tNewPoints);
