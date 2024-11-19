@@ -836,8 +836,8 @@ int main(int argc, char *argv[])
             // Restrict decrease of smallest edge-edge angle
             restrictMinEdgeAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
 
-            // Restrict decrease of smallest face-face angle
-            restrictMinFaceAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
+            // Restrict decrease of smallest face-face angle (WIP)
+            // restrictMinFaceAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
         }
 
         mesh.movePoints(tNewPoints);
