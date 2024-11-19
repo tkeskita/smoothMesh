@@ -725,7 +725,7 @@ int main(int argc, char *argv[])
     (
         "minEdgeLength",
         "double",
-        "A quality control feature: Edge length below which edge vertices are fully frozen, but only if edge length would decrease in smoothing (default 0.002)"
+        "A quality control feature: Edge length below which edge vertices are fully frozen, but only if edge length would decrease in smoothing (default 0.05)"
     );
 
     argList::addOption
@@ -777,7 +777,7 @@ int main(int argc, char *argv[])
     double maxStepLength(0.01);
     args.readIfPresent("maxStepLength", maxStepLength);
 
-    double minEdgeLength(0.002);
+    double minEdgeLength(0.05);
     args.readIfPresent("minEdgeLength", minEdgeLength);
 
     double maxEdgeLength(1.001 * minEdgeLength);
