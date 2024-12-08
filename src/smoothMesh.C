@@ -500,10 +500,10 @@ int restrictMinEdgeAngleDecrease
 int mapCurrentMinMaxFaceAnglesToPoints
 (
     const fvMesh& mesh,
-    const double *minFaceAnglesForEdges,
-    const double *maxFaceAnglesForEdges,
-    double *minFaceAnglesForPoints,
-    double *maxFaceAnglesForPoints
+    const List<double> &minFaceAnglesForEdges,
+    const List<double> &maxFaceAnglesForEdges,
+    List<double> &minFaceAnglesForPoints,
+    List<double> &maxFaceAnglesForPoints
 )
 {
     forAll(mesh.points(), pointI)
@@ -815,13 +815,17 @@ int calcMinMaxFaceAngleForCurrentMeshEdge
 int calcCurrentMinMaxFaceAnglesForEdges
 (
     const fvMesh& mesh,
-    double *minFaceAnglesForEdges,
-    double *maxFaceAnglesForEdges
+    List<double> &minFaceAnglesForEdges,
+    List<double> &maxFaceAnglesForEdges
 )
 {
     forAll(mesh.edges(), edgeI)
     {
-        calcMinMaxFaceAngleForCurrentMeshEdge(mesh, edgeI, &minFaceAnglesForEdges[edgeI], &maxFaceAnglesForEdges[edgeI]);
+        double minAngle;
+        double maxAngle;
+        calcMinMaxFaceAngleForCurrentMeshEdge(mesh, edgeI, &minAngle, &maxAngle);
+        minFaceAnglesForEdges[edgeI] = minAngle;
+        maxFaceAnglesForEdges[edgeI] = maxAngle;
     }
 
     return 0;
@@ -853,7 +857,7 @@ int calcMinMaxFaceAngleForPoint
         const label edgeI = mesh.pointEdges()[pointI1][pointEdgeI];
         calcMinMaxFaceAngleForEdge(mesh, edgeI, &minAngle, &maxAngle, pointI1, coords1, pointI2, coords2);
 
-        // Info << "    minAngle " << minAngle << " maxAngle " << maxAngle << endl;
+        // Info << "    -- edgeI " << edgeI << " minAngle " << minAngle << " maxAngle " << maxAngle << endl;
         if (*minFaceAngle > minAngle)
             *minFaceAngle = minAngle;
         if (*maxFaceAngle < maxAngle)
@@ -893,23 +897,24 @@ int restrictFaceAngleDeterioration
     // Calculate minimum and maximum face angles for all edges from
     // current mesh
     static const size_t nEdges = size_t(mesh.nEdges());
-    double currentMinAnglesForEdges[nEdges];
-    double currentMaxAnglesForEdges[nEdges];
+    List<double> currentMinAnglesForEdges(nEdges);
+    List<double> currentMaxAnglesForEdges(nEdges);
     calcCurrentMinMaxFaceAnglesForEdges(mesh, currentMinAnglesForEdges, currentMaxAnglesForEdges);
 
     // Map face angle information from edges to points
     static const size_t nPoints = size_t(mesh.nPoints());
-    double currentMinAnglesForPoints[nPoints];
-    double currentMaxAnglesForPoints[nPoints];
+    List<double> currentMinAnglesForPoints(nPoints);
+    List<double> currentMaxAnglesForPoints(nPoints);
     mapCurrentMinMaxFaceAnglesToPoints(mesh, currentMinAnglesForEdges, currentMaxAnglesForEdges, currentMinAnglesForPoints, currentMaxAnglesForPoints);
 
     forAll(origPoints, pointI)
     {
-        if (! isMovingPoint.test(pointI))
-            continue;
-        // Info << "===== Processing point " << pointI << endl;
+        // Angle calculation must be made for all points, also
+        // boundary points, in order to be able to stop angle
+        // deterioration at boundary by neighbour point movement
+        // Info << "===== Processing point " << pointI << " with currentMinAngle " << currentMinAnglesForPoints[pointI] << " and currentMaxAngle " << currentMaxAnglesForPoints[pointI] <<  endl;
 
-        // 1. Do nothing for points whose face angles are in good range
+        // 1. Check nothing for points whose face angles are in good range
         const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
         // Hard-coded value for large angle (for detecting concave edges), for now
         const double largeAngle = M_PI * 170.0 / 180.0;
@@ -921,14 +926,12 @@ int restrictFaceAngleDeterioration
         const vector cCoords = mesh.points()[pointI];
         vector nCoords = newPoints[pointI];
 
-        // Skip if point is not moving
-        if (nCoords == cCoords)
-            continue;
-
         // 2. Calculate new face angles for this point, assuming it
         // moves to nCoords. Surrounding points are kept at current
         // locations. Freeze this point if angle change is towards
         // worse.
+
+        if (nCoords != cCoords)
         {
             double newMinFaceAngle;
             double newMaxFaceAngle;
@@ -956,7 +959,7 @@ int restrictFaceAngleDeterioration
             // Skip this neighbour point if it's not moving
             if (neighCoords == mesh.points()[neighPointI])
                 continue;
-            // Info << "   - checking neighbour point " << neighPointI << endl;
+            // Info << "   - checking moving neighbour point " << neighPointI << endl;
 
             double newMinFaceAngle;
             double newMaxFaceAngle;
