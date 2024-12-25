@@ -841,12 +841,6 @@ int restrictFaceAngleDeterioration
     boolList& isFrozenPoint
 )
 {
-    // Copy new points to temporary point field
-    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
-    pointField& newPoints = tNewPoints.ref();
-    forAll(newPoints, pointI)
-        newPoints[pointI] = origPoints[pointI];
-
     // Calculate minimum and maximum face angles for all edges from
     // current mesh
     static const size_t nEdges = size_t(mesh.nEdges());
@@ -877,7 +871,7 @@ int restrictFaceAngleDeterioration
             continue;
 
         const vector cCoords = mesh.points()[pointI];
-        vector nCoords = newPoints[pointI];
+        vector nCoords = origPoints[pointI];
 
         // 2. Calculate new face angles for this point, assuming it
         // moves to nCoords. Surrounding points are kept at current
@@ -896,8 +890,8 @@ int restrictFaceAngleDeterioration
                 (newMaxFaceAngle > currentMaxAnglesForPoints[pointI])))
             {
                 nCoords = cCoords;
-                newPoints[pointI] = nCoords;
-                Info << "-- Self-froze point " << pointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
+                isFrozenPoint[pointI] = true;
+                // Info << "-- Self-froze point " << pointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
             }
         }
 
@@ -907,7 +901,7 @@ int restrictFaceAngleDeterioration
         forAll(mesh.pointPoints()[pointI], pointNI)
         {
             const label neighPointI = mesh.pointPoints()[pointI][pointNI];
-            const vector neighCoords = newPoints[neighPointI];
+            const vector neighCoords = origPoints[neighPointI];
 
             // Skip this neighbour point if it's not moving
             if (neighCoords == mesh.points()[neighPointI])
@@ -923,16 +917,10 @@ int restrictFaceAngleDeterioration
                 ((newMaxFaceAngle > largeAngle) and
                 (newMaxFaceAngle > currentMaxAnglesForPoints[pointI])))
             {
-                newPoints[neighPointI] = mesh.points()[neighPointI];
-                Info << "-- point " << pointI << " froze neighbour " << neighPointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
+                isFrozenPoint[neighPointI] = true;
+                // Info << "-- point " << pointI << " froze neighbour " << neighPointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
             }
         }
-    }
-
-    // Save new point coordinates to original point field
-    forAll(origPoints, pointI)
-    {
-        origPoints[pointI] = newPoints[pointI];
     }
 
     return 0;
