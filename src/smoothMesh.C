@@ -938,19 +938,6 @@ int restrictFaceAngleDeterioration
     return 0;
 }
 
-// Custom CombineOp for syncPointLocations
-
-template<class T>
-struct pointFreezeOp
-{
-    void operator()(T& x, const T& y) const
-    {
-        // same as minMagSqrEqOp for testing purposes for now
-        x = (magSqr(x) <= magSqr(y) ? x : y);
-    }
-};
-
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main(int argc, char *argv[])
