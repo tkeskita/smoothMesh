@@ -48,8 +48,6 @@ wclean; wmake
 
   - `-totalMinFreeze` option makes `-minEdgeLength` an absolute requirement, freezing short edges, even if edge length would increase during smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only.
 
-  - `-maxEdgeLength` defines edge length above which edge vertices are fully free to move, without any constraints (default 1.001 * minEdgeLength).
-
   - `-minAngle` defines the minimum edge-edge angle for face corners as well as the minimum of the face-face angles of the surrounding edges (in degrees, 0 < value < 180, default 45) below which points are fully frozen in their current location, if either the edge-edge angle or the face-face angle would **decrease** in smoothing. Points are allowed to move if both minimum angle values **increase** with smoothing, regardless of this value.
 
 ## Usage examples

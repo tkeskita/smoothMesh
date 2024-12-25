@@ -159,9 +159,8 @@ double getPointDistance
 }
 
 // Prohibits decrease of edge length by freezing points to current
-// locations. Edge points are fully frozen below minEdgeLength, and
-// fully free to move above maxEdgeLength, with linear interpolation
-// in between. This feature can be used to limit the squishing or
+// locations, if edge length is below minEdgeLength and length is
+// decreasing. This feature is used to limit the squishing or
 // compression of cells near concave features.
 
 int restrictEdgeShortening
@@ -170,21 +169,15 @@ int restrictEdgeShortening
     pointField& origPoints,
     const bitSet isMovingPoint,
     const double minEdgeLength,
-    const double maxEdgeLength,
-    const bool totalMinFreeze
+    const bool totalMinFreeze,
+    boolList& isFrozenPoint
 )
 {
-    // Copy original points for temporary working point field
-    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
-    // tmp<pointField> tNewPoints(new pointField(origPoints)); // TODO: test, not good?
-    pointField& newPoints = tNewPoints.ref();
-
-    forAll(newPoints, pointI)
-        newPoints[pointI] = origPoints[pointI];
-
     forAll(origPoints, pointI)
     {
         if (! isMovingPoint.test(pointI))
+            continue;
+        if (isFrozenPoint[pointI])
             continue;
 
         const vector cCoords = mesh.points()[pointI];
@@ -205,49 +198,20 @@ int restrictEdgeShortening
                 shortestNewEdgeLength = testNewLength;
         }
 
-        // Blending fraction of current (0.0) and new (1.0) point coordinates
-        double frac = 1.0;
-
-        // Unconditional freeze below minEdgeLength if required
+        // Unconditional freeze below minEdgeLength (totalMinFreeze option)
         const double shortestLength = min(shortestNewEdgeLength, shortestCurrentEdgeLength);
         if (totalMinFreeze and (shortestLength < minEdgeLength))
         {
-            frac = 0.0;
+            isFrozenPoint[pointI] = true;
         }
 
-        // Otherwise consider freezing only if edge length decreases
-        else if (shortestNewEdgeLength < shortestCurrentEdgeLength)
+        // Freezeif edge length decreases and length is below threshold value
+        else if ((shortestNewEdgeLength < minEdgeLength) and
+                 (shortestNewEdgeLength < shortestCurrentEdgeLength))
         {
-            // Full freeze below minEdgeLength
-            if (shortestNewEdgeLength < minEdgeLength)
-            {
-                frac = 0.0;
-            }
-
-            // Partial freeze below maxEdgeLength
-            else if (shortestNewEdgeLength < maxEdgeLength)
-            {
-                frac = (shortestNewEdgeLength - minEdgeLength) / (maxEdgeLength - minEdgeLength);
-            }
-
-            // No freeze above maxEdgeLength
-            else
-            {
-                frac = 1.0;
-            }
+            isFrozenPoint[pointI] = true;
         }
 
-        // Blend current and new coordinates
-        const vector newCoords = ((1.0 - frac) * cCoords) + (frac * nCoords);
-
-        // Save the constrained point
-        newPoints[pointI] = newCoords;
-    }
-
-    // Save new point coordinates to original point field
-    forAll(origPoints, pointI)
-    {
-        origPoints[pointI] = newPoints[pointI];
     }
 
     return 0;
@@ -301,6 +265,10 @@ int constrainMaxStepLength
 
     return 0;
 }
+
+/////////////////////////////////////////////////////
+// Help functions for restrictMinEdgeAngleDecrease //
+/////////////////////////////////////////////////////
 
 // Calculate and return the edge-edge angle (in radians,
 // 0 < angle < pi) of two edges which share a common point
@@ -445,47 +413,31 @@ int restrictMinEdgeAngleDecrease
     const fvMesh& mesh,
     pointField& origPoints,
     const bitSet isMovingPoint,
-    const double minEdgeAngleInDegrees
+    const double minEdgeAngleInDegrees,
+    boolList& isFrozenPoint
 )
 {
-    // Copy original points to temporary point field
-    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
-    pointField& newPoints = tNewPoints.ref();
-
-    forAll(newPoints, pointI)
-        newPoints[pointI] = origPoints[pointI];
-
     forAll(origPoints, pointI)
     {
         if (! isMovingPoint.test(pointI))
             continue;
-
-        const vector cCoords = mesh.points()[pointI];
-        vector nCoords = origPoints[pointI];
+        if (isFrozenPoint[pointI])
+            continue;
 
         // Calculate current minimum angle and new minimum angle
         double minCAngle;
         double minNAngle;
-        calc_min_edge_angles(mesh, newPoints, pointI, &minCAngle, &minNAngle);
+        calc_min_edge_angles(mesh, origPoints, pointI, &minCAngle, &minNAngle);
 
         // If minimum angle is below threshold and would decrease,
-        // then don't move the point. Note: This allows angle to
+        // then freeze the point. Note: This allows angle to
         // increase, so points are not frozen permanently.
         const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
 
         if ((minNAngle < smallAngle) and (minNAngle < minCAngle))
         {
-            nCoords = cCoords;
+            isFrozenPoint[pointI] = true;
         }
-
-        // Save the constrained point
-        newPoints[pointI] = nCoords;
-    }
-
-    // Save new point coordinates to original point field
-    forAll(origPoints, pointI)
-    {
-        origPoints[pointI] = newPoints[pointI];
     }
 
     return 0;
@@ -885,7 +837,8 @@ int restrictFaceAngleDeterioration
     const fvMesh& mesh,
     pointField& origPoints,
     const bitSet isMovingPoint,
-    const double minEdgeAngleInDegrees
+    const double minEdgeAngleInDegrees,
+    boolList& isFrozenPoint
 )
 {
     // Copy new points to temporary point field
@@ -1060,13 +1013,6 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "maxEdgeLength",
-        "double",
-        "A quality control feature: Edge length above which edge vertices are fully free to move (default: 1.001 * minEdegeLength)"
-    );
-
-    argList::addOption
-    (
         "minAngle",
         "double",
         "A quality control feature: Edge-edge angle for internal faces below which vertices are fully frozen (in degrees, default: 45)"
@@ -1103,9 +1049,6 @@ int main(int argc, char *argv[])
     double minEdgeLength(0.05);
     args.readIfPresent("minEdgeLength", minEdgeLength);
 
-    double maxEdgeLength(1.001 * minEdgeLength);
-    args.readIfPresent("maxEdgeLength", maxEdgeLength);
-
     bool totalMinFreeze(false);
     args.readIfPresent("totalMinFreeze", totalMinFreeze);
 
@@ -1132,6 +1075,9 @@ int main(int argc, char *argv[])
     calculatePointNormals(mesh, pointNormals, hasPointNormals);
     calculateUniValenceBoundaryMap(mesh, uniValenceBoundaryMap, isInternalPoint);
 
+    // Boolean list for marking frozen points. This list is synced among processors.
+    boolList isFrozenPoint(mesh.nPoints(), false);
+
     label centroidalIters(20);
     args.readIfPresent("centroidalIters", centroidalIters);
 
@@ -1154,25 +1100,32 @@ int main(int argc, char *argv[])
         if (qualityControl)
         {
             // Avoid shortening of short edge length
-            restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, maxEdgeLength, totalMinFreeze);
+            restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, totalMinFreeze, isFrozenPoint);
 
             // Restrict decrease of smallest edge-edge angle
-            restrictMinEdgeAngleDecrease(mesh, newPoints, isInternalPoint, minAngle);
+            restrictMinEdgeAngleDecrease(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
 
             // Restrict deterioration of face-face angles (WIP)
-            // restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle);
+            // restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
         }
 
-        // Synchronize point positions for parallel running
-        syncTools::syncPointPositions
+        // Synchronize and combine the list of frozen points
+        syncTools::syncPointList
         (
             mesh,
-            newPoints,
-            // minMagSqrEqOp<point>(),
-            pointFreezeOp<point>(),
-            point(GREAT, GREAT, GREAT)
+            isFrozenPoint,
+            orEqOp<bool>(),
+            false               // null value
         );
 
+        // Restore original coordinates for frozen points
+        forAll(newPoints, pointI)
+        {
+            if (isFrozenPoint[pointI])
+                newPoints[pointI] = mesh.points()[pointI];
+        }
+
+        // Push coordinates to mesh
         mesh.movePoints(tNewPoints);
 
         Info << endl;
