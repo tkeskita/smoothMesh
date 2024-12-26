@@ -72,7 +72,7 @@ such a way that edges don't collapse on top of each other, like the
 example cell in the figure below (top view on left, front view on
 right).
 
-<p align="left"><img src="images/base_mesh_with_problematic_vertex.png"></p>
+<p align="left"><img src="images/flat_cell.png"></p>
 
 
 ## 3. Restrict deterioration of face-face angles
