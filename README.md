@@ -50,6 +50,10 @@ wclean; wmake
 
   - `-minAngle` defines the minimum edge-edge angle for face corners as well as the minimum of the face-face angles of the surrounding edges (in degrees, 0 < value < 180, default 45) below which points are fully frozen in their current location, if either the edge-edge angle or the face-face angle would **decrease** in smoothing. Points are allowed to move if both minimum angle values **increase** with smoothing, regardless of this value.
 
+## Description of the algorithm
+
+Please see [the algorithm description document](algorithm_description.md).
+
 ## Usage examples
 
 Adjust `-maxStepLength` and `-minEdgeLength` according to you mesh cell size.
