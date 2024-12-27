@@ -3,19 +3,19 @@
 OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
 mesh points by using the Centroidal smoothing algorithm (a version of the
 [Laplacian smoothing algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing),
-which uses surrounding cell centers instead of the neighbouring vertex
-locations to calculate the new vertex position). Optional heuristic
-quality control options exist to constrain the smoothing, to avoid
+which uses surrounding cell centers instead of the neighbour point
+locations to calculate the new point position). Optional heuristic
+quality constraint options exist to constrain the smoothing, to avoid
 self-intersections. No changes to mesh topology are made.
 
 [smoothMesh demo video](https://vimeo.com/1023687267) illustrates mesh
 smoothing on an example mesh, cross-section from which is shown
-below. Without quality controls, centroidal smoothing would move the
-vertex highlighted in blue to the location highlighted with green,
+below. Without quality constraints, centroidal smoothing would move the
+point highlighted in blue to the location highlighted with green,
 which is outside of the domain, and therefore smoothing tends to
 create self-intersecting mesh in the concave part of the geometry in
 this case. Self-intersections like this can be avoided by using
-additional quality controls, which restrict the movement of vertices.
+additional quality constraints, which restrict the movement of vertices.
 
 [![smoothMesh demo video](images/base_mesh_with_problematic_vertex.png)](https://vimeo.com/1023687267)
 
@@ -42,7 +42,7 @@ wclean; wmake
 
 - `-orthogonalBlendingFraction` is the fraction (0 <= value <= 1) by which the edges touching the boundary faces are forced towards orthogonal direction. Zero value causes no orthogonal direction for boundary edges (default 0).
 
-- `-qualityControl true` enables extra quality constraints for smoothing. The constraints limit the tendency of smoothing to compress cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled (default is true), the following options affect the results:
+- `-qualityControl true` enables quality control constraints for smoothing. The constraints limit the tendency of smoothing to squish cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled (default is true), the following options affect the results:
 
   - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location, but only if edge length would decrease during smoothing (default 0.05). Adjust this value for your case.
 
@@ -56,7 +56,7 @@ Please see [the algorithm description document](algorithm_description.md).
 
 ## Usage examples
 
-Adjust `-maxStepLength` and `-minEdgeLength` according to you mesh cell size.
+Adjust `-maxStepLength` and `-minEdgeLength` according to your mesh cell size.
 
 - Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
 - Serial run example: `smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05`

@@ -612,7 +612,7 @@ int findCellFacePair
     return 0;
 }
 
-// Calculate face center for face face as a weighted average of vertex coordinates.
+// Calculate face center for face face as a weighted average of point coordinates.
 // If point label pointI1 > -1, then that point is assumed to be at coords1.
 // If point label pointI2 > -1, then that point is assumed to be at coords2.
 
@@ -969,28 +969,28 @@ int main(int argc, char *argv[])
     (
         "qualityControl",
         "bool",
-        "Enable or disable all quality control features (default: enabled)"
+        "Enable or disable all quality control constraints (default: enabled)"
     );
 
     argList::addOption
     (
         "minEdgeLength",
         "double",
-        "A quality control feature: Edge length below which edge vertices are fully frozen, but only if edge length would decrease in smoothing (default 0.05)"
+        "A quality control constraint: Edge length below which edge vertices are fully frozen, but only if edge length would decrease in smoothing (default 0.05)"
     );
 
     argList::addOption
     (
         "totalMinFreeze",
         "bool",
-        "A quality control feature: Make minEdgeLength an absolute requirement, freezing short edges even if edge length would increase in smoothing (default false)"
+        "A quality control constraint: Make minEdgeLength an absolute requirement, freezing short edges even if edge length would increase in smoothing (default false)"
     );
 
     argList::addOption
     (
         "minAngle",
         "double",
-        "A quality control feature: Edge-edge angle for internal faces below which vertices are fully frozen (in degrees, default: 45)"
+        "A quality control constraint: Angle below which vertices are fully frozen (in degrees, default: 45)"
     );
 
     #include "addOverwriteOption.H"
