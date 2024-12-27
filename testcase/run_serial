@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# First test that OpenFOAM commands are available
+which surfaceFeatureExtract &> /dev/null
+retVal=$?
+if [ $retVal -ne 0 ]; then
+    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM v2312 is probably not sourced correctly?"
+    exit 1
+fi
+
+rm -rf ? ?? ??? constant
+extrude2DMesh MeshedSurface -overwrite
+cp -rv constant/polyMesh 0/
+
+for i in `seq 1 100`; do
+  smoothMesh -centroidalIters 1 -orthogonalBlendingFraction 0 -minEdgeLength 0.02 -qualityControl true -maxStepLength 0.005 -minAngle 10
+done

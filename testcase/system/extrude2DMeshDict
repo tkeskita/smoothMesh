@@ -1,0 +1,24 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      extrude2DMeshDict;
+}
+
+extrudeModel        linearDirection;
+
+patchInfo
+{}
+
+patchType           patch;
+
+nLayers             15;
+
+expansionRatio      1.0;
+
+linearDirectionCoeffs
+{
+    direction       (0 0 1);
+    thickness       1.5;
+}
