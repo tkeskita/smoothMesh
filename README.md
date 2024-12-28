@@ -19,12 +19,14 @@ additional quality constraints, which restrict the movement of vertices.
 
 [![smoothMesh demo video](images/base_mesh_with_problematic_vertex.png)](https://vimeo.com/1023687267)
 
-## Current restrictions
+## Current features and restrictions
 
 - Works on 3D polyhedron meshes
-- Requires a consistent (not self-intersecting or tangled) initial mesh
+- Requires a consistent (not self-intersecting or tangled) initial mesh with "good enough" quality
 - Smoothes internal mesh points only (boundary points are frozen)
 - Developed on OpenFOAM.com v2312
+
+**Warning: This tool is still under active development!**
 
 ## Compilation instructions
 
@@ -38,21 +40,27 @@ wclean; wmake
 
 - `-centroidalIters` specifies the number of smoothing iterations (default 20).
 
-- `-maxStepLength` is the maximum length (in metres) for moving a point in one iteration (default 0.01). Adjust this value for your case. Smoothing process seems to be stable when this value is smaller than about one tenth of cell side length.
+- `-maxStepLength` is the maximum length (in metres) for moving a point in one iteration (default 0.01). Adjust this value for your case. Smoothing process seems to be stable when this value is smaller than about one tenth of minimum cell side length.
 
-- `-orthogonalBlendingFraction` is the fraction (0 <= value <= 1) by which the edges touching the boundary faces are forced towards orthogonal direction. Zero value causes no orthogonal direction for boundary edges (default 0).
+- `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location, but only if edge length would decrease during smoothing (default 0.05). Adjust this value for your case.
 
-- `-qualityControl true` enables quality control constraints for smoothing. The constraints limit the tendency of smoothing to squish cells and create self-intersecting cells near concave geometry features. Without constraints, self-intersections can be created if the mesh contains skewed faces or low determinant cells (`cellDeterminant` according to `checkMesh`). When this option is enabled (default is true), the following options affect the results:
+- `-totalMinFreeze` option causes mesh points on all edges shorter than `-minEdgeLength` to freeze (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only.
 
-  - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location, but only if edge length would decrease during smoothing (default 0.05). Adjust this value for your case.
+- `-orthogonalBlendingFraction` is the fraction (0 <= value <= 1) by which the edges touching the boundary faces are forced towards orthogonal direction. Zero value causes no orthogonal direction for boundary edges (default 0). Warning: This is an experimental option (WIP)!
 
-  - `-totalMinFreeze` option makes `-minEdgeLength` an absolute requirement, freezing short edges, even if edge length would increase during smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only.
+The following options are related to additional **heuristic quality control constraints for smoothing**. The constraints work by disallowing movement of point (freezing of points) if the movement would cause quality of the mesh would suffer too much. Without constraints, centroidal smoothing may squish cells and create self-intersecting cells e.g. near concave geometry features, depending on the mesh details. Have a look at [the algorithm description document](algorithm_description.md) for details.
 
-  - `-minAngle` defines the minimum edge-edge angle for face corners as well as the minimum of the face-face angles of the surrounding edges (in degrees, 0 < value < 180, default 45) below which points are fully frozen in their current location, if either the edge-edge angle or the face-face angle would **decrease** in smoothing. Points are allowed to move if both minimum angle values **increase** with smoothing, regardless of this value.
+**Note:** The old `-qualityControl` option has been superceded by the options below.
+
+- `-edgeAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest edge-edge angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, 0 < value < 180, default 45).
+
+- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, 0 < value < 180, default 45). 170 deg is applied as a maximum value (currently hard coded value).
+
+Please note that `-minAngle` value causes point freezing *only* if the angle is below this value and if the angle would *decrease* in smoothing. Points are allowed to move if the angle value *increases* with smoothing, regardless of this value.
 
 ## Description of the algorithm
 
-Please see [the algorithm description document](algorithm_description.md).
+Please view [the algorithm description document](algorithm_description.md).
 
 ## Usage examples
 

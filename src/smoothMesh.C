@@ -967,9 +967,16 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "qualityControl",
+        "edgeAngleConstraint",
         "bool",
-        "Enable or disable all quality control constraints (default: enabled)"
+        "Option to apply the minimum edge angle control constraint (default: true)"
+    );
+
+    argList::addOption
+    (
+        "faceAngleConstraint",
+        "bool",
+        "Option to apply the minimum and maximum face  angle control constraint (default: true)"
     );
 
     argList::addOption
@@ -1024,14 +1031,24 @@ int main(int argc, char *argv[])
     double minEdgeLength(0.05);
     args.readIfPresent("minEdgeLength", minEdgeLength);
 
+    if (maxStepLength > 0.5 * minEdgeLength)
+    {
+        Pout << "WARNING: The maximum allowed step length is more "
+             << "than half of the minimum edge length! This may "
+             << "cause unstability in smoothing." << endl << endl;
+    }
+
     bool totalMinFreeze(false);
     args.readIfPresent("totalMinFreeze", totalMinFreeze);
 
     double minAngle(45);
     args.readIfPresent("minAngle", minAngle);
 
-    bool qualityControl(true);
-    args.readIfPresent("qualityControl", qualityControl);
+    bool edgeAngleConstraint(true);
+    args.readIfPresent("edgeAngleConstraint", edgeAngleConstraint);
+
+    bool faceAngleConstraint(true);
+    args.readIfPresent("faceAngleConstraint", faceAngleConstraint);
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints());
@@ -1071,17 +1088,19 @@ int main(int argc, char *argv[])
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
 
-        // Additional constraints aiming to avoid quality issues near concave features
-        if (qualityControl)
-        {
-            // Avoid shortening of short edge length
-            restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, totalMinFreeze, isFrozenPoint);
+        // Avoid shortening of short edge length
+        restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, totalMinFreeze, isFrozenPoint);
 
+        if (edgeAngleConstraint)
+        {
             // Restrict decrease of smallest edge-edge angle
             restrictMinEdgeAngleDecrease(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
+        }
 
+        if (faceAngleConstraint)
+        {
             // Restrict deterioration of face-face angles (WIP)
-            // restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
+            restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
         }
 
         // Synchronize and combine the list of frozen points

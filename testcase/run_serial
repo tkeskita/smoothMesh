@@ -13,5 +13,5 @@ extrude2DMesh MeshedSurface -overwrite
 cp -rv constant/polyMesh 0/
 
 for i in `seq 1 100`; do
-  smoothMesh -centroidalIters 1 -orthogonalBlendingFraction 0 -minEdgeLength 0.02 -qualityControl true -maxStepLength 0.005 -minAngle 10
+  smoothMesh -centroidalIters 1 -orthogonalBlendingFraction 0 -minEdgeLength 0.02 -maxStepLength 0.005 -minAngle 10
 done
