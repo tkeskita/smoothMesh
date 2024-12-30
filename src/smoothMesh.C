@@ -18,6 +18,7 @@ Description
 #include "weightedPosition.H"
 #include "meshTools.H"
 #include <float.h>
+#include <bits/stdc++.h> // For std::stack
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
@@ -810,6 +811,7 @@ int calcMinMaxFaceAngleForPoint
         calcMinMaxFaceAngleForEdge(mesh, edgeI, &minAngle, &maxAngle, pointI1, coords1, pointI2, coords2);
 
         // Info << "    -- edgeI " << edgeI << " minAngle " << minAngle << " maxAngle " << maxAngle << endl;
+
         if (*minFaceAngle > minAngle)
             *minFaceAngle = minAngle;
         if (*maxFaceAngle < maxAngle)
@@ -854,14 +856,41 @@ int restrictFaceAngleDeterioration
     List<double> currentMaxAnglesForPoints(nPoints);
     mapCurrentMinMaxFaceAnglesToPoints(mesh, currentMinAnglesForEdges, currentMaxAnglesForEdges, currentMinAnglesForPoints, currentMaxAnglesForPoints);
 
-    forAll(origPoints, pointI)
+    // Debug
+    // labelList test = mesh.cellPoints()[7702];
+    // Info << "Cell 7702 cellCenter " << mesh.C()[7702] << endl;
+    // forAll (test, i)
+    // {
+    //     const label pointI = test[i];
+    //     Info << "pointI " << pointI
+    //          << " min angle " << currentMinAnglesForPoints[pointI]
+    //          << " max angle " << currentMaxAnglesForPoints[pointI]
+    //          << endl;
+    // }
+
+    // Use a stack to walk through all points. If a point is frozen by
+    // it's neighbour then the point must be processed again to allow
+    // recursive neighbour freezing. Use of stack is needed, since
+    // list of items to be processed is modified on the run.
+    std::stack<label> pointStack;
+
+    // Initialize stack with all points. Angle calculation must be
+    // made for all points, also boundary points, in order to be able
+    // to stop angle deterioration at boundary by neighbour point
+    // movement
+    forAll(origPoints, pointi)
+        pointStack.push(pointi);
+
+    while (! pointStack.empty())
     {
-        // Angle calculation must be made for all points, also
-        // boundary points, in order to be able to stop angle
-        // deterioration at boundary by neighbour point movement
+        // Get and remove a point label from stack.
+        const label pointI = pointStack.top();
+        pointStack.pop();
+
         // Info << "===== Processing point " << pointI << " with currentMinAngle " << currentMinAnglesForPoints[pointI] << " and currentMaxAngle " << currentMaxAnglesForPoints[pointI] <<  endl;
 
         // 1. Check nothing for points whose face angles are in good range
+
         const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
         // Hard-coded value for large angle (for detecting concave edges), for now
         const double largeAngle = M_PI * 170.0 / 180.0;
@@ -872,11 +901,16 @@ int restrictFaceAngleDeterioration
 
         const vector cCoords = mesh.points()[pointI];
         vector nCoords = origPoints[pointI];
+        // If this point is already frozen, set coordinates to current
+        // mesh coordinates
+        if (isFrozenPoint[pointI])
+            nCoords = cCoords;
 
-        // 2. Calculate new face angles for this point, assuming it
-        // moves to nCoords. Surrounding points are kept at current
-        // locations. Freeze this point if angle change is towards
-        // worse.
+        // 2. Calculate new face angles for this point, if it's not
+        // frozen. This point is hypothetically moved to new
+        // coordinates, while surrounding points are kept at current
+        // locations. Freeze this point if angle change with the move
+        // of this point deteriorates the angles.
 
         if (nCoords != cCoords)
         {
@@ -884,16 +918,31 @@ int restrictFaceAngleDeterioration
             double newMaxFaceAngle;
             calcMinMaxFaceAngleForPoint(mesh, pointI, nCoords, -1, nCoords, &newMinFaceAngle, &newMaxFaceAngle);
             // Info << "   - own newMinFaceAngle " << newMinFaceAngle << " newMaxFaceAngle " << newMaxFaceAngle << endl;
+
+            // Debug
+            // if (pointI == 6252)
+            // {
+            //     Info << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
+            // }
+
             if (((newMinFaceAngle < smallAngle) and
                 (newMinFaceAngle < currentMinAnglesForPoints[pointI])) or
                 ((newMaxFaceAngle > largeAngle) and
                 (newMaxFaceAngle > currentMaxAnglesForPoints[pointI])))
             {
+                // Freeze this point (self freeze)
                 nCoords = cCoords;
                 isFrozenPoint[pointI] = true;
                 // Info << "-- Self-froze point " << pointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
             }
         }
+
+        // Debug
+        // if (pointI == 6252)
+        // {
+        //     Info << "pointI 6252 cCoords " << cCoords
+        //          << " nCoords " << nCoords << endl;
+        // }
 
         // 3. Calculate the effect from all neighbouring point movements
         // to face angles at this point. Freeze the neighbour point if
@@ -904,6 +953,8 @@ int restrictFaceAngleDeterioration
             const vector neighCoords = origPoints[neighPointI];
 
             // Skip this neighbour point if it's not moving
+            if (isFrozenPoint[neighPointI])
+                continue;
             if (neighCoords == mesh.points()[neighPointI])
                 continue;
             // Info << "   - checking moving neighbour point " << neighPointI << endl;
@@ -917,9 +968,21 @@ int restrictFaceAngleDeterioration
                 ((newMaxFaceAngle > largeAngle) and
                 (newMaxFaceAngle > currentMaxAnglesForPoints[pointI])))
             {
+                // Freeze the neighbour point (neighbour freeze)
                 isFrozenPoint[neighPointI] = true;
+
+                // Add neighbour point index to stack list, as it
+                // needs to be (re)checked after neighbour freezing
+                pointStack.push(neighPointI);
                 // Info << "-- point " << pointI << " froze neighbour " << neighPointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
             }
+
+            // Debug
+            // if (pointI == 6252)
+            // {
+            //     Info << "pointI 6252 neighPointI " << neighPointI << " oldMaxFaceAngle " << currentMaxAnglesForPoints[pointI];
+            //     Info << " newMaxFaceAngle " << newMaxFaceAngle << endl;
+            // }
         }
     }
 
@@ -1076,6 +1139,10 @@ int main(int argc, char *argv[])
     // Carry out centroidal smoothing iterations
     for (label i = 0; i < centroidalIters; ++i)
     {
+        // Reset frozen points
+        forAll(isFrozenPoint, pointI)
+            isFrozenPoint[pointI] = false;
+
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 
