@@ -14,5 +14,5 @@ cp -rv constant/polyMesh 0/
 decomposePar
 
 for i in `seq 1 100`; do
-  mpirun -np 3 smoothMesh -parallel -centroidalIters 1 -orthogonalBlendingFraction 0 -minEdgeLength 0.02 -maxStepLength 0.005 -minAngle 10
+  mpirun -np 3 smoothMesh -parallel -centroidalIters 1 -orthogonalBlendingFraction 0 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15  -edgeAngleConstraint true -faceAngleConstraint true
 done
