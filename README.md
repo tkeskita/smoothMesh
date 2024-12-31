@@ -46,17 +46,15 @@ wclean; wmake
 
 - `-totalMinFreeze` option causes mesh points on all edges shorter than `-minEdgeLength` to freeze (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only.
 
-- `-orthogonalBlendingFraction` is the fraction (0 <= value <= 1) by which the edges touching the boundary faces are forced towards orthogonal direction. Zero value causes no orthogonal direction for boundary edges (default 0). Warning: This is an experimental option (WIP)!
+- `-orthogonalBlendingFraction` is the fraction (0 <= value <= 1) by which the edges touching the boundary faces are forced towards orthogonal direction. Zero value causes no orthogonal direction for boundary edges (default 0). Warning: This is an experimental option (WIP) which currently works correctly only for serial run!
 
 The following options are related to additional **heuristic quality control constraints for smoothing**. The constraints work by disallowing movement of point (freezing of points) if the movement would cause quality of the mesh would suffer too much. Without constraints, centroidal smoothing may squish cells and create self-intersecting cells e.g. near concave geometry features, depending on the mesh details. Have a look at [the algorithm description document](algorithm_description.md) for details.
 
 **Note:** The old `-qualityControl` option has been superceded by the options below.
 
-- `-edgeAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest edge-edge angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, 0 < value < 180, default 45).
+- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, default value 35), and the `-maxAngle` option specifies the maximum angle (in degrees, default value 170).
 
-- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, 0 < value < 180, default 45). 170 deg is applied as a maximum value (currently hard coded value).
-
-Please note that `-minAngle` value causes point freezing *only* if the angle is below this value and if the angle would *decrease* in smoothing. Points are allowed to move if the angle value *increases* with smoothing, regardless of this value.
+- `-minAngle` value causes point freezing *only* if the angle is below this value and if the angle would *decrease* in smoothing. Points are allowed to move if the angle value *increases* with smoothing, regardless of this value. The same applies for the `-maxAngle` option: Freezing takes place only if angle is above the specified value and if the angle would *increase* in smoothing.
 
 ## Description of the algorithm
 
@@ -64,10 +62,17 @@ Please view [the algorithm description document](algorithm_description.md).
 
 ## Usage examples
 
-Adjust `-maxStepLength` and `-minEdgeLength` according to your mesh cell size.
+Adjust at least the `-maxStepLength` and `-minEdgeLength` options according to your mesh cell size.
 
 - Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
 - Serial run example: `smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05`
+
+## Test case
+
+The folder `testcase` contains an artificial test case which contains
+skewed and non-orthogonal cells, as well as variance in geometric
+shell shapes and topology. This is meant to be a challenging (but not
+impossible) task for centroidal smoothing.
 
 ## Getting help and feedback
 

@@ -48,29 +48,20 @@ the blue point to green point location.
 <p align="left"><img src="images/base_mesh_with_problematic_vertex.png"></p>
 
 
-## 2. Restrict decrease of smallest edge-edge angle
+## 2. Restrict decrease of smallest edge-edge angle (obsolete)
 
-This constraint deals only with **the minimum angle between edges
-connected to a mesh point**. For each point, the minimum
-angle is calculated for all edge pairs which share a face and the
-point. First, the current minimum angle is calculated using the
-current mesh point locations. Then, a minimum new angle is calculated
-using new coordinates for points. Three variations are tested in the
-calculation: New position of the center point, new position for one
-edge end point, and new position for the other edge position. Minimum
-of those is selected as the new minimum angle. If the new minimum angle
-is below allowed minimum edge angle (specified with the
-`-minEdgeAngle` option), and if the new minimum angle is smaller than the
-current minimum angle, then the point is frozen.
-
-TODO: Add the neighbour point freezing functionality to edge-edge
-angle checking, like done for face-face angles?
-
-While the smallest edge-edge angle is helpful in catching many bad
-cell shapes, it is not enough if cells are flattened in
-such a way that edges don't collapse on top of each other, like the
-example cell in the figure below (top view on left, front view on
-right).
+This heuristic has been obsoleted and is no longer applied. The idea
+was to use minimum of the angles of face edges meeting at a point as a
+quality criteria: If the minimum edge-edge angle is below a threshold
+value (e.g. 45 deg), and if the movement of the point according to
+centroidal smoothing would decrease the minimum angle further, then
+the mesh point movement would be prohibited. However, the minimum
+edge-edge angle doesn't decrease in cells which are flattened in such
+a way that edges don't collapse on top of each other, like the example
+cell in the figure below (top view on left, front view on right).
+Since the face-face angle approach (described below) seems to catch the
+edge collapse issue as well as sharp angles on mesh points, this
+heuristic was discarded.
 
 <p align="left"><img src="images/flat_cell.png"></p>
 
@@ -79,9 +70,10 @@ right).
 
 This constraint focuses only on **the minimum and maximum angle
 between _cell faces_, which are connected to the all of the edges,
-which surround a single mesh point**. For all mesh points (not just
-internal points!), each point is processed as follows, please refer to
-the example figure below:
+which surround a single mesh point**. The mesh edge-edge angles for
+mesh points are not considered at all in this approach. For all mesh
+points (not just internal points!), each point *p0* is processed as
+follows (please view the example figure below):
 
 - *Minimum and maximum face angles* are calculated for the point *p0* edges
   using the current mesh point locations in the
@@ -102,13 +94,22 @@ the example figure below:
   effect of the move to the minimum and maximum face angles at *p0* is
   calculated using new coordinates of the neighbour points. If minimum
   or maximum face angle at *p0* is deteriorated compared to current
-  values, then *the neighbour point* is frozen.
+  values, then *the neighbour point* is frozen. The frozen neighbour
+  point is additionally processed again according to this procedure,
+  to make sure face angle calculations are correct and no false
+  improvements on the angles take place.
 
-The deterioration of face angles is defined as: Minimum face angle is
-below a threshold value (currently 45 deg), and the minimum angle
-would decrease if the move would be allowed. Similary for maximum
-angle: Maximum angle is above threshold (currently 170 deg), and the
-maximum angle would increase if the move would be allowed.
+**The deterioration of face angle** is defined as:
+
+- Minimum face angle is deteriorated if the minimum face angle is
+  below a threshold value (value provided with option `-minAngle`,
+  default value 35 deg), and the minimum angle would decrease if the
+  move would be allowed.
+
+- Maximum face angle is deteriorated if the maximum angle is above
+  threshold (value provided with option `-maxAngle`, default value 170
+  deg), and the maximum angle would increase if the move would be
+  allowed.
 
 ### The calculation method for face angles
 

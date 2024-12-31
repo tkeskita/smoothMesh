@@ -267,182 +267,6 @@ int constrainMaxStepLength
     return 0;
 }
 
-/////////////////////////////////////////////////////
-// Help functions for restrictMinEdgeAngleDecrease //
-/////////////////////////////////////////////////////
-
-// Calculate and return the edge-edge angle (in radians,
-// 0 < angle < pi) of two edges which share a common point
-// at coordinate cCoords. The two edge end point coordinates are
-// p1Coords and p2Coords.
-
-double edgeEdgeAngle
-(
-    const vector cCoords,
-    const vector p1Coords,
-    const vector p2Coords
-)
-{
-    vector vec1 = (p1Coords - cCoords);
-    vector vec2 = (p2Coords - cCoords);
-    vec1.normalise();
-    vec2.normalise();
-
-    const double cosA = vec1 & vec2;
-
-    // Ensure cos angle is in sane range before calling arc cos
-    const double MAX = 0.99999;
-    const double cosAlpha = std::max(-MAX, std::min(MAX, cosA));
-    const double angle = std::acos(cosAlpha);
-
-    return angle;
-}
-
-// Find the neighbour mesh point indices neighPI1 and neighPI2 for the
-// point with index pointI, where all points are part of face index
-// faceI.
-
-int getNeighbourPoints
-(
-    const fvMesh& mesh,
-    const label centerPointI,
-    const label faceI,
-    label *neighPI1,
-    label *neighPI2
-)
-{
-    int i = 0;
-    const face facePoints = mesh.faces()[faceI];
-    const label nPoints = facePoints.size();
-
-    forAll(facePoints, pointI)
-    {
-        if (facePoints[pointI] == centerPointI)
-        {
-            // Handle index wrapping at beginning and at end
-            label prevI = pointI - 1;
-            if (pointI == 0)
-                prevI = nPoints - 1;
-
-            label nextI = pointI + 1;
-            if (pointI == nPoints - 1)
-                nextI = 0;
-
-            *neighPI1 = facePoints[prevI];
-            *neighPI2 = facePoints[nextI];
-            return 0;
-        }
-        i++;
-    }
-
-    FatalError << "Sanity broken, didn't find neighbour points for center point "
-               << centerPointI << " and face " << faceI << endl
-               << abort(FatalError);
-
-    return 0;
-}
-
-// Calculate and store the minimum edge angles of point with index
-// pointI for current mesh (minCAngleStorage) and a minimum for new
-// mesh points (minNAngleStorage).
-
-int calc_min_edge_angles
-(
-    const fvMesh& mesh,
-    const pointField& newPoints,
-    const label pointI,
-    double *minCAngleStorage,
-    double *minNAngleStorage
-)
-{
-    // Current and new minimum angles
-    double minCAngle = DBL_MAX;
-    double minNAngle = DBL_MAX;
-
-    forAll(mesh.pointFaces()[pointI], pointFI)
-    {
-        // For both edges connected at this point, find the other point index
-        label neighPI1 = 0;
-        label neighPI2 = 0;
-        const label faceI = mesh.pointFaces()[pointI][pointFI];
-        getNeighbourPoints(mesh, pointI, faceI, &neighPI1, &neighPI2);
-
-        // Current angle from current mesh
-        const vector cp0 = mesh.points()[pointI];
-        const vector cp1 = mesh.points()[neighPI1];
-        const vector cp2 = mesh.points()[neighPI2];
-        const double cAngle = edgeEdgeAngle(cp0, cp1, cp2);
-
-        // New angle from current mesh
-        const vector np0 = newPoints[pointI];
-        const double nAngle0 = edgeEdgeAngle(np0, cp1, cp2);
-
-        // New angle from new mesh points
-        const vector np1 = newPoints[neighPI1];
-        const vector np2 = newPoints[neighPI2];
-        const double nAngle1 = edgeEdgeAngle(np0, np1, np2);
-
-        // New angle from combination of current and new mesh points
-        // Note: These might not be really necessary, but do it for now
-        // for completeness sake.
-        const double nAngle2 = edgeEdgeAngle(np0, cp1, np2);
-        const double nAngle3 = edgeEdgeAngle(np0, np1, cp2);
-
-        // Use smallest of new angles.
-        const double nAngle = min(min(min(nAngle0, nAngle1), nAngle2), nAngle3);
-
-        // Update minimum values
-        if (cAngle < minCAngle)
-            minCAngle = cAngle;
-        if (nAngle < minNAngle)
-            minNAngle = nAngle;
-    }
-
-    // Save minimum angles to storage
-    *minCAngleStorage = minCAngle;
-    *minNAngleStorage = minNAngle;
-
-    return 0;
-}
-
-// Restrict decrease of smallest edge-edge angles when angle is below
-// minAngle (in degrees). This is meant to avoid creation of
-// self-intersections for concave features.
-
-int restrictMinEdgeAngleDecrease
-(
-    const fvMesh& mesh,
-    pointField& origPoints,
-    const bitSet isMovingPoint,
-    const double minEdgeAngleInDegrees,
-    boolList& isFrozenPoint
-)
-{
-    forAll(origPoints, pointI)
-    {
-        if (! isMovingPoint.test(pointI))
-            continue;
-        if (isFrozenPoint[pointI])
-            continue;
-
-        // Calculate current minimum angle and new minimum angle
-        double minCAngle;
-        double minNAngle;
-        calc_min_edge_angles(mesh, origPoints, pointI, &minCAngle, &minNAngle);
-
-        // If minimum angle is below threshold and would decrease,
-        // then freeze the point. Note: This allows angle to
-        // increase, so points are not frozen permanently.
-        const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
-
-        if ((minNAngle < smallAngle) and (minNAngle < minCAngle))
-        {
-            isFrozenPoint[pointI] = true;
-        }
-    }
-
-    return 0;
-}
 
 ///////////////////////////////////////////////////////
 // Help functions for restrictFaceAngleDeterioration //
@@ -839,7 +663,8 @@ int restrictFaceAngleDeterioration
     const fvMesh& mesh,
     pointField& origPoints,
     const bitSet isMovingPoint,
-    const double minEdgeAngleInDegrees,
+    const double minFaceAngleInDegrees,
+    const double maxFaceAngleInDegrees,
     boolList& isFrozenPoint
 )
 {
@@ -891,9 +716,8 @@ int restrictFaceAngleDeterioration
 
         // 1. Check nothing for points whose face angles are in good range
 
-        const double smallAngle = M_PI * minEdgeAngleInDegrees / 180.0;
-        // Hard-coded value for large angle (for detecting concave edges), for now
-        const double largeAngle = M_PI * 170.0 / 180.0;
+        const double smallAngle = M_PI * minFaceAngleInDegrees / 180.0;
+        const double largeAngle = M_PI * maxFaceAngleInDegrees / 180.0;
 
         if ((currentMinAnglesForPoints[pointI] > smallAngle) and
             (currentMaxAnglesForPoints[pointI] < largeAngle))
@@ -1030,13 +854,6 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "edgeAngleConstraint",
-        "bool",
-        "Option to apply the minimum edge angle control constraint (default: true)"
-    );
-
-    argList::addOption
-    (
         "faceAngleConstraint",
         "bool",
         "Option to apply the minimum and maximum face  angle control constraint (default: true)"
@@ -1060,7 +877,14 @@ int main(int argc, char *argv[])
     (
         "minAngle",
         "double",
-        "A quality control constraint: Angle below which vertices are fully frozen (in degrees, default: 45)"
+        "A quality control constraint: Face-face angle below which vertices are fully frozen (in degrees, default: 35)"
+    );
+
+    argList::addOption
+    (
+        "maxAngle",
+        "double",
+        "A quality control constraint: Face-face angle above which vertices are fully frozen (in degrees, default: 170)"
     );
 
     #include "addOverwriteOption.H"
@@ -1104,11 +928,11 @@ int main(int argc, char *argv[])
     bool totalMinFreeze(false);
     args.readIfPresent("totalMinFreeze", totalMinFreeze);
 
-    double minAngle(45);
+    double minAngle(35);
     args.readIfPresent("minAngle", minAngle);
 
-    bool edgeAngleConstraint(true);
-    args.readIfPresent("edgeAngleConstraint", edgeAngleConstraint);
+    double maxAngle(170);
+    args.readIfPresent("maxAngle", maxAngle);
 
     bool faceAngleConstraint(true);
     args.readIfPresent("faceAngleConstraint", faceAngleConstraint);
@@ -1158,16 +982,10 @@ int main(int argc, char *argv[])
         // Avoid shortening of short edge length
         restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, totalMinFreeze, isFrozenPoint);
 
-        if (edgeAngleConstraint)
-        {
-            // Restrict decrease of smallest edge-edge angle
-            restrictMinEdgeAngleDecrease(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
-        }
-
         if (faceAngleConstraint)
         {
             // Restrict deterioration of face-face angles (WIP)
-            restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, isFrozenPoint);
+            restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, maxAngle, isFrozenPoint);
         }
 
         // Synchronize and combine the list of frozen points
