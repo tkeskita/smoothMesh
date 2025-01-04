@@ -51,7 +51,7 @@ int findInternalMeshPoints
         isInternalPoint.set(pointI);
 
     // Remove points on boundary patches from bit set, except not
-    // processor patches
+    // processor patches nor empty patches
     const faceList& faces = mesh.faces();
     forAll(mesh.boundary(), patchI)
     {
@@ -948,7 +948,7 @@ int main(int argc, char *argv[])
     args.readIfPresent("faceAngleConstraint", faceAngleConstraint);
 
     // Storage for markers for internal points
-    bitSet isInternalPoint(mesh.nPoints());
+    bitSet isInternalPoint(mesh.nPoints(), false);
 
     // Storage for point normals (for boundary smoothing)
     tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), Zero));
@@ -958,9 +958,13 @@ int main(int argc, char *argv[])
     bitSet hasPointNormals(mesh.nPoints(), false);
 
     // Storage for point-to-boundary-point map (for boundary smoothing)
-    labelList uniValenceBoundaryMap(mesh.nPoints());
+    labelList uniValenceBoundaryMap(mesh.nPoints(), UNDEF_LABEL);
+
+    // Storage for number of edge hops to reach boundary for all mesh points
+    labelList pointHopsToBoundary(mesh.nPoints(), UNDEF_LABEL);
 
     findInternalMeshPoints(mesh, isInternalPoint);
+    calculatePointHopsToBoundary(mesh, pointHopsToBoundary);
     calculatePointNormals(mesh, pointNormals, hasPointNormals);
     calculateUniValenceBoundaryMap(mesh, uniValenceBoundaryMap, isInternalPoint);
 
@@ -970,13 +974,14 @@ int main(int argc, char *argv[])
     label centroidalIters(20);
     args.readIfPresent("centroidalIters", centroidalIters);
 
-    // Carry out centroidal smoothing iterations
+    // Carry out smoothing iterations
     for (label i = 0; i < centroidalIters; ++i)
     {
         // Reset frozen points
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;
 
+        // Get basis for new point locations from centroidal smoothing
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 

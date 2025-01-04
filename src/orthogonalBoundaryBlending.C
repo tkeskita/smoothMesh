@@ -25,6 +25,94 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Calculate the minimum number of edge hops required to reach
+// boundary point for all mesh points
+
+int calculatePointHopsToBoundary
+(
+    const fvMesh& mesh,
+    labelList& pointHopsToBoundary
+)
+{
+    // Set boundary and empty patch points to zero hops
+    forAll(mesh.boundary(), patchI)
+    {
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+        if ((! isA<processorPolyPatch>(pp)) and (! isA<emptyPolyPatch>(pp)))
+        {
+            const label startI = mesh.boundary()[patchI].start();
+            const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+            for (label faceI = startI; faceI < endI; faceI++)
+            {
+                const face& f = mesh.faces()[faceI];
+                forAll (f, pointI)
+                {
+                    const label i = mesh.faces()[faceI][pointI];
+                    pointHopsToBoundary[i] = 0;
+                }
+            }
+        }
+    }
+
+    // Storage for new hop counts
+    labelList newHopCounts(mesh.nPoints(), -1);
+
+    // Propagate distance to boundary to internal mesh points until
+    // all points have been defined
+    label nUndefinedPoints = 1;
+    while (nUndefinedPoints > 0)
+    {
+        nUndefinedPoints = 0;
+
+        forAll(mesh.points(), pointI)
+        {
+            // Skip the point if a hop value exists already
+            if (pointHopsToBoundary[pointI] >= 0)
+                continue;
+
+            // Increase undefined points counter if this point has not
+            // yet been processed
+            if (pointHopsToBoundary[pointI] == -1)
+                ++nUndefinedPoints;
+
+            // Find the maximum count of neighbour hops
+            label hops = -1;
+            forAll(mesh.pointPoints(pointI), pointPpI)
+            {
+                const label neighI = mesh.pointPoints(pointI)[pointPpI];
+                if (pointHopsToBoundary[neighI] > hops)
+                    hops = pointHopsToBoundary[neighI];
+            }
+
+            // If maximum is > 0, then assign maximum + 1 to current point
+            if (hops >= 0)
+            {
+                newHopCounts[pointI] = hops + 1;
+                Info << "Set pointI " << pointI << " to " << hops + 1 << endl;
+            }
+        }
+
+        // Merge new values with old
+        forAll(mesh.points(), pointI)
+        {
+            if (newHopCounts[pointI] > pointHopsToBoundary[pointI])
+                pointHopsToBoundary[pointI] = newHopCounts[pointI];
+        }
+
+        // Synchronize hop list among processors
+        syncTools::syncPointList
+        (
+            mesh,
+            pointHopsToBoundary,
+            maxEqOp<label>(),
+            -1               // null value
+        );
+    }
+
+    return 0;
+}
+
 // Calculate point normals of boundary points starting from
 // polyMesh. Stores point normals to pointNormals field, and marks the
 // availability of point normal vector in hasPointNormal bit set.
