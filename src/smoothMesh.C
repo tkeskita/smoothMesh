@@ -858,13 +858,6 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "orthogonalBlendingFraction",
-        "double",
-        "Fraction to force orthogonal side edges on the boundary (default 0 (=no orthogonality is forced))"
-    );
-
-    argList::addOption
-    (
         "faceAngleConstraint",
         "bool",
         "Option to apply the minimum and maximum face  angle control constraint (default: true)"
@@ -898,6 +891,42 @@ int main(int argc, char *argv[])
         "A quality control constraint: Face-face angle above which vertices are fully frozen (in degrees, default: 170)"
     );
 
+    argList::addOption
+    (
+        "boundaryMaxBlendingFraction",
+        "double",
+        "Maximum fraction to force orthogonal boundary edges and their length (default: 0 (=no orthogonal blending is applied in smoothing))"
+    );
+
+    argList::addOption
+    (
+        "boundaryEdgeLength",
+        "double",
+        "Target thickness for first boundary layer (default: 0.05)"
+    );
+
+    argList::addOption
+    (
+        "boundaryExpansionRatio",
+        "double",
+        "The expansion ratio for boundary layer thickness increase (default: 1.3)"
+    );
+
+    argList::addOption
+    (
+        "boundaryMinLayers",
+        "label",
+        "Number of boundary layers experiencing full boundary blending (default: 1)"
+    );
+
+    argList::addOption
+    (
+        "boundaryMaxLayers",
+        "label",
+        "Number of boundary layers beyond which orthogonal blending ceases to affect smoothing (default: 4)"
+    );
+
+
     #include "addOverwriteOption.H"
     #include "setRootCase.H"
     #include "createTime.H"
@@ -919,9 +948,6 @@ int main(int argc, char *argv[])
             runTime.setTime(instant(timeValue), 0);
         }
     }
-
-    double orthogonalBlendingFraction(0.0);
-    args.readIfPresent("orthogonalBlendingFraction", orthogonalBlendingFraction);
 
     double maxStepLength(0.01);
     args.readIfPresent("maxStepLength", maxStepLength);
@@ -947,6 +973,23 @@ int main(int argc, char *argv[])
 
     bool faceAngleConstraint(true);
     args.readIfPresent("faceAngleConstraint", faceAngleConstraint);
+
+
+    double boundaryMaxBlendingFraction(0.0);
+    args.readIfPresent("boundaryMaxBlendingFraction", boundaryMaxBlendingFraction);
+
+    double boundaryEdgeLength(0.05);
+    args.readIfPresent("boundaryEdgeLength", boundaryEdgeLength);
+
+    double boundaryExpansionRatio(1.3);
+    args.readIfPresent("boundaryExpansionRatio", boundaryExpansionRatio);
+
+    label boundaryMinLayers(1);
+    args.readIfPresent("boundaryMinLayers", boundaryMinLayers);
+
+    label boundaryMaxLayers(4);
+    args.readIfPresent("boundaryMaxLayers", boundaryMaxLayers);
+
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints(), false);
@@ -992,10 +1035,24 @@ int main(int argc, char *argv[])
         pointField& newPoints = tNewPoints.ref();
 
         // Optional orthogonal boundary approach
-        if (orthogonalBlendingFraction > SMALL)
+        if (boundaryMaxBlendingFraction > SMALL)
         {
             // Blend orthogonal and centroidal coordinates to newPoints
-            blendWithOrthogonalPoints(mesh, newPoints, isInternalPoint, pointToBoundaryPointMap, pointToNeighPointMap, pointHopsToBoundary, pointNormals, orthogonalBlendingFraction);
+            blendWithOrthogonalPoints
+            (
+                 mesh,
+                 newPoints,
+                 isInternalPoint,
+                 pointToBoundaryPointMap,
+                 pointToNeighPointMap,
+                 pointHopsToBoundary,
+                 pointNormals,
+                 boundaryMaxBlendingFraction,
+                 boundaryEdgeLength,
+                 boundaryExpansionRatio,
+                 boundaryMinLayers,
+                 boundaryMaxLayers + 1  // +1 for correct number of layers
+             );
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing

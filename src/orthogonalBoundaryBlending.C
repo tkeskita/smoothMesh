@@ -286,7 +286,11 @@ int blendWithOrthogonalPoints
     const labelList& pointToNeighPointMap,
     const labelList& pointHopsToBoundary,
     const pointField& pointNormals,
-    const double orthogonalBlendingFraction
+    const double boundaryMaxBlendingFraction,
+    const double boundaryEdgeLength,
+    const double boundaryExpansionRatio,
+    const double boundaryMinLayers,
+    const double boundaryMaxLayers
 )
 {
     forAll(mesh.points(), pointI)
@@ -320,10 +324,14 @@ int blendWithOrthogonalPoints
                        << pointI << endl << abort(FatalError);
 
         // Target length of edge between neighbour and self
-        const double length = 0.02 * pow(1.2, nHops);
+        const label maxHops = min((nHops - 1), boundaryMaxLayers);
+        const double length = boundaryEdgeLength * pow(boundaryExpansionRatio, maxHops);
 
         // Target blending fraction
-        const double blendFrac = orthogonalBlendingFraction * pow(0.8, nHops);
+        const double slope = -boundaryMaxBlendingFraction / (boundaryMaxLayers - boundaryMinLayers);
+        const double y0 = -slope * boundaryMaxLayers;
+        const double y = y0 + slope * nHops;
+        const double blendFrac = max(0.0, min(y, boundaryMaxBlendingFraction));
 
         const vector newPoint = newPoints[pointI];
         const vector neighCoords = mesh.points()[neighPointI];
