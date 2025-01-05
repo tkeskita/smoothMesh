@@ -23,6 +23,7 @@ Description
 // Value for initializing lists with an "undefined" value
 #define UNDEF_LABEL -1
 #define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
+#define ZERO_VECTOR vector(0, 0, 0)
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
@@ -951,22 +952,27 @@ int main(int argc, char *argv[])
     bitSet isInternalPoint(mesh.nPoints(), false);
 
     // Storage for point normals (for boundary smoothing)
-    tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), Zero));
+    tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), ZERO_VECTOR));
     pointField& pointNormals = tPointNormals.ref();
 
-    // Storage for markers for existence of  point normals (for boundary smoothing)
-    bitSet hasPointNormals(mesh.nPoints(), false);
+    // Storage for point-to-boundary-point map (for orthogonal
+    // boundary approach)
+    labelList pointToBoundaryPointMap(mesh.nPoints(), UNDEF_LABEL);
 
-    // Storage for point-to-boundary-point map (for boundary smoothing)
-    labelList uniValenceBoundaryMap(mesh.nPoints(), UNDEF_LABEL);
+    // Storage for point-to-neighbour-point map. Following this
+    // point-to-point mapping will lead to the boundary point
+    // specified in pointToBoundaryPointMap (for orthogonal boundary
+    // approach)
+    labelList pointToNeighPointMap(mesh.nPoints(), UNDEF_LABEL);
 
-    // Storage for number of edge hops to reach boundary for all mesh points
+    // Storage for number of edge hops to reach boundary for all mesh
+    // points (for orthogonal boundary approach)
     labelList pointHopsToBoundary(mesh.nPoints(), UNDEF_LABEL);
 
     findInternalMeshPoints(mesh, isInternalPoint);
     calculatePointHopsToBoundary(mesh, pointHopsToBoundary);
-    calculatePointNormals(mesh, pointNormals, hasPointNormals);
-    calculateUniValenceBoundaryMap(mesh, uniValenceBoundaryMap, isInternalPoint);
+    calculateBoundaryPointNormals(mesh, pointNormals);
+    calculateBoundaryPointMap(mesh, pointToBoundaryPointMap, pointToNeighPointMap, pointHopsToBoundary);
 
     // Boolean list for marking frozen points. This list is synced among processors.
     boolList isFrozenPoint(mesh.nPoints(), false);
@@ -981,14 +987,15 @@ int main(int argc, char *argv[])
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;
 
-        // Get basis for new point locations from centroidal smoothing
+        // Calculate new point locations using centroidal smoothing
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 
-        // Orthogonal point blending
+        // Optional orthogonal boundary approach
         if (orthogonalBlendingFraction > SMALL)
         {
-            blendWithOrthogonalPoints(mesh, newPoints, uniValenceBoundaryMap, hasPointNormals, pointNormals, orthogonalBlendingFraction);
+            // Blend orthogonal and centroidal coordinates to newPoints
+            blendWithOrthogonalPoints(mesh, newPoints, isInternalPoint, pointToBoundaryPointMap, pointToNeighPointMap, pointHopsToBoundary, pointNormals, orthogonalBlendingFraction);
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
