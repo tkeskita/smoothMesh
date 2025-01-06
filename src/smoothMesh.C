@@ -993,29 +993,36 @@ int main(int argc, char *argv[])
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints(), false);
+    findInternalMeshPoints(mesh, isInternalPoint);
+
+
+    // Storage for number of edge hops to reach boundary for all mesh
+    // points (for boundary smoothing)
+    labelList pointHopsToBoundary(mesh.nPoints(), -1);
 
     // Storage for point normals (for boundary smoothing)
     tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), ZERO_VECTOR));
     pointField& pointNormals = tPointNormals.ref();
 
-    // Storage for point-to-boundary-point map (for orthogonal
-    // boundary approach)
-    labelList pointToBoundaryPointMap(mesh.nPoints(), UNDEF_LABEL);
+    // Storage for neighbour point locations (for boundary smoothing)
+    tmp<pointField> tNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
+    pointField& neighCoords = tNeighCoords.ref();
 
-    // Storage for point-to-neighbour-point map. Following this
-    // point-to-point mapping will lead to the boundary point
-    // specified in pointToBoundaryPointMap (for orthogonal boundary
-    // approach)
+    // Storage for marking neighbour point being inside same processor
+    // domain (for boundary smoothing)
+    bitSet isNeighInProc(mesh.nPoints(), false);
+
+    // Storage for index map from point to neighbour point inside same
+    // processor domain (for boundary smoothing)
     labelList pointToNeighPointMap(mesh.nPoints(), UNDEF_LABEL);
 
-    // Storage for number of edge hops to reach boundary for all mesh
-    // points (for orthogonal boundary approach)
-    labelList pointHopsToBoundary(mesh.nPoints(), UNDEF_LABEL);
-
-    findInternalMeshPoints(mesh, isInternalPoint);
-    calculatePointHopsToBoundary(mesh, pointHopsToBoundary);
-    calculateBoundaryPointNormals(mesh, pointNormals);
-    calculateBoundaryPointMap(mesh, pointToBoundaryPointMap, pointToNeighPointMap, pointHopsToBoundary);
+    // Preparations for optional orthogonal boundary smoothing
+    if (boundaryMaxBlendingFraction > SMALL)
+    {
+        calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
+        calculateBoundaryPointNormals(mesh, pointNormals);
+        propagateNeighInfo(mesh, isNeighInProc, pointToNeighPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
+    }
 
     // Boolean list for marking frozen points. This list is synced among processors.
     boolList isFrozenPoint(mesh.nPoints(), false);
@@ -1034,19 +1041,21 @@ int main(int argc, char *argv[])
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 
-        // Optional orthogonal boundary approach
+        // Optional orthogonal boundary smoothing
         if (boundaryMaxBlendingFraction > SMALL)
         {
+            // Update neighbour coordinates and synchronize among processors
+            updateNeighCoords(mesh, isNeighInProc, pointToNeighPointMap, neighCoords);
+
             // Blend orthogonal and centroidal coordinates to newPoints
             blendWithOrthogonalPoints
             (
                  mesh,
                  newPoints,
                  isInternalPoint,
-                 pointToBoundaryPointMap,
-                 pointToNeighPointMap,
                  pointHopsToBoundary,
                  pointNormals,
+                 neighCoords,
                  boundaryMaxBlendingFraction,
                  boundaryEdgeLength,
                  boundaryExpansionRatio,
