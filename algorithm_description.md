@@ -152,3 +152,89 @@ that it allows better evaluation of concave angles (>180 deg face
 angles), like *a1+a2* in the figure.
 
 <p align="left"><img src="images/face_angle.png"></p>
+
+
+## 4. Boundary layer treatment
+
+The boundary layer related options of smoothMesh allow identification
+and special handling of prismatic cell edges near mesh
+boundaries. This feature can be used to constrain centroidal smoothing
+for boundary layers. Without constraining, the centroidal algorithm
+tends to increase boundary layer cell thickness to match surrounding
+cell size. Additionally, the orthogonal direction of boundary layer
+cell edges may be skewed.
+
+Shortly described, the algorithm first identifies the **prismatic
+edges** in the mesh (cyan edges in the figure below), creates a
+**mapping between edge points**, and uses that mapping to **propagate
+the surface normal direction from a unique boundary point** along the
+path of connected prismatic edges. These information, along with
+target cell thickness for each boundary layer, are used to calculate
+an **orthogonal point coordinate**, which is then blended with the
+point coordinate from centroidal smoothing, using a **weight factor
+dependent on the boundary layer number**. This algorithm is described
+below in more detail.
+
+<p align="left"><img src="images/orthogonal_edge_paths.png"></p>
+
+**The identification of prismatic edges** is done by first calculating
+**a number of edge hops to boundary** for all mesh points. Initially,
+all points are assigned an *undefined hop value* (-1), and boundary points
+are assigned a hop value of zero. Then the hop value are assigned for
+internal points iteratively: The hop value of a point is the maximum
+hop value of any neighbour point, incremented by one (undefined values
+are not counted). This assignment of hop values iteratively results in
+the number of point hops shown with colored numbers in the figure
+above. Note that the edge hop value is also the number of boundary
+layer for cells of a point located "towards" the boundary.
+
+**The prismatic edges are identified from the hop values** of each point
+simply by calculating the number of neighbour points with a hop value
+*smaller than the hop number of current point*. If *only one* such
+neighbour point exists, then the edge towards that neighbour is a
+prismatic edge, which leads towards a unique boundary
+point. This procedure results in the cyan edges shown in the figure
+above.
+
+Note that if there are more than one neighbour points with a hop value
+smaller than current point's hop value, then it means that no unique
+path to a single boundary point exists (white points in the figure
+above). For example, point *p8* (part of a triangular face) has two
+such boundary points as neighbour, *p0* and *p1*. Similarly, point *p14*
+(part of quad face) has two such boundary points as neighbours, *p6* and
+*p15*. These points are left free for centroidal smoothing.
+
+The uniqueness of prismatic edge paths formed above is important, as
+they can be used to propagate a target point normal direction for all
+edge points along the path from the boundary point. Ideally, the
+prismatic edge path should be orthogonal to boundary surface. That is,
+the prismatic edges should align with the boundary point normal as
+much as possible, so the boundary point normal direction is used for
+aligning the prismatic edges.
+
+The length of the prismatic edges is used an approximation for the
+boundary layer thickness. Since the information of number of hops to
+boundary is also available, it is possible to make the target for the
+edge length a function of layer number. Currently, the target edge
+length for each layer is calculated by using a *target thickness for
+the first boundary layer* (specified with the `-boundaryEdgeLength`
+option), which is then multiplied by an *expansion ratio*
+(`-boundaryExpansionRatio` option) for the subsequent layers, to get
+inflation of boundary layers.
+
+Finally, the orthogonal target coordinates for each prismatic edge
+point is calculated by using the current point coordinates of lower
+edge point (the point closer to boundary), which is projected by
+target edge length towards the direction specified by the boundary
+point normal direction, to get the new orthogonal coordinates. Since
+there are now two competing new coordinates for all internal prismatic
+edge points (the orthogonal point coordinates, and the centroidal
+point coordinates), a weighting function is used to blend the two into
+a unique target. Currently, the weighting fuction uses a simple linear
+interpolation with clamping. It is specified with a maximum blending
+factor (specified with `-boundaryMaxBlendingFraction` option) which is
+applied for layer numbers smaller than a given minimum number of
+layers (specified with `-boundaryMinLayers` option). The linear part
+of the orthogonal point weight drops to zero for layer numbers
+exceeding a maximum number of layers (specified with
+`-boundaryMaxLayers` option).
