@@ -4,19 +4,8 @@ Library
 
 Description
     Special treatment of boundary cell layer, with aim to increase
-    orthogonality of internal side faces on the cell layer.
-
-    Idea is to find internal mesh points which have only one edge
-    connection to the boundary points. The ideal direction for those
-    edges is opposite of the boundary point vertex normal direction.
-    The edge length is calculated by trigonometric projection from
-    the current point location to the (inverted) vertex normal vector.
-    The resulting point is called Orthogonal point coordinate.
-
-    To avoid intersections caused by non-orthogonal meshes, the new
-    point location is a weighted average of the point coordinate from
-    main smoothing method and the Orthogonal point coordinate using
-    a blending weight factor (orthogonalBlendingFraction).
+    orthogonality and control thickness of side edges (prismatic
+    edges) on boundary cell layers.
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"
@@ -179,6 +168,50 @@ int calculateBoundaryPointNormals
     return 0;
 }
 
+// A sentinel function to check if a point is a boundary point and not
+// part of a patch eligible for boundary layer treatment
+
+bool boundaryPatchCheck
+(
+    const fvMesh& mesh,
+    const label pointI,
+    const labelList& patchIds,
+    const label nHops
+)
+{
+    // Pass if point is not at boundary
+    if (nHops > 1)
+        return true;
+
+    // Pass if point is found in an allowed patch
+    for (const label patchI : patchIds)
+    {
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+
+        // Skip processor and empty patches
+        if (isA<processorPolyPatch>(pp))
+            continue;
+        if (isA<emptyPolyPatch>(pp))
+            continue;
+
+        const label startI = mesh.boundary()[patchI].start();
+        const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+        for (label faceI = startI; faceI < endI; faceI++)
+        {
+            const face& f = mesh.faces()[faceI];
+            forAll (f, facePointI)
+            {
+                const label testPointI = mesh.faces()[faceI][facePointI];
+                if (testPointI == pointI)
+                    return true;
+            }
+        }
+    }
+
+    // Fail otherwise
+    return false;
+}
 
 // Propagate the point normal vectors from boundary points to internal
 // points, to be used for orthogonal alignment of internal edges.
@@ -189,6 +222,7 @@ int calculateBoundaryPointNormals
 int propagateNeighInfo
 (
     const fvMesh& mesh,
+    const labelList& patchIds,
     bitSet& isNeighInProc,
     labelList& pointToNeighPointMap,
     pointField& pointNormals,
@@ -231,6 +265,12 @@ int propagateNeighInfo
             // hop number, then there is a mapping to boundary
             if (nNeighHops == 1)
             {
+                // If point is a boundary point, then do nothing if
+                // the point does not belong to a patch eligible for
+                // boundary layer treatment
+                if (! boundaryPatchCheck(mesh, neighPointI, patchIds, nHops))
+                    continue;
+
                 // Mark that the neighbour point is inside this
                 // processor domain
                 isNeighInProc.set(pointI);

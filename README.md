@@ -77,6 +77,8 @@ Warning: This is an experimental feature (WIP)!
 
 - `-boundaryMaxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default: 4).
 
+- `-patches` option can be used to limit the boundary layer treatment to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`.
+
 
 ## Description of the algorithm
 

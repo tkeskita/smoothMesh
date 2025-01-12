@@ -19,6 +19,7 @@ Description
 #include "meshTools.H"
 #include <bits/stdc++.h> // For std::stack
 #include "vectorList.H"
+#include "stringListOps.H"  // For stringListOps::findMatching()
 
 // Value for initializing lists with an "undefined" value
 #define UNDEF_LABEL -1
@@ -824,6 +825,56 @@ int restrictFaceAngleDeterioration
     return 0;
 }
 
+
+// Copied getSelectedPatches function from
+// https://develop.openfoam.com/Development/openfoam/-/blob/OpenFOAM-v2412/applications/utilities/surface/surfaceMeshExtract/surfaceMeshExtract.C
+
+labelList getSelectedPatches
+(
+    const polyBoundaryMesh& patches,
+    const wordRes& allow,
+    const wordRes& deny
+)
+{
+    // Name-based selection
+    labelList indices
+    (
+        stringListOps::findMatching
+        (
+            patches,
+            allow,
+            deny,
+            nameOp<polyPatch>()
+        )
+    );
+
+
+    // Remove undesirable patches
+
+    label count = 0;
+    for (const label patchi : indices)
+    {
+        const polyPatch& pp = patches[patchi];
+
+        if (isType<emptyPolyPatch>(pp))
+        {
+            continue;
+        }
+        else if (Pstream::parRun() && bool(isA<processorPolyPatch>(pp)))
+        {
+            break; // No processor patches for parallel output
+        }
+
+        indices[count] = patchi;
+        ++count;
+    }
+
+    indices.resize(count);
+
+    return indices;
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main(int argc, char *argv[])
@@ -926,6 +977,14 @@ int main(int argc, char *argv[])
         "Number of boundary layers beyond which orthogonal blending ceases to affect smoothing (default: 4)"
     );
 
+    argList::addOption
+    (
+        "patches",
+        "wordRes",
+        "Specify single patch or multiple patches for boundary layer treatment.\n"
+        "All patches are included by default.\n"
+        "For example 'walls' or '( stator \"rotor.*\" )'"
+    );
 
     #include "addOverwriteOption.H"
     #include "setRootCase.H"
@@ -948,6 +1007,18 @@ int main(int argc, char *argv[])
             runTime.setTime(instant(timeValue), 0);
         }
     }
+
+    // Read in patches for boundary layer treatment
+    wordRes includePatches, excludePatches;
+    if (args.readListIfPresent<wordRe>("patches", includePatches))
+    {
+        Info<< "Patches for boundary layer treatment limited to "
+            << flatOutput(includePatches) << nl << endl;
+    }
+
+    // List of patches for boundary layer treatment
+    const polyBoundaryMesh& bMesh = mesh.boundaryMesh();
+    const labelList patchIds = getSelectedPatches(bMesh, includePatches, excludePatches);
 
     double maxStepLength(0.01);
     args.readIfPresent("maxStepLength", maxStepLength);
@@ -1021,7 +1092,7 @@ int main(int argc, char *argv[])
     {
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
         calculateBoundaryPointNormals(mesh, pointNormals);
-        propagateNeighInfo(mesh, isNeighInProc, pointToNeighPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
+        propagateNeighInfo(mesh, patchIds, isNeighInProc, pointToNeighPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
     }
 
     // Boolean list for marking frozen points. This list is synced among processors.
