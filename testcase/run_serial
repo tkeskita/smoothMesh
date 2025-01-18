@@ -17,3 +17,20 @@ cp -rv constant/polyMesh 0/
 for i in `seq 1 100`; do
   smoothMesh -centroidalIters 1 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'
 done
+
+# Test cases for illustration of wrong usage
+
+# No boundary layers, without faceAngleConstraint, produces self-intersections
+# smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -faceAngleConstraint false
+
+# No boundary layers, too large minAngle does not allow much smoothing
+# smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 45 -maxAngle 160 -faceAngleConstraint true
+
+# No boundary layers, faceAngleConstraint creates mesh without self-intersections
+# smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true
+
+# Boundary layers without patches specification creates boundary layers on outer walls too
+# smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01
+
+# Boundary layers for patch named default, best result
+# smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'
