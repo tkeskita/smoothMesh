@@ -140,5 +140,7 @@ Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLengt
 
 ## Getting help and feedback
 
-Please use Github issues section for asking help. If you like this
+Please use Github issues section for reporting bugs. If you like this
 tool, please star this repository in Github!
+
+[Link to discussion thread on CFD-Online for discussions](https://www.cfd-online.com/Forums/openfoam-community-contributions/258267-smoothmesh-mesh-smoothing-tool-improve-mesh-quality.html)
