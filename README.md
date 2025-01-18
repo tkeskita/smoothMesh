@@ -17,7 +17,7 @@ topology of the mesh. Self-intersections can be avoided by using
 additional quality constraints, which restrict the movement of
 vertices.
 
-<img src="images/base_mesh_with_problematic_vertex.png" width="800"/>
+<img src="images/base_mesh_with_problematic_vertex.png" width="600"/>
 
 ## Current features and restrictions
 
@@ -101,28 +101,34 @@ skewed and non-orthogonal cells, as well as variance in geometric
 shell shapes and topology. This is meant to be a challenging (but not
 impossible) task for centroidal smoothing.
 
-<img src="images/testcase_00_original_mesh.png" width="800"/>
-Figure: Testcase original mesh.
+Figure below: Testcase original mesh.
 
-<img src="images/testcase_01_self_intersections.png" width="800"/>
-Figure: No boundary layers, without faceAngleConstraint, produces self-intersections.
+<img src="images/testcase_00_original_mesh.png" width="600"/>
+
+Figure below: No boundary layers, without faceAngleConstraint, produces self-intersections.
 Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -faceAngleConstraint false`
 
-<img src="images/testcase_02_large_minAngle.png" width="800"/>
-Figure: No boundary layers, too large minAngle does not allow much smoothing.
+<img src="images/testcase_01_self_intersections.png" width="600"/>
+
+Figure below: No boundary layers, too large minAngle does not allow much smoothing.
 Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 45 -maxAngle 160 -faceAngleConstraint true`
 
-<img src="images/testcase_03_small_minAngle.png" width="800"/>
-Figure: No boundary layers, faceAngleConstraint creates mesh without self-intersections.
+<img src="images/testcase_02_large_minAngle.png" width="600"/>
+
+Figure below: No boundary layers, faceAngleConstraint creates mesh without self-intersections.
 Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true`
 
-<img src="images/testcase_04_layers_without_patches_specified.png" width="800"/>
-Figure: Boundary layers without patches specification creates boundary layers on outer walls too.
+<img src="images/testcase_03_small_minAngle.png" width="600"/>
+
+Figure below: Boundary layers without patches specification creates boundary layers on outer walls too.
 Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01`
 
-<img src="images/testcase_05_layers_with_patches.png" width="800"/>
-Figure: Boundary layers for patch named default, best result.
+<img src="images/testcase_04_layers_without_patches_specified.png" width="600"/>
+
+Figure below: Boundary layers for patch named default, best result.
 Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'`
+
+<img src="images/testcase_05_layers_with_patches.png" width="600"/>
 
 
 ## Getting help and feedback
