@@ -939,7 +939,7 @@ int main(int argc, char *argv[])
     (
         "maxAngle",
         "double",
-        "A quality control constraint: Face-face angle above which vertices are fully frozen (in degrees, default: 170)"
+        "A quality control constraint: Face-face angle above which vertices are fully frozen (in degrees, default: 160)"
     );
 
     argList::addOption
@@ -1039,7 +1039,7 @@ int main(int argc, char *argv[])
     double minAngle(35);
     args.readIfPresent("minAngle", minAngle);
 
-    double maxAngle(170);
+    double maxAngle(160);
     args.readIfPresent("maxAngle", maxAngle);
 
     bool faceAngleConstraint(true);

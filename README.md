@@ -57,7 +57,7 @@ The following options are related to additional **heuristic quality control cons
 
 **Note:** The old `-qualityControl` option has been superceded by the options below.
 
-- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, default value 35), and the `-maxAngle` option specifies the maximum angle (in degrees, default value 170).
+- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle (default is true). When this option is enabled, the `-minAngle` option defines the minimum angle (in degrees, default value 35), and the `-maxAngle` option specifies the maximum angle (in degrees, default value 160).
 
 - Note: `-minAngle` value causes point freezing *only* if the angle is below this value and if the angle would *decrease* in smoothing. Points are allowed to move if the angle value *increases* with smoothing, regardless of this value. The same applies for the `-maxAngle` option: Freezing takes place only if angle is above the specified value and if the angle would *increase* in smoothing.
 
