@@ -105,6 +105,9 @@ skewed and non-orthogonal cells, as well as variance in geometric
 cell shapes and topology. This is meant to be a challenging (but not
 impossible) task for centroidal smoothing.
 
+[Video of the smoothing process](https://vimeo.com/1048255821) on a
+horizontal cross-section.
+
 Figures below illustrate how smoothing can go wrong (or right),
 depending on the parameters applied.
 
