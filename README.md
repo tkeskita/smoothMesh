@@ -147,3 +147,9 @@ Please use Github issues section for reporting bugs. If you like this
 tool, please star this repository in Github!
 
 [Link to discussion thread on CFD-Online for discussions](https://www.cfd-online.com/Forums/openfoam-community-contributions/258267-smoothmesh-mesh-smoothing-tool-improve-mesh-quality.html)
+
+### OpenFOAM Trade Mark Notice
+
+This offering is not approved or endorsed by OpenCFD Limited, producer
+and distributor of the OpenFOAM software via www.openfoam.com, and
+owner of the OPENFOAM® and OpenCFD® trade marks.
