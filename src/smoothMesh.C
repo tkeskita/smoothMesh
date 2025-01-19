@@ -21,7 +21,7 @@ Description
 #include "vectorList.H"
 #include "stringListOps.H"  // For stringListOps::findMatching()
 
-// Value for initializing lists with an "undefined" value
+// Macros for value definitions
 #define UNDEF_LABEL -1
 #define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
 #define ZERO_VECTOR vector(0, 0, 0)
@@ -58,19 +58,23 @@ int findInternalMeshPoints
     forAll(mesh.boundary(), patchI)
     {
         const polyPatch& pp = mesh.boundaryMesh()[patchI];
-        if ((! isA<processorPolyPatch>(pp)) and (! isA<emptyPolyPatch>(pp)))
-        {
-            const label startI = mesh.boundary()[patchI].start();
-            const label endI = startI + mesh.boundary()[patchI].Cf().size();
 
-            for (label faceI = startI; faceI < endI; faceI++)
+        // Skip processor and empty patches
+        if (isA<processorPolyPatch>(pp))
+            continue;
+        if (isA<emptyPolyPatch>(pp))
+            continue;
+
+        const label startI = mesh.boundary()[patchI].start();
+        const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+        for (label faceI = startI; faceI < endI; faceI++)
+        {
+            const face& f = mesh.faces()[faceI];
+            forAll (f, pointI)
             {
-                const face& f = mesh.faces()[faceI];
-                forAll (f, pointI)
-                {
-                    const label i = faces[faceI][pointI];
-                    isInternalPoint.unset(i);
-                }
+                const label i = faces[faceI][pointI];
+                isInternalPoint.unset(i);
             }
         }
     }
@@ -165,10 +169,11 @@ double getPointDistance
     return mag(v);
 }
 
-// Prohibits decrease of edge length by freezing points to current
-// locations, if edge length is below minEdgeLength and length is
-// decreasing. This feature is used to limit the squishing or
-// compression of cells near concave features.
+// Quality control function which prohibits the decrease of edge
+// length by freezing points to current locations, if edge length is
+// below minEdgeLength and length is decreasing. This feature is used
+// to limit the squishing or compression of cells near concave
+// features.
 
 int restrictEdgeShortening
 (
@@ -212,7 +217,8 @@ int restrictEdgeShortening
             isFrozenPoint[pointI] = true;
         }
 
-        // Freezeif edge length decreases and length is below threshold value
+        // Otherwise freeze only if edge length decreases and length
+        // is below threshold value
         else if ((shortestNewEdgeLength < minEdgeLength) and
                  (shortestNewEdgeLength < shortestCurrentEdgeLength))
         {
@@ -224,9 +230,10 @@ int restrictEdgeShortening
     return 0;
 }
 
-// Constrain the length of a step jump to new coordinates by an
-// absolute length value. This increases the stability of the
-// smoothing process, in case target coordinates are far off.
+// Quality control function to constrain the length of a step jump to
+// new coordinates by an absolute length value. This increases the
+// stability of the smoothing process, in case target coordinates are
+// far off.
 
 int constrainMaxStepLength
 (
@@ -251,7 +258,7 @@ int constrainMaxStepLength
         vector nCoords = origPoints[pointI];
 
         // Scale down the length of the jump from current coordinates
-        // towards new coordinates if jump would be otherwise too long
+        // towards new coordinates if jump would be too long
         const vector stepDir = nCoords - cCoords;
         const double stepLength = mag(stepDir);
         if (stepLength > maxStepLength)
@@ -319,8 +326,8 @@ int mapCurrentMinMaxFaceAnglesToPoints
     return 0;
 }
 
-// Calculate angle between two edge points using a midpoint.
-// Assumes unit length for all point vectors.
+// Calculate sum of angles between two edge unit vectors and a center
+// unit vector. Assumes unit length for all vectors.
 
 double calcEdgeCenterEdgeAngle
 (
@@ -368,7 +375,6 @@ int calcMinMaxFinalProjectedAngle
         const vector p1 = pVecs[f1I];
         const vector cC = cVecs[i];
         const double angle = calcEdgeCenterEdgeAngle(p0, cC, p1);
-        // Info << "i " << i << " f0I=" << f0I << " f1I=" << f1I << " -- " << p0 << p1 << cC << " angle " << angle << endl;
 
         if (angle < minAngle)
             minAngle = angle;
@@ -378,11 +384,12 @@ int calcMinMaxFinalProjectedAngle
 
     minFaceAngle = minAngle;
     maxFaceAngle = maxAngle;
+
     return 0;
 }
 
-// Finds the pair of faces which are part of the cellI, and stores the
-// face labels.
+// Find the pair of faces which are part of the cell cellI, and store
+// the face label pair.
 
 int findCellFacePair
 (
@@ -403,13 +410,12 @@ int findCellFacePair
         const label faceI = faceIs[i];
         const label ownerI = mesh.owner()[faceI];
 
-        // Must guard neighbour index search to below nInternalFaces to
-        // avoid "Invalid read of size 4" error from valgrind
+        // Guard that neighbour index search to below nInternalFaces
+        // to avoid "Invalid read of size 4" error from valgrind
+
         label neighI = -1;
         if (faceI < nInternalFaces)
             neighI = mesh.neighbour()[faceI];
-
-        // Info << "faceI " << faceI << " owner " << ownerI << " neigh " << neighI << endl;
 
         if (ownerI == cellI)
         {
@@ -419,7 +425,9 @@ int findCellFacePair
                 face1I = i;
         }
 
-        // neighI is zero for boundary faces, needs extra check
+        // neighI is not defined for boundary faces, therefore it
+        // needs an extra check
+
         if ((faceI < nInternalFaces) and (neighI == cellI))
         {
             if (face0I == -1)
@@ -444,12 +452,11 @@ int findCellFacePair
     // Save the face pair
     f0I = face0I;
     f1I = face1I;
-    // Info << "cellI " << cellI << " face pair: " << face0I << " " << face1I << endl;
 
     return 0;
 }
 
-// Calculate face center for face face as a weighted average of point coordinates.
+// Calculate face center for face faceI as a weighted average of point coordinates.
 // If point label pointI1 > -1, then that point is assumed to be at coords1.
 // If point label pointI2 > -1, then that point is assumed to be at coords2.
 
@@ -478,11 +485,12 @@ vector calcFaceCenter
     }
 
     center /= double(mesh.faces()[faceI].size());
+
     return center;
 }
 
 // Calculate minimum and maximum face angles for a single edge, with
-// optional move of pointI1 and pointI2 to given coordinates.
+// optional move of pointI1 to coords1 and pointI2 to coords2.
 
 int calcMinMaxFaceAngleForEdge
 (
@@ -497,9 +505,8 @@ int calcMinMaxFaceAngleForEdge
 )
 {
     // Find all faces of this edge
-    const List<label> edgeFaces = mesh.edgeFaces(edgeI);
+    const labelList edgeFaces = mesh.edgeFaces(edgeI);
     const label nFaces = edgeFaces.size();
-    // Info << "edge " << edgeI << " faces " << nFaces << endl;
 
     const edge e = mesh.edges()[edgeI];
 
@@ -525,8 +532,8 @@ int calcMinMaxFaceAngleForEdge
     // Edge normal vector
     const vector eVec = (e1 - e0).normalise();
 
-    // Edge center and edge normal vector defines the plane where
-    // points are projected to, prior to angle calculation.
+    // Note: Edge center and edge normal vector defines the plane
+    // where points are projected to, prior to angle calculation.
 
     // Calculate the projected face center vectors
     vectorList pVecs(nFaces, UNDEF_VECTOR);  // projected coordinates
@@ -555,17 +562,17 @@ int calcMinMaxFaceAngleForEdge
     // belonging to all cells of the edge. There are always
     // exactly two faces for each cell, connected at the
     // edge. Search face indices for the face pairs.
+
     const labelList edgeCells = mesh.edgeCells(edgeI);
     const int nCells = edgeCells.size();
     labelList f0Is(nCells, UNDEF_LABEL);  // index of first face of the cell
     labelList f1Is(nCells, UNDEF_LABEL);  // index of second face of the cell
-    vectorList cVecs(nCells, UNDEF_VECTOR);  // projected cell center
+    vectorList cVecs(nCells, UNDEF_VECTOR);  // projected cell center coordinates
 
+    // Calculate, project and save projected cell center coordinates
     forAll(edgeCells, i)
     {
         findCellFacePair(mesh, edgeCells[i], faceIs, nFaces, f0Is[i], f1Is[i]);
-
-        // Calculate, project and save projected cell center coordinates
         const label cellI = edgeCells[i];
         const vector cellCenter = mesh.C()[cellI];
         const vector cf = cCoords - cellCenter;
@@ -579,7 +586,6 @@ int calcMinMaxFaceAngleForEdge
     // projected point data and save to storage
     calcMinMaxFinalProjectedAngle(nCells, pVecs, cVecs, faceIs, f0Is, f1Is, minFaceAngle, maxFaceAngle);
 
-    // Info << "     edgeI " << edgeI << " minFaceAngle " << *minFaceAngle << " maxFaceAngle " << *maxFaceAngle << endl;
     return 0;
 }
 
@@ -621,7 +627,8 @@ int calcCurrentMinMaxFaceAnglesForEdges
 }
 
 // Calculate and store minimum and maximum face angle for argument
-// first point, with optional movement of points to given coordinates.
+// first point pointI1, with optional movement of pointI2 to given
+// coordinates.
 
 int calcMinMaxFaceAngleForPoint
 (
@@ -639,14 +646,13 @@ int calcMinMaxFaceAngleForPoint
     maxFaceAngle = 0.0;
 
     // Loop over all point edges to find min and max angle
+
     forAll(mesh.pointEdges()[pointI1], pointEdgeI)
     {
         double minAngle;
         double maxAngle;
         const label edgeI = mesh.pointEdges()[pointI1][pointEdgeI];
         calcMinMaxFaceAngleForEdge(mesh, edgeI, minAngle, maxAngle, pointI1, coords1, pointI2, coords2);
-
-        // Info << "    -- edgeI " << edgeI << " minAngle " << minAngle << " maxAngle " << maxAngle << endl;
 
         if (minFaceAngle > minAngle)
             minFaceAngle = minAngle;
@@ -658,17 +664,14 @@ int calcMinMaxFaceAngleForPoint
 }
 
 
-// Restrict decrease of smallest face-face angles when angle is below
-// minAngle (in degrees). This is another angle heuristic (in addition
-// to edge-edge angle heuristic), meant to avoid creation of
-// self-intersections for concave features. The edge-edge angle
-// version is not enough for cases where cell is flat and warped, and
-// edge directions are highly non-orthogonal, e.g. due to edge length
-// decrease. Face-face angle can be thought of a measure which is
-// correlated with squished or folded cell shapes. In addition to
-// prohibit the decrease of minimum face-face angle of a point, it is
-// also necessary to freeze movement of neighbouring points if their
-// movement would decrease the minimum angle at the current point.
+// Quality control function to restrict the decrease of smallest
+// face-face angles when angle is below minAngle (in degrees). This is
+// meant to avoid creation of self-intersections. The face-face angle
+// can be thought of a measure which quantifies squishing or folding
+// of cell faces. In addition to prohibiting the deterioration of
+// face-face angles of each point, it is also necessary to freeze
+// movement of neighbouring points if their movement would deteriorate
+// the angles at the current point.
 
 int restrictFaceAngleDeterioration
 (
@@ -693,18 +696,6 @@ int restrictFaceAngleDeterioration
     List<double> currentMaxAnglesForPoints(nPoints, GREAT);
     mapCurrentMinMaxFaceAnglesToPoints(mesh, currentMinAnglesForEdges, currentMaxAnglesForEdges, currentMinAnglesForPoints, currentMaxAnglesForPoints);
 
-    // Debug
-    // labelList test = mesh.cellPoints()[7702];
-    // Info << "Cell 7702 cellCenter " << mesh.C()[7702] << endl;
-    // forAll (test, i)
-    // {
-    //     const label pointI = test[i];
-    //     Info << "pointI " << pointI
-    //          << " min angle " << currentMinAnglesForPoints[pointI]
-    //          << " max angle " << currentMaxAnglesForPoints[pointI]
-    //          << endl;
-    // }
-
     // Use a stack to walk through all points. If a point is frozen by
     // it's neighbour then the point must be processed again to allow
     // recursive neighbour freezing. Use of stack is needed, since
@@ -724,8 +715,6 @@ int restrictFaceAngleDeterioration
         const label pointI = pointStack.top();
         pointStack.pop();
 
-        // Info << "===== Processing point " << pointI << " with currentMinAngle " << currentMinAnglesForPoints[pointI] << " and currentMaxAngle " << currentMaxAnglesForPoints[pointI] <<  endl;
-
         // 1. Check nothing for points whose face angles are in good range
 
         const double smallAngle = M_PI * minFaceAngleInDegrees / 180.0;
@@ -737,6 +726,7 @@ int restrictFaceAngleDeterioration
 
         const vector cCoords = mesh.points()[pointI];
         vector nCoords = origPoints[pointI];
+
         // If this point is already frozen, set coordinates to current
         // mesh coordinates
         if (isFrozenPoint[pointI])
@@ -753,13 +743,6 @@ int restrictFaceAngleDeterioration
             double newMinFaceAngle;
             double newMaxFaceAngle;
             calcMinMaxFaceAngleForPoint(mesh, pointI, nCoords, -1, nCoords, newMinFaceAngle, newMaxFaceAngle);
-            // Info << "   - own newMinFaceAngle " << newMinFaceAngle << " newMaxFaceAngle " << newMaxFaceAngle << endl;
-
-            // Debug
-            // if (pointI == 6252)
-            // {
-            //     Info << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
-            // }
 
             if (((newMinFaceAngle < smallAngle) and
                 (newMinFaceAngle < currentMinAnglesForPoints[pointI])) or
@@ -769,20 +752,13 @@ int restrictFaceAngleDeterioration
                 // Freeze this point (self freeze)
                 nCoords = cCoords;
                 isFrozenPoint[pointI] = true;
-                // Info << "-- Self-froze point " << pointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
             }
         }
-
-        // Debug
-        // if (pointI == 6252)
-        // {
-        //     Info << "pointI 6252 cCoords " << cCoords
-        //          << " nCoords " << nCoords << endl;
-        // }
 
         // 3. Calculate the effect from all neighbouring point movements
         // to face angles at this point. Freeze the neighbour point if
         // angle becomes worse than it currently is.
+
         forAll(mesh.pointPoints()[pointI], pointNI)
         {
             const label neighPointI = mesh.pointPoints()[pointI][pointNI];
@@ -793,12 +769,11 @@ int restrictFaceAngleDeterioration
                 continue;
             if (neighCoords == mesh.points()[neighPointI])
                 continue;
-            // Info << "   - checking moving neighbour point " << neighPointI << endl;
 
             double newMinFaceAngle;
             double newMaxFaceAngle;
             calcMinMaxFaceAngleForPoint(mesh, pointI, nCoords, neighPointI, neighCoords, newMinFaceAngle, newMaxFaceAngle);
-            // Info << "   - neighbour " << neighPointI << " newMinFaceAngle " << newMinFaceAngle << " newMaxFaceAngle " << newMaxFaceAngle << endl;
+
             if (((newMinFaceAngle < smallAngle) and
                 (newMinFaceAngle < currentMinAnglesForPoints[pointI])) or
                 ((newMaxFaceAngle > largeAngle) and
@@ -810,15 +785,7 @@ int restrictFaceAngleDeterioration
                 // Add neighbour point index to stack list, as it
                 // needs to be (re)checked after neighbour freezing
                 pointStack.push(neighPointI);
-                // Info << "-- point " << pointI << " froze neighbour " << neighPointI << " MinFaceAngle c&n:" << currentMinAnglesForPoints[pointI] << " " << newMinFaceAngle << " MaxFaceAngle c&n:" << currentMaxAnglesForPoints[pointI] << " " << newMaxFaceAngle << endl;
             }
-
-            // Debug
-            // if (pointI == 6252)
-            // {
-            //     Info << "pointI 6252 neighPointI " << neighPointI << " oldMaxFaceAngle " << currentMaxAnglesForPoints[pointI];
-            //     Info << " newMaxFaceAngle " << newMaxFaceAngle << endl;
-            // }
         }
     }
 
@@ -826,7 +793,7 @@ int restrictFaceAngleDeterioration
 }
 
 
-// Copied getSelectedPatches function from
+// Help function to get patch numbers from regex. Copied from
 // https://develop.openfoam.com/Development/openfoam/-/blob/OpenFOAM-v2412/applications/utilities/surface/surfaceMeshExtract/surfaceMeshExtract.C
 
 labelList getSelectedPatches
@@ -881,7 +848,7 @@ int main(int argc, char *argv[])
 {
     argList::addNote
     (
-        "Move mesh points to increase mesh quality"
+        "Move internal mesh points to increase mesh quality"
     );
     #include "addRegionOption.H"
     #include "addOverwriteOption.H"
@@ -911,42 +878,42 @@ int main(int argc, char *argv[])
     (
         "faceAngleConstraint",
         "bool",
-        "Option to apply the minimum and maximum face  angle control constraint (default: true)"
+        "Option to apply the minimum and maximum face angle constraint (default: true)"
     );
 
     argList::addOption
     (
         "minEdgeLength",
         "double",
-        "A quality control constraint: Edge length below which edge vertices are fully frozen, but only if edge length would decrease in smoothing (default 0.05)"
+        "Edge length below which edge points are frozen if edge length would decrease in smoothing (default 0.05)"
     );
 
     argList::addOption
     (
         "totalMinFreeze",
         "bool",
-        "A quality control constraint: Make minEdgeLength an absolute requirement, freezing short edges even if edge length would increase in smoothing (default false)"
+        "Makes minEdgeLength an absolute requirement, freezing short edges even if edge length would increase in smoothing (default false)"
     );
 
     argList::addOption
     (
         "minAngle",
         "double",
-        "A quality control constraint: Face-face angle below which vertices are fully frozen (in degrees, default: 35)"
+        "Face-face angle below which points are frozen (in degrees, default: 35)"
     );
 
     argList::addOption
     (
         "maxAngle",
         "double",
-        "A quality control constraint: Face-face angle above which vertices are fully frozen (in degrees, default: 160)"
+        "Face-face angle above which points are frozen (in degrees, default: 160)"
     );
 
     argList::addOption
     (
         "boundaryMaxBlendingFraction",
         "double",
-        "Maximum fraction to force orthogonal boundary edges and their length (default: 0 (=no orthogonal blending is applied in smoothing))"
+        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0)"
     );
 
     argList::addOption
@@ -960,28 +927,28 @@ int main(int argc, char *argv[])
     (
         "boundaryExpansionRatio",
         "double",
-        "The expansion ratio for boundary layer thickness increase (default: 1.3)"
+        "The expansion ratio for the increase in boundary layer thickness (default: 1.3)"
     );
 
     argList::addOption
     (
         "boundaryMinLayers",
         "label",
-        "Number of boundary layers experiencing full boundary blending (default: 1)"
+        "Number of outermost boundary layers that receive maximum blending (default: 1)"
     );
 
     argList::addOption
     (
         "boundaryMaxLayers",
         "label",
-        "Number of boundary layers beyond which orthogonal blending ceases to affect smoothing (default: 4)"
+        "Number of boundary layers affected by the boundary layer treatment (default: 4)"
     );
 
     argList::addOption
     (
         "patches",
         "wordRes",
-        "Specify single patch or multiple patches for boundary layer treatment.\n"
+        "Specify single patch or multiple patches for the boundary layer treatment.\n"
         "All patches are included by default.\n"
         "For example 'walls' or '( stator \"rotor.*\" )'"
     );
@@ -1016,7 +983,7 @@ int main(int argc, char *argv[])
             << flatOutput(includePatches) << nl << endl;
     }
 
-    // List of patches for boundary layer treatment
+    // Generate a list of patches for boundary layer treatment
     const polyBoundaryMesh& bMesh = mesh.boundaryMesh();
     const labelList patchIds = getSelectedPatches(bMesh, includePatches, excludePatches);
 
@@ -1045,7 +1012,6 @@ int main(int argc, char *argv[])
     bool faceAngleConstraint(true);
     args.readIfPresent("faceAngleConstraint", faceAngleConstraint);
 
-
     double boundaryMaxBlendingFraction(0.0);
     args.readIfPresent("boundaryMaxBlendingFraction", boundaryMaxBlendingFraction);
 
@@ -1066,28 +1032,27 @@ int main(int argc, char *argv[])
     bitSet isInternalPoint(mesh.nPoints(), false);
     findInternalMeshPoints(mesh, isInternalPoint);
 
-
     // Storage for number of edge hops to reach boundary for all mesh
-    // points (for boundary smoothing)
+    // points (for boundary layer treatment)
     labelList pointHopsToBoundary(mesh.nPoints(), -1);
 
-    // Storage for point normals (for boundary smoothing)
+    // Storage for point normals (for boundary layer treatment)
     tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), ZERO_VECTOR));
     pointField& pointNormals = tPointNormals.ref();
 
-    // Storage for neighbour point locations (for boundary smoothing)
+    // Storage for neighbour point locations (for boundary layer treatment)
     tmp<pointField> tNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
     pointField& neighCoords = tNeighCoords.ref();
 
     // Storage for marking neighbour point being inside same processor
-    // domain (for boundary smoothing)
+    // domain (for boundary layer treatment)
     bitSet isNeighInProc(mesh.nPoints(), false);
 
     // Storage for index map from point to neighbour point inside same
-    // processor domain (for boundary smoothing)
+    // processor domain (for boundary layer treatment)
     labelList pointToNeighPointMap(mesh.nPoints(), UNDEF_LABEL);
 
-    // Preparations for optional orthogonal boundary smoothing
+    // Preparations for optional orthogonal boundary layer treatment
     if (boundaryMaxBlendingFraction > SMALL)
     {
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
@@ -1112,7 +1077,7 @@ int main(int argc, char *argv[])
         tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
         pointField& newPoints = tNewPoints.ref();
 
-        // Optional orthogonal boundary smoothing
+        // Optional orthogonal boundary layer treatment
         if (boundaryMaxBlendingFraction > SMALL)
         {
             // Update neighbour coordinates and synchronize among processors
@@ -1143,7 +1108,7 @@ int main(int argc, char *argv[])
 
         if (faceAngleConstraint)
         {
-            // Restrict deterioration of face-face angles (WIP)
+            // Restrict deterioration of face-face angles
             restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, maxAngle, isFrozenPoint);
         }
 

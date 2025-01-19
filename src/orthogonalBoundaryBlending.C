@@ -3,14 +3,14 @@ Library
     Orthogonal Boundary Blending
 
 Description
-    Special treatment of boundary cell layer, with aim to increase
-    orthogonality and control thickness of side edges (prismatic
-    edges) on boundary cell layers.
+    Special treatment of prismatic boundary layers, with aim to
+    increase orthogonality and control the thickness of side edges
+    (prismatic edges) on boundary cell layers.
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"
 
-// Value for initializing lists with an "undefined" value
+// Macros for value definitions
 #define UNDEF_LABEL -1
 #define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
 #define ZERO_VECTOR vector(0, 0, 0)
@@ -81,7 +81,6 @@ int calculatePointHopsToBoundary
             if (maxHops >= 0)
             {
                 newHopCounts[pointI] = maxHops + 1;
-                // Info << "Set pointI " << pointI << " to " << maxHops + 1 << endl;
             }
         }
 
@@ -106,9 +105,9 @@ int calculatePointHopsToBoundary
 }
 
 // Calculate point normals of boundary points starting from
-// polyMesh. Stores point normals to pointNormals field. Point
-// normals are not calculated for processor and empty patch points nor
-// for internal mesh points.
+// polyMesh. Store point normals to pointNormals field. Point normals
+// are not calculated for processor and empty patch points nor for
+// internal mesh points.
 
 int calculateBoundaryPointNormals
 (
@@ -143,7 +142,6 @@ int calculateBoundaryPointNormals
             {
                 const label pointI = f[facePointI];
                 pointNormals[pointI] -= Sf;
-                // Info << "Setting pointI " << pointI << " normal " << Sf << endl;
             }
         }
     }
@@ -160,7 +158,6 @@ int calculateBoundaryPointNormals
     // Normalize the vectors
     forAll(pointNormals, pointI)
     {
-        // Info << "pointI " << pointI << " normal " << pointNormals[pointI] << endl;
         if (pointNormals[pointI] != ZERO_VECTOR)
             pointNormals[pointI].normalise();
     }
@@ -215,7 +212,7 @@ bool boundaryPatchCheck
 
 // Propagate the point normal vectors from boundary points to internal
 // points, to be used for orthogonal alignment of internal edges.
-// This is done only for those internal mesh points which have a
+// This is done only for the internal mesh points which have a
 // unique shortest edge hop route to one and only one boundary point
 // by an edge.
 
@@ -322,6 +319,7 @@ int updateNeighCoords
         if (neighI < 0)
             FatalError << "Sanity broken, neighI does not exist for pointI "
                        << pointI << endl << abort(FatalError);
+
         // Save coordinates of the neighbour point
         neighCoords[pointI] = mesh.points()[neighI];
     }
@@ -340,7 +338,8 @@ int updateNeighCoords
 }
 
 // Calculate the point coordinates for the orthogonally optimal point
-// location and blend with the given new point coordinates
+// location and blend with the given new point coordinates from
+// centroidal smoothing
 
 int blendWithOrthogonalPoints
 (
