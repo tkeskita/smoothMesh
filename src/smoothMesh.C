@@ -841,6 +841,40 @@ labelList getSelectedPatches
     return indices;
 }
 
+double getMeshMinEdgeLength
+(
+    const fvMesh& mesh
+)
+{
+    double minLength = VGREAT;
+    double maxLength = 0.0;
+
+    forAll(mesh.edges(), edgeI)
+    {
+        const edge e = mesh.edges()[edgeI];
+
+        const label startI = e.start();
+        const vector startCoords = mesh.points()[startI];
+        const label endI = e.end();
+        const vector endCoords = mesh.points()[endI];
+
+        const double length = mag(vector(endCoords - startCoords));
+
+        if (length < minLength)
+            minLength = length;
+        if (length > maxLength)
+            maxLength = length;
+    }
+
+    const double meshMinLength = returnReduce(minLength, minOp<double>());
+    const double meshMaxLength = returnReduce(maxLength, maxOp<double>());
+
+    Info << "Mesh minimum edge length = " << meshMinLength << endl;
+    Info << "Mesh maximum edge length = " << meshMaxLength << endl << endl;
+
+    return meshMinLength;
+}
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -987,15 +1021,17 @@ int main(int argc, char *argv[])
     const polyBoundaryMesh& bMesh = mesh.boundaryMesh();
     const labelList patchIds = getSelectedPatches(bMesh, includePatches, excludePatches);
 
-    double maxStepLength(0.01);
-    args.readIfPresent("maxStepLength", maxStepLength);
-
-    double minEdgeLength(0.05);
+    // Default minimum edge length is smaller than the minimum edge
+    // length from initial mesh to allow good boundary smoothing
+    double minEdgeLength(0.5 * getMeshMinEdgeLength(mesh));
     args.readIfPresent("minEdgeLength", minEdgeLength);
+
+    double maxStepLength(0.3 * minEdgeLength);
+    args.readIfPresent("maxStepLength", maxStepLength);
 
     if (maxStepLength > 0.5 * minEdgeLength)
     {
-        Pout << "WARNING: The maximum allowed step length is more "
+        Info << "WARNING: The maximum allowed step length is more "
              << "than half of the minimum edge length! This may "
              << "cause unstability in smoothing." << endl << endl;
     }
@@ -1015,7 +1051,7 @@ int main(int argc, char *argv[])
     double boundaryMaxBlendingFraction(0.0);
     args.readIfPresent("boundaryMaxBlendingFraction", boundaryMaxBlendingFraction);
 
-    double boundaryEdgeLength(0.05);
+    double boundaryEdgeLength(minEdgeLength);
     args.readIfPresent("boundaryEdgeLength", boundaryEdgeLength);
 
     double boundaryExpansionRatio(1.3);
@@ -1026,6 +1062,38 @@ int main(int argc, char *argv[])
 
     label boundaryMaxLayers(4);
     args.readIfPresent("boundaryMaxLayers", boundaryMaxLayers);
+
+    // Print out applied parameter values
+    Info << "Applying following parameter values in smoothing:" << endl;
+    Info << "    minEdgeLength          " << minEdgeLength << endl;
+    Info << "    maxStepLength          " << maxStepLength << endl;
+    Info << "    totalMinFreeze         " << totalMinFreeze << endl;
+
+    if (faceAngleConstraint)
+    {
+        Info << "    faceAngleConstraint    true" << endl;
+        Info << "    minAngle               " << minAngle << endl;
+        Info << "    maxAngle               " << maxAngle << endl;
+    }
+    else
+    {
+        Info << "    faceAngleConstraint    false (angle quality constraints are NOT applied)" << endl;
+    }
+
+    if (boundaryMaxBlendingFraction > SMALL)
+    {
+        Info << "    boundaryMaxBlendingFraction " << boundaryMaxBlendingFraction << endl;
+        Info << "    boundaryEdgeLength     " << boundaryEdgeLength << endl;
+        Info << "    boundaryExpansionRatio " << boundaryExpansionRatio << endl;
+        Info << "    boundaryMinLayers      " << boundaryMinLayers << endl;
+        Info << "    boundaryMaxLayers      " << boundaryMaxLayers << endl;
+    }
+    else
+    {
+        Info << "    boundaryMaxBlendingFraction 0 (boundary layer treatment is NOT applied)" << endl;
+    }
+
+    Info << endl;
 
 
     // Storage for markers for internal points

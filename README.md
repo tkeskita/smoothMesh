@@ -45,9 +45,9 @@ wclean; wmake
 
 - `-centroidalIters` specifies the number of smoothing iterations (default 20).
 
-- `-maxStepLength` is the maximum length (in metres) for moving a point in one iteration (default 0.01). Adjust this value for your case. Smoothing process seems to be stable when this value is in the range 10% - 50% of the minimum cell side length.
+- `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location. Freezing happens only if edge length would decrease during smoothing. Edge length is allowed to increase regardless of this value. If no value is provided, a default value of half the length of the shortest edge in the initial mesh is applied.
 
-- `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location. Freezing happens only if edge length would decrease during smoothing (default 0.05). Edge length is allowed to increase regardless of this value. Adjust this value for your case.
+- `-maxStepLength` is the maximum length (in metres) for moving a point in one iteration. Smoothing process seems to be stable when this value is in the range 10% - 50% of the minimum cell side length. If no value is specified, a default value of 0.3 times the `minEdgeLength` is applied.
 
 - `-totalMinFreeze` option causes mesh points on all edges shorter than `-minEdgeLength` to freeze, even if edge length would increase in smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only, if the special boundary layer related options below are not used.
 
@@ -73,7 +73,7 @@ Warning: This is an experimental feature!
 
 - `-boundaryMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default 0). Value 0.8 seems to produce good results in practice.
 
-- `-boundaryEdgeLength` specifies the target thickness for the first boundary layer cells (prismatic side edge length) (default: 0.05).
+- `-boundaryEdgeLength` specifies the target thickness for the first boundary layer cells (prismatic side edge length). If no value is provided, the value of `minEdgeLength` is applied.
 
 - `-boundaryExpansionRatio` specifies the thickness ratio by which the boundary edge length is assumed to increase (default: 1.3).
 
@@ -91,7 +91,7 @@ Please view [the algorithm description document](algorithm_description.md).
 
 ## Basic usage examples
 
-Adjust at least the `-centroidalIters`, `-maxStepLength` and `-minEdgeLength` options according to your case.
+You can now run smoothMesh without providing any parameter values, but the result may not be very good. It is suggested to adjust at least the `-centroidalIters`, `-maxStepLength` and `-minEdgeLength` options according to your case.
 
 - Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
 
