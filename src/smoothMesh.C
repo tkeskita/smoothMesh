@@ -79,7 +79,15 @@ int findInternalMeshPoints
         }
     }
 
-    return 0;
+    label nPoints = 0;
+    forAll(isInternalPoint, pointI)
+    {
+        if (isInternalPoint.test(pointI))
+            ++nPoints;
+    }
+
+    const label sumNPoints = returnReduce(nPoints, sumOp<label>());
+    return sumNPoints;
 }
 
 // Function for centroidal smoothing of internal mesh points.
@@ -147,10 +155,6 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
             newPoints[pointI] = mesh.points()[pointI];
         }
     }
-
-    Info << "Iteration " << nIter << ": centroidal smoothing of "
-         << returnReduce(nPoints, sumOp<label>())
-         << " points" << endl;
 
     return tnewPoints;
 }
@@ -841,6 +845,8 @@ labelList getSelectedPatches
     return indices;
 }
 
+// Calculate and return the minimum edge length of the current mesh
+
 double getMeshMinEdgeLength
 (
     const fvMesh& mesh
@@ -875,6 +881,38 @@ double getMeshMinEdgeLength
     return meshMinLength;
 }
 
+// Calculate the average relative change in the internal point
+// positions, to be used as a measure of residual of the effect of
+// smoothing
+
+double calculateResidual
+(
+    const fvMesh& mesh,
+    const pointField& newPoints,
+    const bitSet isInternalPoint,
+    const double maxStepLength
+)
+{
+    label nPoints = 0;
+    double res = 0.0;
+
+    forAll(isInternalPoint, pointI)
+    {
+        if (! isInternalPoint.test(pointI))
+            continue;
+
+        ++nPoints;
+
+        // Normalise the step length by the maximum step length
+        res += mag(newPoints[pointI] - mesh.points()[pointI]) / maxStepLength;
+    }
+
+    const label sumNPoints = returnReduce(nPoints, sumOp<label>());
+    const double sumRes = returnReduce(res, sumOp<double>());
+
+    return (sumRes / sumNPoints);
+}
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -898,7 +936,7 @@ int main(int argc, char *argv[])
     (
         "centroidalIters",
         "label",
-        "Number of centroidal smoothing iterations (default 20)"
+        "Maximum number of centroidal smoothing iterations (default 1000)"
     );
 
     argList::addOption
@@ -987,6 +1025,13 @@ int main(int argc, char *argv[])
         "For example 'walls' or '( stator \"rotor.*\" )'"
     );
 
+    argList::addOption
+    (
+        "relTol",
+        "double",
+        "Relative tolerance for stopping the smoothing iterations (default: 0.02)"
+    );
+
     #include "addOverwriteOption.H"
     #include "setRootCase.H"
     #include "createTime.H"
@@ -1063,8 +1108,16 @@ int main(int argc, char *argv[])
     label boundaryMaxLayers(4);
     args.readIfPresent("boundaryMaxLayers", boundaryMaxLayers);
 
+    double relTol(0.02);
+    args.readIfPresent("relTol", relTol);
+
+    label centroidalIters(1000);
+    args.readIfPresent("centroidalIters", centroidalIters);
+
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
+    Info << "    centroidalIters        " << centroidalIters << endl;
+    Info << "    relTol                 " << relTol << endl;
     Info << "    minEdgeLength          " << minEdgeLength << endl;
     Info << "    maxStepLength          " << maxStepLength << endl;
     Info << "    totalMinFreeze         " << totalMinFreeze << endl;
@@ -1098,7 +1151,8 @@ int main(int argc, char *argv[])
 
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints(), false);
-    findInternalMeshPoints(mesh, isInternalPoint);
+    const label nPoints = findInternalMeshPoints(mesh, isInternalPoint);
+    Info << "Starting smoothing of " << nPoints << " internal mesh points" << endl << endl;
 
     // Storage for number of edge hops to reach boundary for all mesh
     // points (for boundary layer treatment)
@@ -1130,9 +1184,6 @@ int main(int argc, char *argv[])
 
     // Boolean list for marking frozen points. This list is synced among processors.
     boolList isFrozenPoint(mesh.nPoints(), false);
-
-    label centroidalIters(20);
-    args.readIfPresent("centroidalIters", centroidalIters);
 
     // Carry out smoothing iterations
     for (label i = 0; i < centroidalIters; ++i)
@@ -1196,10 +1247,23 @@ int main(int argc, char *argv[])
                 newPoints[pointI] = mesh.points()[pointI];
         }
 
+        // Calculate and print residual
+        const double res = calculateResidual(mesh, newPoints, isInternalPoint, maxStepLength);
+        Info << "Smoothing iteration=" << (i + 1) << " residual=" << res << endl;
+
         // Push coordinates to mesh
         mesh.movePoints(tNewPoints);
 
-        Info << endl;
+        if (res < relTol)
+        {
+            Info << "Residual reached relTol, stopping." << endl;
+            break;
+        }
+
+        if (i == (centroidalIters - 1))
+        {
+            Info << "Maximum centroidalIters reached, stopping." << endl;
+        }
     }
 
     // Save mesh

@@ -43,7 +43,9 @@ wclean; wmake
 
 ### Basic options
 
-- `-centroidalIters` specifies the number of smoothing iterations (default 20).
+- `-centroidalIters` specifies the maximum number of smoothing iterations (default 1000).
+
+- `-relTol` is the relative tolerance convergence criteria for stopping smoothing iterations (default 0.02). If residual (average length of point movement relative to `maxStepLength`) drops below this value, then smoothing is ended.
 
 - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location. Freezing happens only if edge length would decrease during smoothing. Edge length is allowed to increase regardless of this value. If no value is provided, a default value of half the length of the shortest edge in the initial mesh is applied.
 
@@ -91,11 +93,11 @@ Please view [the algorithm description document](algorithm_description.md).
 
 ## Basic usage examples
 
-You can now run smoothMesh without providing any parameter values, but the result may not be very good. It is suggested to adjust at least the `-centroidalIters`, `-maxStepLength` and `-minEdgeLength` options according to your case.
+You can run smoothMesh without providing any parameter values, but the result may not be very good, depending on your initial mesh. It is suggested to adjust at least the `-centroidalIters`, `-relTol`, `-maxStepLength` and `-minEdgeLength` options according to your case.
 
-- Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
+- Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 100 -relTol 0.05 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
 
-- Serial run example: `smoothMesh -centroidalIters 20 -maxStepLength 0.01 -minEdgeLength 0.05`
+- Serial run example: `smoothMesh -centroidalIters 100 -relTol 0.05 -maxStepLength 0.01 -minEdgeLength 0.05`
 
 
 ## Test case
