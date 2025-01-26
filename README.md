@@ -142,6 +142,11 @@ Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLengt
 
 <img src="images/testcase_05_layers_with_patches.png" width="600"/>
 
+Test 6 (bad results): Boundary layers for patch named default, too large boundaryEdgeLength.
+Full command: `smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.025 -patches '("def.*")'`
+
+<img src="images/testcase_06_large_boundaryEdgeLength.png" width="600"/>
+
 
 ## Getting help and feedback
 

@@ -35,3 +35,6 @@ done
 
 # Boundary layers for patch named default, best result
 # mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'
+
+# Boundary layers for patch named default, too large boundaryEdgeLength
+# mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.025 -patches '("def.*")'
