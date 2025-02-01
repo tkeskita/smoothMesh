@@ -183,7 +183,6 @@ int restrictEdgeShortening
 (
     const fvMesh& mesh,
     pointField& origPoints,
-    const bitSet isMovingPoint,
     const double minEdgeLength,
     const bool totalMinFreeze,
     boolList& isFrozenPoint
@@ -191,8 +190,6 @@ int restrictEdgeShortening
 {
     forAll(origPoints, pointI)
     {
-        if (! isMovingPoint.test(pointI))
-            continue;
         if (isFrozenPoint[pointI])
             continue;
 
@@ -243,7 +240,6 @@ int constrainMaxStepLength
 (
     const fvMesh& mesh,
     pointField& origPoints,
-    const bitSet isMovingPoint,
     const double maxStepLength
 )
 {
@@ -255,9 +251,6 @@ int constrainMaxStepLength
 
     forAll(origPoints, pointI)
     {
-        if (! isMovingPoint.test(pointI))
-            continue;
-
         const vector cCoords = mesh.points()[pointI];
         vector nCoords = origPoints[pointI];
 
@@ -681,7 +674,6 @@ int restrictFaceAngleDeterioration
 (
     const fvMesh& mesh,
     pointField& origPoints,
-    const bitSet isMovingPoint,
     const double minFaceAngleInDegrees,
     const double maxFaceAngleInDegrees,
     boolList& isFrozenPoint
@@ -1032,6 +1024,14 @@ int main(int argc, char *argv[])
         "Relative tolerance for stopping the smoothing iterations (default: 0.02)"
     );
 
+    argList::addOption
+    (
+        "boundaryPointSmoothing",
+        "bool",
+        "Boolean option to allow smoothing of boundary points (default false)"
+    );
+
+
     #include "addOverwriteOption.H"
     #include "setRootCase.H"
     #include "createTime.H"
@@ -1114,6 +1114,9 @@ int main(int argc, char *argv[])
     label centroidalIters(1000);
     args.readIfPresent("centroidalIters", centroidalIters);
 
+    bool boundaryPointSmoothing(false);
+    args.readIfPresent("boundaryPointSmoothing", boundaryPointSmoothing);
+
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
     Info << "    centroidalIters        " << centroidalIters << endl;
@@ -1140,6 +1143,7 @@ int main(int argc, char *argv[])
         Info << "    boundaryExpansionRatio " << boundaryExpansionRatio << endl;
         Info << "    boundaryMinLayers      " << boundaryMinLayers << endl;
         Info << "    boundaryMaxLayers      " << boundaryMaxLayers << endl;
+        Info << "    boundaryPointSmoothing " << boundaryPointSmoothing << endl;
     }
     else
     {
@@ -1163,23 +1167,36 @@ int main(int argc, char *argv[])
     pointField& pointNormals = tPointNormals.ref();
 
     // Storage for neighbour point locations (for boundary layer treatment)
-    tmp<pointField> tNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
-    pointField& neighCoords = tNeighCoords.ref();
+    tmp<pointField> tInnerNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
+    pointField& innerNeighCoords = tInnerNeighCoords.ref();
+    tmp<pointField> tOuterNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
+    pointField& outerNeighCoords = tOuterNeighCoords.ref();
 
     // Storage for marking neighbour point being inside same processor
     // domain (for boundary layer treatment)
-    bitSet isNeighInProc(mesh.nPoints(), false);
+    bitSet isInnerNeighInProc(mesh.nPoints(), false);
+    bitSet isOuterNeighInProc(mesh.nPoints(), false);
 
     // Storage for index map from point to neighbour point inside same
-    // processor domain (for boundary layer treatment)
-    labelList pointToNeighPointMap(mesh.nPoints(), UNDEF_LABEL);
+    // processor domain. One map points towards inner mesh, and
+    // another map towards boundary. (for boundary layer treatment)
+    labelList pointToInnerPointMap(mesh.nPoints(), UNDEF_LABEL);
+    labelList pointToOuterPointMap(mesh.nPoints(), UNDEF_LABEL);
+
+    // Storage for marking points on a flat (not curving) boundary patch
+    boolList isFlatPatchPoint(mesh.nPoints(), false);
+
+    // Storage for map to neighbour points for feature edges
+    // TBA labelList featureEdgeNeighPointMap1(mesh.nPoints(), UNDEF_LABEL);
+    // TBA labelList featureEdgeNeighPointMap2(mesh.nPoints(), UNDEF_LABEL);
 
     // Preparations for optional orthogonal boundary layer treatment
     if (boundaryMaxBlendingFraction > SMALL)
     {
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
-        calculateBoundaryPointNormals(mesh, pointNormals);
-        propagateNeighInfo(mesh, patchIds, isNeighInProc, pointToNeighPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
+        calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
+        propagateOuterNeighInfo(mesh, patchIds, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
+        propagateInnerNeighInfo(mesh, patchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
     }
 
     // Boolean list for marking frozen points. This list is synced among processors.
@@ -1200,7 +1217,8 @@ int main(int argc, char *argv[])
         if (boundaryMaxBlendingFraction > SMALL)
         {
             // Update neighbour coordinates and synchronize among processors
-            updateNeighCoords(mesh, isNeighInProc, pointToNeighPointMap, neighCoords);
+            updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
+            updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerNeighCoords);
 
             // Blend orthogonal and centroidal coordinates to newPoints
             blendWithOrthogonalPoints
@@ -1210,25 +1228,39 @@ int main(int argc, char *argv[])
                  isInternalPoint,
                  pointHopsToBoundary,
                  pointNormals,
-                 neighCoords,
+                 outerNeighCoords,
                  boundaryMaxBlendingFraction,
                  boundaryEdgeLength,
                  boundaryExpansionRatio,
                  boundaryMinLayers,
                  boundaryMaxLayers + 1  // +1 for correct number of layers
              );
+
+            if (boundaryPointSmoothing)
+            {
+                projectBoundaryPoints
+                (
+                    mesh,
+                    newPoints,
+                    isFlatPatchPoint,
+                    pointHopsToBoundary,
+                    pointNormals,
+                    innerNeighCoords,
+                    boundaryMaxBlendingFraction
+                );
+            }
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-        constrainMaxStepLength(mesh, newPoints, isInternalPoint, maxStepLength);
+        constrainMaxStepLength(mesh, newPoints, maxStepLength);
 
         // Avoid shortening of short edge length
-        restrictEdgeShortening(mesh, newPoints, isInternalPoint, minEdgeLength, totalMinFreeze, isFrozenPoint);
+        restrictEdgeShortening(mesh, newPoints, minEdgeLength, totalMinFreeze, isFrozenPoint);
 
         if (faceAngleConstraint)
         {
             // Restrict deterioration of face-face angles
-            restrictFaceAngleDeterioration(mesh, newPoints, isInternalPoint, minAngle, maxAngle, isFrozenPoint);
+            restrictFaceAngleDeterioration(mesh, newPoints, minAngle, maxAngle, isFrozenPoint);
         }
 
         // Synchronize and combine the list of frozen points
