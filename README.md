@@ -24,8 +24,10 @@ vertices.
 ## Current features and restrictions
 
 - Works on 3D polyhedron meshes
+- Can be run in parallel
 - Requires a consistent (not self-intersecting or tangled) initial mesh with "good enough" quality
-- Smoothes internal mesh points only (boundary points are frozen)
+- Smoothes internal mesh points
+- NEW: Limited boundary point smoothing (work in progress, see options below)
 - Optional handling of prismatic boundary layers
 - Developed on OpenFOAM.com v2312, tested on v2412
 
@@ -73,7 +75,7 @@ The options below are related to handling of prismatic cells near mesh boundarie
 
 Warning: This is an experimental feature!
 
-- `-boundaryMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default 0). Value 0.8 seems to produce good results in practice.
+- `-boundaryMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default 0). Values like 0.3 or 0.8 seems to produce good results in practice.
 
 - `-boundaryEdgeLength` specifies the target thickness for the first boundary layer cells (prismatic side edge length). If no value is provided, the value of `minEdgeLength` is applied.
 
@@ -83,7 +85,16 @@ Warning: This is an experimental feature!
 
 - `-boundaryMaxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default: 4).
 
-- `-patches` option can be used to limit the boundary layer treatment to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`.
+- `-patches` option can be used to limit the boundary layer treatment to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`. All patches are affected by default.
+
+- `-boundaryMaxPointBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary points are projected orthogonally to the boundary from the first layer prismatic points. Value like 0.8 seems to produce good results in practice. Note: Projection is made only if the boundary faces surrounding the boundary form a flat surface.
+
+- `-boundaryPointSmoothingPatches` option can be used to limit the boundary point projection defined with the above option (`-boundaryMaxPointBlendingFraction`) to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`. All patches are affected by default.
+
+**Note:** The combination of `-boundaryMaxBlendingFraction` and `-boundaryMaxPointBlendingFraction` gives different results, depending on the mesh and geometry. Figure below illustrates one example, showing a cross section in the middle of the mesh.
+
+<img src="images/boundary_treatment.png" width="600"/>
+
 
 
 ## Description of the algorithm

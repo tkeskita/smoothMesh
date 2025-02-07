@@ -506,19 +506,59 @@ int blendWithOrthogonalPoints
     return 0;
 }
 
+// Help function to check if given point index is among points of
+// given patch ids
+
+bool isPointOnPatches
+(
+    const fvMesh& mesh,
+    const label pointI,
+    const labelList& patchIds
+)
+{
+    for (const label patchI : patchIds)
+    {
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+
+        // Skip processor and empty patches
+        if (isA<processorPolyPatch>(pp))
+            continue;
+        if (isA<emptyPolyPatch>(pp))
+            continue;
+
+        const label startI = mesh.boundary()[patchI].start();
+        const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+        for (label faceI = startI; faceI < endI; faceI++)
+        {
+            const face& f = mesh.faces()[faceI];
+            forAll (f, facePointI)
+            {
+                const label testPointI = mesh.faces()[faceI][facePointI];
+                if (testPointI == pointI)
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+
 // Smoothing of boundary points on flat patches. Project the first
 // layer prismatic points orthogonally towards boundary, to be used as
 // new coordinates for the boundary points.
 
 int projectBoundaryPoints
 (
-    const polyMesh& mesh,
+    const fvMesh& mesh,
     pointField& newPoints,
     const boolList& isFlatPatchPoint,
     const labelList& pointHopsToBoundary,
     const pointField& pointNormals,
     const pointField& innerNeighCoords,
-    const double boundaryMaxBlendingFraction
+    const labelList& patchIds,
+    const double boundaryMaxPointBlendingFraction
 )
 {
     forAll(mesh.points(), pointI)
@@ -538,6 +578,8 @@ int projectBoundaryPoints
             continue;
         if (innerNeighCoord == UNDEF_VECTOR)
             continue;
+        if (! isPointOnPatches(mesh, pointI, patchIds))
+            continue;
 
         // Info << "Boundary smoothing for pointI " << pointI << endl;
 
@@ -546,7 +588,7 @@ int projectBoundaryPoints
         const vector neighVec = cCoords - innerNeighCoord;
         const double dotProd = neighVec & pointNormal;
         const vector pVec = neighVec - dotProd * pointNormal;
-        const vector newCoords = cCoords - boundaryMaxBlendingFraction * pVec;
+        const vector newCoords = cCoords - boundaryMaxPointBlendingFraction * pVec;
 
         // Update point coordinates
         newPoints[pointI] = newCoords;

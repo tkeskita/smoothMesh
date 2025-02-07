@@ -982,6 +982,13 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "boundaryMaxPointBlendingFraction",
+        "double",
+        "Maximum blending fraction to move boundary points towards orthogonal position (default: 0)"
+    );
+
+    argList::addOption
+    (
         "boundaryEdgeLength",
         "double",
         "Target thickness for first boundary layer (default: 0.05)"
@@ -1013,6 +1020,15 @@ int main(int argc, char *argv[])
         "patches",
         "wordRes",
         "Specify single patch or multiple patches for the boundary layer treatment.\n"
+        "All patches are included by default.\n"
+        "For example 'walls' or '( stator \"rotor.*\" )'"
+    );
+
+    argList::addOption
+    (
+        "boundaryPointSmoothingPatches",
+        "wordRes",
+        "Specify single patch or multiple patches for boundary point smoothing.\n"
         "All patches are included by default.\n"
         "For example 'walls' or '( stator \"rotor.*\" )'"
     );
@@ -1058,13 +1074,32 @@ int main(int argc, char *argv[])
     wordRes includePatches, excludePatches;
     if (args.readListIfPresent<wordRe>("patches", includePatches))
     {
-        Info<< "Patches for boundary layer treatment limited to "
-            << flatOutput(includePatches) << nl << endl;
+        Info<< "Patches for boundary layer treatment limited to: "
+            << flatOutput(includePatches) << endl;
+    }
+    else
+    {
+        Info<< "Patches for boundary layer treatment limited to: all patches"
+            << endl;
+    }
+
+    // Read in patches for boundary point smoothing
+    wordRes includeBoundaryPointSmoothingPatches, excludeBoundaryPointSmoothingPatches;
+    if (args.readListIfPresent<wordRe>("boundaryPointSmoothingPatches", includeBoundaryPointSmoothingPatches))
+    {
+        Info<< "Patches for boundary point smoothing limited to: "
+            << flatOutput(includeBoundaryPointSmoothingPatches) << nl << endl;
+    }
+    else
+    {
+        Info<< "Patches for boundary point smoothing limited to: all patches"
+            << nl << endl;
     }
 
     // Generate a list of patches for boundary layer treatment
     const polyBoundaryMesh& bMesh = mesh.boundaryMesh();
     const labelList patchIds = getSelectedPatches(bMesh, includePatches, excludePatches);
+    const labelList boundaryPointSmoothingPatchIds = getSelectedPatches(bMesh, includeBoundaryPointSmoothingPatches, excludeBoundaryPointSmoothingPatches);
 
     // Default minimum edge length is smaller than the minimum edge
     // length from initial mesh to allow good boundary smoothing
@@ -1096,6 +1131,9 @@ int main(int argc, char *argv[])
     double boundaryMaxBlendingFraction(0.0);
     args.readIfPresent("boundaryMaxBlendingFraction", boundaryMaxBlendingFraction);
 
+    double boundaryMaxPointBlendingFraction(0.0);
+    args.readIfPresent("boundaryMaxPointBlendingFraction", boundaryMaxPointBlendingFraction);
+
     double boundaryEdgeLength(minEdgeLength);
     args.readIfPresent("boundaryEdgeLength", boundaryEdgeLength);
 
@@ -1113,9 +1151,6 @@ int main(int argc, char *argv[])
 
     label centroidalIters(1000);
     args.readIfPresent("centroidalIters", centroidalIters);
-
-    bool boundaryPointSmoothing(false);
-    args.readIfPresent("boundaryPointSmoothing", boundaryPointSmoothing);
 
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
@@ -1136,18 +1171,20 @@ int main(int argc, char *argv[])
         Info << "    faceAngleConstraint    false (angle quality constraints are NOT applied)" << endl;
     }
 
-    if (boundaryMaxBlendingFraction > SMALL)
+    if ((boundaryMaxBlendingFraction > SMALL) or
+        (boundaryMaxPointBlendingFraction > SMALL))
     {
         Info << "    boundaryMaxBlendingFraction " << boundaryMaxBlendingFraction << endl;
+        Info << "    boundaryMaxPointBlendingFraction " << boundaryMaxPointBlendingFraction << endl;
         Info << "    boundaryEdgeLength     " << boundaryEdgeLength << endl;
         Info << "    boundaryExpansionRatio " << boundaryExpansionRatio << endl;
         Info << "    boundaryMinLayers      " << boundaryMinLayers << endl;
         Info << "    boundaryMaxLayers      " << boundaryMaxLayers << endl;
-        Info << "    boundaryPointSmoothing " << boundaryPointSmoothing << endl;
     }
     else
     {
         Info << "    boundaryMaxBlendingFraction 0 (boundary layer treatment is NOT applied)" << endl;
+        Info << "    boundaryMaxPointBlendingFraction 0 (boundary point smoothing is NOT applied)" << endl;
     }
 
     Info << endl;
@@ -1191,7 +1228,8 @@ int main(int argc, char *argv[])
     // TBA labelList featureEdgeNeighPointMap2(mesh.nPoints(), UNDEF_LABEL);
 
     // Preparations for optional orthogonal boundary layer treatment
-    if (boundaryMaxBlendingFraction > SMALL)
+    if ((boundaryMaxBlendingFraction > SMALL) or
+        (boundaryMaxPointBlendingFraction > SMALL))
     {
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
         calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
@@ -1214,7 +1252,8 @@ int main(int argc, char *argv[])
         pointField& newPoints = tNewPoints.ref();
 
         // Optional orthogonal boundary layer treatment
-        if (boundaryMaxBlendingFraction > SMALL)
+        if ((boundaryMaxBlendingFraction > SMALL) or
+            (boundaryMaxPointBlendingFraction > SMALL))
         {
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
@@ -1234,21 +1273,19 @@ int main(int argc, char *argv[])
                  boundaryExpansionRatio,
                  boundaryMinLayers,
                  boundaryMaxLayers + 1  // +1 for correct number of layers
-             );
+            );
 
-            if (boundaryPointSmoothing)
-            {
-                projectBoundaryPoints
-                (
-                    mesh,
-                    newPoints,
-                    isFlatPatchPoint,
-                    pointHopsToBoundary,
-                    pointNormals,
-                    innerNeighCoords,
-                    boundaryMaxBlendingFraction
-                );
-            }
+            projectBoundaryPoints
+            (
+                mesh,
+                newPoints,
+                isFlatPatchPoint,
+                pointHopsToBoundary,
+                pointNormals,
+                innerNeighCoords,
+                boundaryPointSmoothingPatchIds,
+                boundaryMaxPointBlendingFraction
+            );
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
