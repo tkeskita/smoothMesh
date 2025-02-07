@@ -183,8 +183,8 @@ int calculateBoundaryPointNormals
         const double idealLength = double(nFaces[pointI]);
         const double flatness = mag(pointNormals[pointI]) / idealLength;
 
-        // TODO: Add parameter for flatness limit
-        if (flatness > 0.99)
+        // Flatness limit
+        if (flatness > 0.999)
         {
             isFlatPatchPoint[pointI] = true;
             // Info << "pointI " << pointI << " flatness " << flatness << endl;
