@@ -1234,7 +1234,7 @@ int main(int argc, char *argv[])
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
         calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
         propagateOuterNeighInfo(mesh, patchIds, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
-        propagateInnerNeighInfo(mesh, patchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
+        propagateInnerNeighInfo(mesh, boundaryPointSmoothingPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
     }
 
     // Boolean list for marking frozen points. This list is synced among processors.
