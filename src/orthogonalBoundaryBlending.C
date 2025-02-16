@@ -186,7 +186,7 @@ int calculateBoundaryPointNormals
         const double flatness = magNorm / idealLength;
 
         // Flatness limit
-        if (flatness > 0.999)
+        if (flatness > 0.9999)
         {
             isFlatPatchPoint[pointI] = true;
             // Info << "pointI " << pointI << " flatness " << flatness << endl;
