@@ -9,6 +9,7 @@ Description
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"
+#include <fstream> // for debug printing only (exportEdgesAsStl)
 
 // Macros for value definitions
 #define UNDEF_LABEL -1
@@ -181,13 +182,20 @@ int calculateBoundaryPointNormals
             continue;
 
         const double idealLength = double(nFaces[pointI]);
-        const double flatness = mag(pointNormals[pointI]) / idealLength;
+        const double magNorm = mag(pointNormals[pointI]);
+        const double flatness = magNorm / idealLength;
 
         // Flatness limit
         if (flatness > 0.999)
         {
             isFlatPatchPoint[pointI] = true;
             // Info << "pointI " << pointI << " flatness " << flatness << endl;
+        }
+
+        // Zero the normal vector for baffle edge points
+        if (magNorm < 0.1)
+        {
+            pointNormals[pointI] = ZERO_VECTOR;
         }
     }
 
@@ -267,6 +275,16 @@ int propagateOuterNeighInfo
     const label boundaryMaxLayers
 )
 {
+    // Debug option to set true for printing edges as a STL file
+    // Best visualized as wireframe in Paraview
+    bool exportEdgesAsStl = false;
+    std::ofstream myfile;
+    if (exportEdgesAsStl)
+    {
+        myfile.open ("debugEdgesAsStl.stl");
+        myfile << "solid edgesAsStl\n";
+    }
+
     // Neighbour search is done iteratively to propagate information from
     // boundary towards internal mesh points
 
@@ -317,6 +335,28 @@ int propagateOuterNeighInfo
 
                 // Copy the point normal from neighbour to this point
                 pointNormals[pointI] = pointNormals[neighPointI];
+
+                // Debugging: print edges as triangles in STL ascii format,
+                // with fake normal direction
+                if (exportEdgesAsStl)
+                {
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << mesh.points()[pointI][0] << " "
+                           << mesh.points()[pointI][1] << " "
+                           << mesh.points()[pointI][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[neighPointI][0] << " "
+                           << mesh.points()[neighPointI][1] << " "
+                           << mesh.points()[neighPointI][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[pointI][0] + 1e-4 << " "
+                           << mesh.points()[pointI][1] + 1e-4 << " "
+                           << mesh.points()[pointI][2] + 1e-4 << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+                }
             }
         }
 
@@ -331,6 +371,12 @@ int propagateOuterNeighInfo
              maxMagSqrEqOp<vector>(),
              UNDEF_VECTOR               // null value
         );
+    }
+
+    if (exportEdgesAsStl)
+    {
+        myfile << "endsolid\n";
+        myfile.close();
     }
 
     return 0;
