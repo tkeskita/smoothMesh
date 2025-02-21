@@ -98,7 +98,7 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 (
     const fvMesh& mesh,
     const label nIter,
-    const bitSet isMovingPoint
+    const bitSet isInternalPoint
 )
 {
     // Centroidal smoothing algorithm
@@ -112,9 +112,9 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
         pTraits<weightedPosition>::zero
     );
 
-    forAll(isMovingPoint, pointI)
+    forAll(isInternalPoint, pointI)
     {
-        if (isMovingPoint.test(pointI))
+        if (isInternalPoint.test(pointI))
         {
             const labelList& pCells = mesh.pointCells(pointI);
 
