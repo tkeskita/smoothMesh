@@ -61,7 +61,9 @@ The following options are related to additional **heuristic quality control cons
 
 **Note:** The old `-qualityControl` option has been superceded by the options below.
 
-- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle (default is true).
+- `-edgeAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest edge-edge angle below `minAngle` (default is true).
+
+- `-faceAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest and largest face-face angle below `minAngle` and above `maxAngle` (default is true).
 
 - `-minAngle` option defines the value for minimum angle (in degrees, default value 35).
 

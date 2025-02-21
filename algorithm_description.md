@@ -48,22 +48,28 @@ the blue point to green point location.
 <p align="left"><img src="images/base_mesh_with_problematic_vertex.png"></p>
 
 
-## 2. Restrict decrease of smallest edge-edge angle (obsolete)
+## 2. Restrict decrease of smallest edge-edge angle
 
-This heuristic has been obsoleted and is no longer applied. The idea
-was to use minimum of the angles of face edges meeting at a point as a
+The idea of this contraint is
+to use minimum of the angles of face edges meeting at a point as a
 quality criteria: If the minimum edge-edge angle is below a threshold
-value (e.g. 45 deg), and if the movement of the point according to
-centroidal smoothing would decrease the minimum angle further, then
-the mesh point movement would be prohibited. However, the minimum
+value (e.g. 35 deg), and if the movement of the point to new
+coordinates would decrease the minimum angle further, then
+the mesh point movement is prohibited. However, the minimum
 edge-edge angle doesn't decrease in cells which are flattened in such
 a way that edges don't collapse on top of each other, like the example
 cell in the figure below (top view on left, front view on right).
-Since the face-face angle approach (described below) seems to catch the
-edge collapse issue as well as sharp angles on mesh points, this
-heuristic was discarded.
 
 <p align="left"><img src="images/flat_cell.png"></p>
+
+There are some edge cases where the edge-edge angle calculation is
+necessary and where the face-face-angle restriction (described below)
+fails to detect creation of self-intersecting cells. This was
+encountered in a case where boundary point smoothing was applied and
+where centroidal smoothing tends to collapse cells towards a curving
+boundary feature (the red edge in the figure below)
+
+<p align="left"><img src="images/curving_boundary_feature.png"></p>
 
 
 ## 3. Restrict deterioration of face-face angles
