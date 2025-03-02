@@ -26,6 +26,10 @@ Description
 #define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
 #define ZERO_VECTOR vector(0, 0, 0)
 
+// Boolean for developer mode. Set to false to use bleeding edge
+// work in progress features.
+#define USE_STABLE_FEATURES_ONLY true
+
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
 // Info << "Type is " << typeid(x).name() << endl;
@@ -97,7 +101,6 @@ int findInternalMeshPoints
 Foam::tmp<Foam::pointField> centroidalSmoothing
 (
     const fvMesh& mesh,
-    const label nIter,
     const bitSet isInternalPoint
 )
 {
@@ -172,6 +175,184 @@ double getPointDistance
     const vector v = mesh.points()[pointI] - coords;
     return mag(v);
 }
+
+// Help function for getSortedEdgeLengths to push new point index and
+// edge length to generate a list of indices and edge lengths, which
+// are sorted in increasing edge length order
+
+// TODO: This sorting algorithm is simple and very slow, switch to a
+// better one. See SortList, can that be used?
+
+int pushToSortedEdges
+(
+    const label pointI,
+    const double edgeLength,
+    labelList& pointLabels,
+    List<double>& edgeLengths
+)
+{
+    const label nPoints = pointLabels.size();
+
+    for (label i = 0; i < nPoints; ++i)
+    {
+        const double cLength = edgeLengths[i];
+
+        // Do nothing if edge length is shorter than previous lengths
+        if (edgeLength > cLength)
+            continue;
+
+        // Shift values towards list end
+        for (label j = nPoints - 1; j > i; --j)
+        {
+            pointLabels[j] = pointLabels[j-1];
+            edgeLengths[j] = edgeLengths[j-1];
+        }
+
+        // Save value to correct position and exit
+        pointLabels[i] = pointI;
+        edgeLengths[i] = edgeLength;
+        return 0;
+    }
+
+    return 1;
+}
+
+// Help function for aspectRatioLaplacianSmoothing to
+// get sorted list of edge points and edge lengths
+
+int getSortedEdgeLengths
+(
+    const fvMesh& mesh,
+    const label pointI,
+    labelList& pointLabels,
+    List<double>& edgeLengths
+)
+{
+    const vector cCoords = mesh.points()[pointI];
+    const labelList pointPoints = mesh.pointPoints()[pointI];
+
+    forAll(pointPoints, neighPointI)
+    {
+        const label pointI = pointPoints[neighPointI];
+        const double edgeLength = getPointDistance(mesh, pointI, cCoords);
+        pushToSortedEdges(pointI, edgeLength, pointLabels, edgeLengths);
+    }
+
+    return 0;
+}
+
+// Help function for aspectRatioLaplacianSmoothing to calculate
+// blending fraction and number of shortest edge lengths
+
+int analyzeShortestEdges
+(
+    double& blendFrac,
+    label& nShortestEdges,
+    const List<double>& edgeLengths
+)
+{
+    // Minimum and maximum edge length ratios for detecting and
+    // blending high aspect ratio.
+    // TODO: Optimize values and test further
+    const double minRatio = 1.5;
+    const double maxRatio = 3.0;
+
+    const label nEdges = edgeLengths.size();
+    nShortestEdges = nEdges;
+    blendFrac = 0.0;
+
+    for (label i = 1; i < nEdges; ++i)
+    {
+        const double lengthRatio = edgeLengths[i] / edgeLengths[i-1];
+        if (lengthRatio > minRatio)
+        {
+            nShortestEdges = i;
+            const double frac = (lengthRatio - minRatio) / (maxRatio - minRatio);
+            blendFrac = min(1.0, max(0.0, frac));
+        }
+    }
+
+    return 0;
+}
+
+// Help function for aspectRatioLaplacianSmoothing to calculate
+// average coordinates of given mesh point indices, but only up to
+// nFirstPoints
+
+vector averageCoordsOfPoints
+(
+    const fvMesh& mesh,
+    const labelList& pointLabels,
+    const label nFirstPoints
+)
+{
+    vector sumvec = ZERO_VECTOR;
+
+    for (label i = 0; i < nFirstPoints; ++i)
+    {
+        sumvec += mesh.points()[pointLabels[i]];
+    }
+
+    const vector midPoint = sumvec / double(nFirstPoints);
+    return midPoint;
+}
+
+// Aspect ratio aware Laplacian Smoothing algorithm. Blends resulting
+// coordinates with centroidal point coordinates.
+
+// TODO: Currently works only on serial run, needs parallel implementation
+
+Foam::tmp<Foam::pointField> aspectRatioLaplacianSmoothing
+(
+    const fvMesh& mesh,
+    const bitSet isInternalPoint,
+    const pointField& centroidalPoints
+)
+{
+    // New point locations storage
+    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    pointField& newPoints = tNewPoints.ref();
+
+    forAll(isInternalPoint, pointI)
+    {
+        const vector cCoords = centroidalPoints[pointI];
+
+        // Boundary points are not modified
+        if ((USE_STABLE_FEATURES_ONLY) or (! isInternalPoint.test(pointI)))
+        {
+            newPoints[pointI] = cCoords;
+            continue;
+        }
+
+        const label nPoints = mesh.pointPoints()[pointI].size();
+        labelList pointLabels(nPoints, UNDEF_LABEL);
+        List<double> edgeLengths(nPoints, VGREAT);
+
+        // Sort edges by length and analyze
+        getSortedEdgeLengths(mesh, pointI, pointLabels, edgeLengths);
+        double blendFrac = 0.0;
+        label nShortestEdges = UNDEF_LABEL;
+        analyzeShortestEdges(blendFrac, nShortestEdges, edgeLengths);
+
+        // Info << "pointI " << pointI << " bfrac " << blendFrac << " n " << nShortestEdges << "/" << nPoints << " -- " << edgeLengths << endl;
+
+        // If some edges are clearly shorter than the rest, calculate
+        // laplacian smoothing coordinates, and blend with centroidal
+        // point coordinates
+        vector newCoords = cCoords;
+        if ((nShortestEdges > 1) and (nShortestEdges < (nPoints - 2)))
+        {
+            const vector nCoords = averageCoordsOfPoints(mesh, pointLabels, nShortestEdges);
+            newCoords = (1.0 - blendFrac) * cCoords + blendFrac * nCoords;
+        }
+
+        // Save point coordinates
+        newPoints[pointI] = newCoords;
+    }
+
+    return tNewPoints;
+}
+
 
 // Quality control function which prohibits the decrease of edge
 // length by freezing points to current locations, if edge length is
@@ -1442,8 +1623,13 @@ int main(int argc, char *argv[])
             isFrozenPoint[pointI] = false;
 
         // Calculate new point locations using centroidal smoothing
-        tmp<pointField> tNewPoints = centroidalSmoothing(mesh, i, isInternalPoint);
+        tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint);
+        pointField& centroidalPoints = tCentroidalPoints.ref();
+
+        // Blend centroidal points with points from aspect ratio laplacian smoothing
+        tmp<pointField> tNewPoints = aspectRatioLaplacianSmoothing(mesh, isInternalPoint, centroidalPoints);
         pointField& newPoints = tNewPoints.ref();
+
 
         // Optional orthogonal boundary layer treatment
         if ((boundaryMaxBlendingFraction > SMALL) or
