@@ -241,26 +241,101 @@ int getSortedEdgeLengths
     return 0;
 }
 
-// Help function for aspectRatioLaplacianSmoothing to calculate
-// blending fraction and number of shortest edge lengths
+// Help function for pairOppositePoints to calculate number of shared
+// entries in both argument lists
+
+int countSameEntriesInLists
+(
+    const labelList& l1,
+    const labelList& l2
+)
+{
+    label count = 0;
+
+    forAll (l1, i)
+    {
+        forAll (l2, j)
+        {
+            if (l1[i] == l2[j])
+            {
+                ++count;
+            }
+        }
+    }
+
+    return count;
+}
+
+// Help function for analyzeShortesEdges to find a pair of
+// non-neighbour points, to be used in aspectRatioLaplacianSmoothing
+
+// TODO: Precalculate once, not on every step
+
+int pairNonNeighbourPoints
+(
+    const fvMesh& mesh,
+    const labelList& pointLabels,
+    const label nShortestEdges,
+    label& pointI1,
+    label& pointI2
+)
+{
+    label nPairs = 0;
+
+    // Find pairs
+    for (label i = 0; i < nShortestEdges; ++i)
+    {
+        for (label j = i; j < nShortestEdges; ++j)
+        {
+            const label i1 = pointLabels[i];
+            const label i2 = pointLabels[j];
+            const labelList i1points = mesh.pointCells(i1);
+            const labelList i2points = mesh.pointCells(i2);
+            if (countSameEntriesInLists(i1points, i2points) == 0)
+            {
+                ++nPairs;
+                pointI1 = i1;
+                pointI2 = i2;
+            }
+        }
+    }
+
+    // Zero the point labels if not exactly one pair was found
+    if (nPairs != 1)
+    {
+        pointI1 = UNDEF_LABEL;
+        pointI2 = UNDEF_LABEL;
+    }
+
+    return 0;
+}
+
+// Help function for aspectRatioLaplacianSmoothing to identify point
+// indices of two short edge points which don't share cells and
+// calculate blending fraction used for weighting the laplacian
+// coordinates with centroidal smoothing coordinates.
 
 int analyzeShortestEdges
 (
-    double& blendFrac,
-    label& nShortestEdges,
-    const List<double>& edgeLengths
+    const fvMesh& mesh,
+    const labelList& pointLabels,
+    const List<double>& edgeLengths,
+    label& pointI1,
+    label& pointI2,
+    double& blendFrac
 )
 {
     // Minimum and maximum edge length ratios for detecting and
     // blending high aspect ratio.
-    // TODO: Optimize values and test further
+    // TODO: Optimize values and test further?
     const double minRatio = 1.5;
     const double maxRatio = 3.0;
 
     const label nEdges = edgeLengths.size();
-    nShortestEdges = nEdges;
+    label nShortestEdges = 0;
     blendFrac = 0.0;
 
+    // Find number of shortest edges and calculate blending fraction
     for (label i = 1; i < nEdges; ++i)
     {
         const double lengthRatio = edgeLengths[i] / edgeLengths[i-1];
@@ -269,32 +344,14 @@ int analyzeShortestEdges
             nShortestEdges = i;
             const double frac = (lengthRatio - minRatio) / (maxRatio - minRatio);
             blendFrac = min(1.0, max(0.0, frac));
+            break;
         }
     }
 
+    // Find the two short edge points which don't share cells
+    pairNonNeighbourPoints(mesh, pointLabels, nShortestEdges, pointI1, pointI2);
+
     return 0;
-}
-
-// Help function for aspectRatioLaplacianSmoothing to calculate
-// average coordinates of given mesh point indices, but only up to
-// nFirstPoints
-
-vector averageCoordsOfPoints
-(
-    const fvMesh& mesh,
-    const labelList& pointLabels,
-    const label nFirstPoints
-)
-{
-    vector sumvec = ZERO_VECTOR;
-
-    for (label i = 0; i < nFirstPoints; ++i)
-    {
-        sumvec += mesh.points()[pointLabels[i]];
-    }
-
-    const vector midPoint = sumvec / double(nFirstPoints);
-    return midPoint;
 }
 
 // Aspect ratio aware Laplacian Smoothing algorithm. Blends resulting
@@ -331,18 +388,19 @@ Foam::tmp<Foam::pointField> aspectRatioLaplacianSmoothing
         // Sort edges by length and analyze
         getSortedEdgeLengths(mesh, pointI, pointLabels, edgeLengths);
         double blendFrac = 0.0;
-        label nShortestEdges = UNDEF_LABEL;
-        analyzeShortestEdges(blendFrac, nShortestEdges, edgeLengths);
+        label pointI1 = UNDEF_LABEL;
+        label pointI2 = UNDEF_LABEL;
+        analyzeShortestEdges(mesh, pointLabels, edgeLengths, pointI1, pointI2, blendFrac);
 
         // Info << "pointI " << pointI << " bfrac " << blendFrac << " n " << nShortestEdges << "/" << nPoints << " -- " << edgeLengths << endl;
 
-        // If some edges are clearly shorter than the rest, calculate
+        // If exactly two non-neighboring edges were found, calculate
         // laplacian smoothing coordinates, and blend with centroidal
         // point coordinates
         vector newCoords = cCoords;
-        if ((nShortestEdges > 1) and (nShortestEdges < (nPoints - 2)))
+        if ((pointI1 > -1) and (pointI2 > -1))
         {
-            const vector nCoords = averageCoordsOfPoints(mesh, pointLabels, nShortestEdges);
+            const vector nCoords = (mesh.points()[pointI1] + mesh.points()[pointI2]) / 2.0;
             newCoords = (1.0 - blendFrac) * cCoords + blendFrac * nCoords;
         }
 
