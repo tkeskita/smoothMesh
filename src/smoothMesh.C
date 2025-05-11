@@ -20,6 +20,7 @@ Description
 #include <bits/stdc++.h> // For std::stack
 #include "vectorList.H"
 #include "stringListOps.H"  // For stringListOps::findMatching()
+#include "SortList.H"
 
 // Macros for value definitions
 #define UNDEF_LABEL -1
@@ -167,162 +168,134 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 
 double getPointDistance
 (
-    const fvMesh& mesh,
-    const label pointI,
-    const vector coords
+    const vector coords1,
+    const vector coords2
 )
 {
-    const vector v = mesh.points()[pointI] - coords;
+    const vector v = coords2 - coords1;
     return mag(v);
 }
 
-// Help function for getSortedEdgeLengths to push new point index and
-// edge length to generate a list of indices and edge lengths, which
-// are sorted in increasing edge length order
 
-// TODO: This sorting algorithm is simple and very slow, switch to a
-// better one. See SortList, can that be used?
+/////////////////////////////////////////////
+// Help functions for aspectRatioSmoothing //
+/////////////////////////////////////////////
 
-int pushToSortedEdges
+// Generate a set of neighbour point pairs from pointPoints where the
+// point pair share a cell. Used in aspectRatioSmoothing.
+
+int generatePointNeighSet
 (
-    const label pointI,
-    const double edgeLength,
-    labelList& pointLabels,
-    List<double>& edgeLengths
+    const fvMesh& mesh,
+    std::set<std::pair<label, label>>& pointNeighSet
 )
 {
-    const label nPoints = pointLabels.size();
+    // TODO: Building the set is super slow, fix it
 
-    for (label i = 0; i < nPoints; ++i)
+    forAll (mesh.points(), pointI)
     {
-        const double cLength = edgeLengths[i];
+        forAll (mesh.pointCells(pointI), pointCellI)
+        {
+            const label cellI = mesh.pointCells(pointI)[pointCellI];
+            forAll (mesh.cellPoints(cellI), pointCPI)
+            {
+                const label pointPointI = mesh.cellPoints(cellI)[pointCPI];
+                if (pointI == pointPointI)
+                    continue;
+                const std::pair<label, label> pointPair = {pointI, pointPointI};
+                if (pointNeighSet.count(pointPair) == 1)
+                    continue;
+                pointNeighSet.insert(pointPair);
+            }
+        }
+    }
 
-        // Do nothing if edge length is shorter than previous lengths
-        if (edgeLength > cLength)
+    return 0;
+}
+
+// Help function for aspectRatioSmoothing to find out closest
+// three points (connected by edges) to each point
+
+int findClosestProcPoints
+(
+    const fvMesh& mesh,
+    const bitSet isInternalPoint,
+    vectorList& closestProcPoints1,
+    vectorList& closestProcPoints2,
+    vectorList& closestProcPoints3,
+    vectorList& closestSyncPoints1,
+    vectorList& closestSyncPoints2,
+    boolList& hasCommonCell,
+    const std::set<std::pair<label, label>>& pointNeighSet
+)
+{
+    forAll (mesh.points(), pointI)
+    {
+        if (! isInternalPoint.test(pointI))
+        {
+            closestProcPoints1[pointI] = ZERO_VECTOR;
+            closestProcPoints2[pointI] = ZERO_VECTOR;
+            closestProcPoints3[pointI] = ZERO_VECTOR;
+            closestSyncPoints1[pointI] = ZERO_VECTOR;
+            closestSyncPoints2[pointI] = ZERO_VECTOR;
             continue;
-
-        // Shift values towards list end
-        for (label j = nPoints - 1; j > i; --j)
-        {
-            pointLabels[j] = pointLabels[j-1];
-            edgeLengths[j] = edgeLengths[j-1];
         }
 
-        // Save value to correct position and exit
-        pointLabels[i] = pointI;
-        edgeLengths[i] = edgeLength;
-        return 0;
+        const vector cCoords = mesh.points()[pointI];
+        const labelList pointPoints = mesh.pointPoints()[pointI];
+        const label nPoints = pointPoints.size();
+        List<scalar> edgeLengths(nPoints, 0.0);
+
+        // Calculate edge lengths and put into list
+        forAll(pointPoints, neighPointI)
+        {
+            const label pointI = pointPoints[neighPointI];
+            const double edgeLength = getPointDistance(mesh.points()[pointI], cCoords);
+            edgeLengths[neighPointI] = edgeLength;
+        }
+
+        // Get labels of sorted length list
+        SortList<scalar> sortedEdgeLengths(edgeLengths);
+        sortedEdgeLengths.sort();
+        const labelList sLabels = sortedEdgeLengths.indices();
+
+        // Save values
+        closestProcPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
+        closestProcPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
+        closestProcPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
+
+        closestSyncPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
+        closestSyncPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
+
+        // Check if closest two points share a cell
+        const std::pair<label, label> pointPair = {pointPoints[sLabels[0]], pointPoints[sLabels[1]]};
+        hasCommonCell[pointI] = (pointNeighSet.count(pointPair) == 1);
+
+        // Info << pointI << " at " << mesh.points()[pointI] << " closest1 " << closestProcPoints1[pointI] << " closest2 " << closestProcPoints2[pointI] << " closest3 " << closestProcPoints3[pointI] << " sLabel0 " << sLabels[0] << " sLabel1 " << sLabels[1] << " pointPair " << pointPair << " pointNeighSet " << pointNeighSet.count(pointPair) << " hasCommonCell " << hasCommonCell[pointI] << endl;
     }
 
-    return 1;
+    return 0;
 }
 
-// Help function for aspectRatioLaplacianSmoothing to
-// get sorted list of edge points and edge lengths
+// Help function for aspectRatioSmoothing to identify point locations
+// of two short edge points which don't share cells.  Calculates also
+// a blending fraction used for weighting the coordinates with
+// centroidal smoothing coordinates. Blending fraction is set to zero
+// if points share a cell, to prevent smoothing in that case.
 
-int getSortedEdgeLengths
+int deduceClosestPoints
 (
     const fvMesh& mesh,
     const label pointI,
-    labelList& pointLabels,
-    List<double>& edgeLengths
-)
-{
-    const vector cCoords = mesh.points()[pointI];
-    const labelList pointPoints = mesh.pointPoints()[pointI];
-
-    forAll(pointPoints, neighPointI)
-    {
-        const label pointI = pointPoints[neighPointI];
-        const double edgeLength = getPointDistance(mesh, pointI, cCoords);
-        pushToSortedEdges(pointI, edgeLength, pointLabels, edgeLengths);
-    }
-
-    return 0;
-}
-
-// Help function for pairOppositePoints to calculate number of shared
-// entries in both argument lists
-
-int countSameEntriesInLists
-(
-    const labelList& l1,
-    const labelList& l2
-)
-{
-    label count = 0;
-
-    forAll (l1, i)
-    {
-        forAll (l2, j)
-        {
-            if (l1[i] == l2[j])
-            {
-                ++count;
-            }
-        }
-    }
-
-    return count;
-}
-
-// Help function for analyzeShortesEdges to find a pair of
-// non-neighbour points, to be used in aspectRatioLaplacianSmoothing
-
-// TODO: Precalculate once, not on every step
-
-int pairNonNeighbourPoints
-(
-    const fvMesh& mesh,
-    const labelList& pointLabels,
-    const label nShortestEdges,
-    label& pointI1,
-    label& pointI2
-)
-{
-    label nPairs = 0;
-
-    // Find pairs
-    for (label i = 0; i < nShortestEdges; ++i)
-    {
-        for (label j = i; j < nShortestEdges; ++j)
-        {
-            const label i1 = pointLabels[i];
-            const label i2 = pointLabels[j];
-            const labelList i1points = mesh.pointCells(i1);
-            const labelList i2points = mesh.pointCells(i2);
-            if (countSameEntriesInLists(i1points, i2points) == 0)
-            {
-                ++nPairs;
-                pointI1 = i1;
-                pointI2 = i2;
-            }
-        }
-    }
-
-    // Zero the point labels if not exactly one pair was found
-    if (nPairs != 1)
-    {
-        pointI1 = UNDEF_LABEL;
-        pointI2 = UNDEF_LABEL;
-    }
-
-    return 0;
-}
-
-// Help function for aspectRatioLaplacianSmoothing to identify point
-// indices of two short edge points which don't share cells and
-// calculate blending fraction used for weighting the laplacian
-// coordinates with centroidal smoothing coordinates.
-
-int analyzeShortestEdges
-(
-    const fvMesh& mesh,
-    const labelList& pointLabels,
-    const List<double>& edgeLengths,
-    label& pointI1,
-    label& pointI2,
-    double& blendFrac
+    const vector& closestProcPoint1,
+    const vector& closestProcPoint2,
+    const vector& closestProcPoint3,
+    const vector& closestSyncPoint1,
+    const vector& closestSyncPoint2,
+    vector& closestPoint1,
+    vector& closestPoint2,
+    double& blendFrac,
+    bool hasCommonCell
 )
 {
     // Minimum and maximum edge length ratios for detecting and
@@ -331,81 +304,151 @@ int analyzeShortestEdges
     const double minRatio = 1.5;
     const double maxRatio = 3.0;
 
-    const label nEdges = edgeLengths.size();
-    label nShortestEdges = 0;
+    // Initialize
+    closestPoint1 = ZERO_VECTOR;
+    closestPoint2 = ZERO_VECTOR;
     blendFrac = 0.0;
 
-    // Find number of shortest edges and calculate blending fraction
-    for (label i = 1; i < nEdges; ++i)
+    const vectorList points = {closestProcPoint1, closestProcPoint2, closestProcPoint3, closestSyncPoint1, closestSyncPoint2};
+
+    // Calculate edge lengths and put into list
+    List<scalar> edgeLengths(points.size(), 0.0);
+    forAll(points, neighPointI)
     {
-        const double lengthRatio = edgeLengths[i] / edgeLengths[i-1];
-        if (lengthRatio > minRatio)
-        {
-            nShortestEdges = i;
-            const double frac = (lengthRatio - minRatio) / (maxRatio - minRatio);
-            blendFrac = min(1.0, max(0.0, frac));
-            break;
-        }
+        const double edgeLength = mag(points[neighPointI]);
+        edgeLengths[neighPointI] = edgeLength;
     }
 
-    // Find the two short edge points which don't share cells
-    pairNonNeighbourPoints(mesh, pointLabels, nShortestEdges, pointI1, pointI2);
+    // Get labels of uniquely sorted length list
+    SortList<scalar> sortedEdgeLengths(edgeLengths);
+    sortedEdgeLengths.uniqueSort();
+
+    // Exit if there is no data for points
+    if (sortedEdgeLengths.size() == 1)
+    {
+        return 0;
+    }
+
+    const labelList sLabels = sortedEdgeLengths.indices();
+
+    // Info << "pointI " << pointI << " points " << points << endl;
+    // Info << "  sortedEdgeLengths " << sortedEdgeLengths << endl;
+    closestPoint1 = points[sLabels[0]];
+    closestPoint2 = points[sLabels[1]];
+    const vector closestPoint3 = points[sLabels[2]];
+    // Info << "  closestPoints " << closestPoint1 << " " << closestPoint2 << " " << closestPoint3 << endl;
+
+    // Make note if synchronization changed the closest point
+    bool syncAffectedClosest = false;
+    if ((closestProcPoint1 != closestPoint1) or
+        (closestProcPoint2 != closestPoint2))
+        {
+            syncAffectedClosest = true;
+        }
+
+    // Info << "  hasCommonCell " << hasCommonCell << " syncAffectedClosest " << syncAffectedClosest << endl;
+
+    // Blending fraction is kept at zero if this processor contains
+    // both closest points and if the points are part of a common cell
+    if ((! syncAffectedClosest) and (hasCommonCell))
+    {
+        return 0;
+    }
+
+    // Blending fraction is applied if two closest points have similar
+    // length, and if the third closest point is clearly farther away.
+    const double lengthRatio1 = mag(closestPoint2) / mag(closestPoint1);
+    const double lengthRatio2 = mag(closestPoint3) / mag(closestPoint2);
+
+    if ((lengthRatio1 < minRatio) and (lengthRatio2 > minRatio))
+    {
+        const double frac = (lengthRatio2 - minRatio) / (maxRatio - minRatio);
+        blendFrac = min(1.0, max(0.0, frac));
+    }
+
+    // Info << "  lengthRatio1 " << lengthRatio1 << " lengthRatio2 " << lengthRatio2 << " blendFrac " << blendFrac << endl;
 
     return 0;
 }
 
-// Aspect ratio aware Laplacian Smoothing algorithm. Blends resulting
-// coordinates with centroidal point coordinates.
+// Special smoothing algorithm for high aspect ratio cells. Blends
+// resulting coordinates with centroidal point coordinates.
 
-// TODO: Currently works only on serial run, needs parallel implementation
-
-Foam::tmp<Foam::pointField> aspectRatioLaplacianSmoothing
+Foam::tmp<Foam::pointField> aspectRatioSmoothing
 (
     const fvMesh& mesh,
     const bitSet isInternalPoint,
-    const pointField& centroidalPoints
+    const pointField& centroidalPoints,
+    const std::set<std::pair<label, label>>& pointNeighSet
 )
 {
+    // Storage for surrounding point locations (relative to current
+    // point) of closest edge points
+    const label nPoints = mesh.nPoints();
+    vectorList closestProcPoints1(nPoints, ZERO_VECTOR);
+    vectorList closestProcPoints2(nPoints, ZERO_VECTOR);
+    vectorList closestProcPoints3(nPoints, ZERO_VECTOR);
+
+    // Storage for sharing closest edge relative point locations
+    // among processors
+    tmp<vectorField> tClosestSyncPoints1(new vectorField(nPoints, ZERO_VECTOR));
+    vectorField& closestSyncPoints1 = tClosestSyncPoints1.ref();
+    tmp<vectorField> tClosestSyncPoints2(new vectorField(nPoints, ZERO_VECTOR));
+    vectorField& closestSyncPoints2 = tClosestSyncPoints2.ref();
+
+    // Boolean to mark that the two shortest local edge points share a cell
+    boolList hasCommonCell(nPoints, false);
+
     // New point locations storage
-    tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
+    tmp<pointField> tNewPoints(new pointField(nPoints, Zero));
     pointField& newPoints = tNewPoints.ref();
 
+    // Initialize with centroidal coordinates
     forAll(isInternalPoint, pointI)
     {
-        const vector cCoords = centroidalPoints[pointI];
+        newPoints[pointI] = centroidalPoints[pointI];
+    }
 
-        // Boundary points are not modified
-        if ((USE_STABLE_FEATURES_ONLY) or (! isInternalPoint.test(pointI)))
-        {
-            newPoints[pointI] = cCoords;
-            continue;
-        }
+    if (USE_STABLE_FEATURES_ONLY)
+        return tNewPoints;
 
-        const label nPoints = mesh.pointPoints()[pointI].size();
-        labelList pointLabels(nPoints, UNDEF_LABEL);
-        List<double> edgeLengths(nPoints, VGREAT);
+    // Find closest local edge points and initialize closest
+    // point info for synchronization among processors
+    findClosestProcPoints(mesh, isInternalPoint, closestProcPoints1, closestProcPoints2, closestProcPoints3, closestSyncPoints1, closestSyncPoints2, hasCommonCell, pointNeighSet);
 
-        // Sort edges by length and analyze
-        getSortedEdgeLengths(mesh, pointI, pointLabels, edgeLengths);
+    // Synchronize closest points
+    syncTools::syncPointList
+    (
+         mesh,
+         closestSyncPoints1,
+         minMagSqrEqOp<vector>(),
+         UNDEF_VECTOR               // null value
+    );
+
+    syncTools::syncPointList
+    (
+         mesh,
+         closestSyncPoints2,
+         minMagSqrEqOp<vector>(),
+         UNDEF_VECTOR               // null value
+    );
+
+    // Deduce the closest point coordinates and blending fraction,
+    // then calculate new point coordinates
+    forAll(isInternalPoint, pointI)
+    {
         double blendFrac = 0.0;
-        label pointI1 = UNDEF_LABEL;
-        label pointI2 = UNDEF_LABEL;
-        analyzeShortestEdges(mesh, pointLabels, edgeLengths, pointI1, pointI2, blendFrac);
+        vector closestPoint1(ZERO_VECTOR);
+        vector closestPoint2(ZERO_VECTOR);
 
-        // Info << "pointI " << pointI << " bfrac " << blendFrac << " n " << nShortestEdges << "/" << nPoints << " -- " << edgeLengths << endl;
+        deduceClosestPoints(mesh, pointI, closestProcPoints1[pointI], closestProcPoints2[pointI], closestProcPoints3[pointI], closestSyncPoints1[pointI], closestSyncPoints2[pointI], closestPoint1, closestPoint2, blendFrac, hasCommonCell[pointI]);
 
-        // If exactly two non-neighboring edges were found, calculate
-        // laplacian smoothing coordinates, and blend with centroidal
-        // point coordinates
-        vector newCoords = cCoords;
-        if ((pointI1 > -1) and (pointI2 > -1))
+        if (blendFrac > 0.0)
         {
-            const vector nCoords = (mesh.points()[pointI1] + mesh.points()[pointI2]) / 2.0;
-            newCoords = (1.0 - blendFrac) * cCoords + blendFrac * nCoords;
+            const vector aCoords = mesh.points()[pointI] + (closestPoint1 + closestPoint2) / 2.0;
+            const vector newCoords = (1.0 - blendFrac) * newPoints[pointI] + blendFrac * aCoords;
+            newPoints[pointI] = newCoords;
         }
-
-        // Save point coordinates
-        newPoints[pointI] = newCoords;
     }
 
     return tNewPoints;
@@ -442,10 +485,10 @@ int restrictEdgeShortening
         forAll(mesh.pointPoints(pointI), pointPpI)
         {
             const label neighI = mesh.pointPoints(pointI)[pointPpI];
-            const double testCurrentLength = getPointDistance(mesh, neighI, cCoords);
+            const double testCurrentLength = getPointDistance(mesh.points()[neighI], cCoords);
             if (testCurrentLength < shortestCurrentEdgeLength)
                 shortestCurrentEdgeLength = testCurrentLength;
-            const double testNewLength = getPointDistance(mesh, neighI, nCoords);
+            const double testNewLength = getPointDistance(mesh.points()[neighI], nCoords);
             if (testNewLength < shortestNewEdgeLength)
                 shortestNewEdgeLength = testNewLength;
         }
@@ -1656,9 +1699,15 @@ int main(int argc, char *argv[])
     // Storage for marking points on a flat (not curving) boundary patch
     boolList isFlatPatchPoint(mesh.nPoints(), false);
 
-    // Storage for map to neighbour points for feature edges
-    // TBA labelList featureEdgeNeighPointMap1(mesh.nPoints(), UNDEF_LABEL);
-    // TBA labelList featureEdgeNeighPointMap2(mesh.nPoints(), UNDEF_LABEL);
+    // Boolean list for marking frozen points. This list is synced among processors.
+    boolList isFrozenPoint(mesh.nPoints(), false);
+
+    // A set for marking pointPoints which share a cell. Used in
+    // aspectRatioSmoothing. Uses two point labels as a key.
+    Info << "Starting to build pointNeighSet" << endl;
+    std::set<std::pair<label, label>> pointNeighSet;
+    generatePointNeighSet(mesh, pointNeighSet);
+    Info << "Done building pointNeighSet" << endl;
 
     // Preparations for optional orthogonal boundary layer treatment
     if ((boundaryMaxBlendingFraction > SMALL) or
@@ -1669,9 +1718,6 @@ int main(int argc, char *argv[])
         propagateOuterNeighInfo(mesh, patchIds, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
         propagateInnerNeighInfo(mesh, boundaryPointSmoothingPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
     }
-
-    // Boolean list for marking frozen points. This list is synced among processors.
-    boolList isFrozenPoint(mesh.nPoints(), false);
 
     // Carry out smoothing iterations
     for (label i = 0; i < centroidalIters; ++i)
@@ -1684,8 +1730,8 @@ int main(int argc, char *argv[])
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint);
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
-        // Blend centroidal points with points from aspect ratio laplacian smoothing
-        tmp<pointField> tNewPoints = aspectRatioLaplacianSmoothing(mesh, isInternalPoint, centroidalPoints);
+        // Blend centroidal points with points from aspect ratio smoothing
+        tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighSet);
         pointField& newPoints = tNewPoints.ref();
 
 
