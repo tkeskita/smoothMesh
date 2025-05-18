@@ -213,31 +213,89 @@ int generatePointNeighSet
     return 0;
 }
 
+// Help function which compares values of vectors element by element
+// and returns true if first argument is smaller than second argument.
+
+bool isSmallerByVectorElements
+(
+    const vector vec1,
+    const vector vec2
+)
+{
+    if (vec1.size() != vec2.size())
+        FatalError << vec1 << " size does not equal size of " << vec2 << endl << abort(FatalError);
+
+    forAll(vec1, i)
+    {
+        if (vec1[i] < vec2[i])
+            return true;
+        else if (vec1[i] > vec2[i])
+            return false;
+    }
+    return false;
+}
+
+
+// Help function to determine if point1 is closer to origin than
+// point2. This function takes into account the special case where
+// distance is equal but point coordinates are different.
+
+bool isCloserPoint
+(
+    const vector point1,
+    const vector point2
+)
+{
+    if (point1 == point2)
+    {
+        return false;
+    }
+
+    // point1 is clearly closer than point2
+    const double deltaDistance = mag(point1) - mag(point2);
+    if (deltaDistance < VSMALL)
+    {
+        return true;
+    }
+
+    // point1 and point2 are at same distance, prefer the point with
+    // smaller x, y, or z coordinate
+    else if ((abs(deltaDistance) < VSMALL) and (isSmallerByVectorElements(point1, point2)))
+    {
+        return true;
+    }
+
+    return false;
+}
+
+
 // Help function for aspectRatioSmoothing to find out closest
 // three points (connected by edges) to each point
 
-int findClosestProcPoints
+int findClosestPoints
 (
     const fvMesh& mesh,
     const bitSet isInternalPoint,
-    vectorList& closestProcPoints1,
-    vectorList& closestProcPoints2,
-    vectorList& closestProcPoints3,
-    vectorList& closestSyncPoints1,
-    vectorList& closestSyncPoints2,
+    vectorList& closestPoints1,
+    vectorList& closestPoints2,
+    vectorList& closestPoints3,
     boolList& hasCommonCell,
     const std::set<std::pair<label, label>>& pointNeighSet
 )
 {
+    // Storage for sharing relative point locations among processors
+    tmp<vectorField> tSyncPoints(new vectorField(mesh.points().size(), ZERO_VECTOR));
+    vectorField& syncPoints = tSyncPoints.ref();
+
+    // Initialize with local information
     forAll (mesh.points(), pointI)
     {
         if (! isInternalPoint.test(pointI))
         {
-            closestProcPoints1[pointI] = ZERO_VECTOR;
-            closestProcPoints2[pointI] = ZERO_VECTOR;
-            closestProcPoints3[pointI] = ZERO_VECTOR;
-            closestSyncPoints1[pointI] = ZERO_VECTOR;
-            closestSyncPoints2[pointI] = ZERO_VECTOR;
+            closestPoints1[pointI] = ZERO_VECTOR;
+            closestPoints2[pointI] = ZERO_VECTOR;
+            closestPoints3[pointI] = ZERO_VECTOR;
+            hasCommonCell[pointI] = false;
             continue;
         }
 
@@ -259,20 +317,119 @@ int findClosestProcPoints
         sortedEdgeLengths.sort();
         const labelList sLabels = sortedEdgeLengths.indices();
 
-        // Save values
-        closestProcPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
-        closestProcPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
-        closestProcPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
-
-        closestSyncPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
-        closestSyncPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
+        // Save local values
+        closestPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
+        closestPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
+        closestPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
 
         // Check if closest two points share a cell
         const std::pair<label, label> pointPair = {pointPoints[sLabels[0]], pointPoints[sLabels[1]]};
         hasCommonCell[pointI] = (pointNeighSet.count(pointPair) == 1);
 
-        // Info << pointI << " at " << mesh.points()[pointI] << " closest1 " << closestProcPoints1[pointI] << " closest2 " << closestProcPoints2[pointI] << " closest3 " << closestProcPoints3[pointI] << " sLabel0 " << sLabels[0] << " sLabel1 " << sLabels[1] << " pointPair " << pointPair << " pointNeighSet " << pointNeighSet.count(pointPair) << " hasCommonCell " << hasCommonCell[pointI] << endl;
+        // Info << pointI << " at " << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << " closest2 " << closestPoints2[pointI] << " closest3 " << closestPoints3[pointI] << " pointPair " << pointPair << " pointNeighSet " << pointNeighSet.count(pointPair) << " hasCommonCell " << hasCommonCell[pointI] << endl;
     }
+
+    // // Debug print
+    // forAll (mesh.points(), pointI)
+    // {
+    //     if (mag(mesh.points()[pointI] - vector(-2.49596, 0.0032181, 0.487783)) < 1e-3)
+    //         Pout << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << "_mag_" << mag(closestPoints1[pointI]) << " closest2 " << closestPoints2[pointI] << "_mag_" << mag(closestPoints2[pointI]) << " closest3 " << closestPoints3[pointI] << "_mag_" << mag(closestPoints3[pointI]) << endl;
+    // }
+
+    // For each position, deduce the globally closest points among processors
+
+    // Position 1
+    // ----------
+
+    forAll (mesh.points(), pointI)
+    {
+        syncPoints[pointI] = closestPoints1[pointI];
+    }
+
+    syncTools::syncPointList
+    (
+        mesh,
+        syncPoints,
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR               // null value
+    );
+
+    forAll (mesh.points(), pointI)
+    {
+        if (isCloserPoint(syncPoints[pointI], closestPoints1[pointI]))
+        {
+            closestPoints3[pointI] = closestPoints2[pointI];
+            closestPoints2[pointI] = closestPoints1[pointI];
+            closestPoints1[pointI] = syncPoints[pointI];
+            hasCommonCell[pointI] = false;
+        }
+    }
+
+    // Position 2
+    // ----------
+
+    forAll (mesh.points(), pointI)
+    {
+        syncPoints[pointI] = closestPoints2[pointI];
+    }
+
+    syncTools::syncPointList
+    (
+        mesh,
+        syncPoints,
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR               // null value
+    );
+
+    forAll (mesh.points(), pointI)
+    {
+        if (isCloserPoint(syncPoints[pointI], closestPoints2[pointI]))
+        {
+            closestPoints3[pointI] = closestPoints2[pointI];
+            closestPoints2[pointI] = syncPoints[pointI];
+            hasCommonCell[pointI] = false;
+        }
+    }
+
+    // Position 3
+    // ----------
+
+    forAll (mesh.points(), pointI)
+    {
+        syncPoints[pointI] = closestPoints3[pointI];
+    }
+
+    syncTools::syncPointList
+    (
+        mesh,
+        syncPoints,
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR               // null value
+    );
+
+    forAll (mesh.points(), pointI)
+    {
+        if (isCloserPoint(syncPoints[pointI], closestPoints3[pointI]))
+        {
+            closestPoints3[pointI] = syncPoints[pointI];
+        }
+    }
+
+    // Synchronize cell sharing boolean
+    syncTools::syncPointList
+    (
+         mesh,
+         hasCommonCell,
+         bitOrEqOp<bool>(),
+         false                      // null value
+    );
+
+    // // Debug print
+    // forAll (mesh.points(), pointI)
+    // {
+    //     if (mag(mesh.points()[pointI] - vector(-2.49596, 0.0032181, 0.487783)) < 1e-3)
+    //         Pout << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << "_mag_" << mag(closestPoints1[pointI]) << " closest2 " << closestPoints2[pointI] << "_mag_" << mag(closestPoints2[pointI]) << " closest3 " << closestPoints3[pointI] << "_mag_" << mag(closestPoints3[pointI]) << endl;
+    // }
 
     return 0;
 }
@@ -283,77 +440,30 @@ int findClosestProcPoints
 // centroidal smoothing coordinates. Blending fraction is set to zero
 // if points share a cell, to prevent smoothing in that case.
 
-int deduceClosestPoints
+double calcARSmoothingRatio
 (
-    const fvMesh& mesh,
-    const label pointI,
-    const vector& closestProcPoint1,
-    const vector& closestProcPoint2,
-    const vector& closestProcPoint3,
-    const vector& closestSyncPoint1,
-    const vector& closestSyncPoint2,
-    vector& closestPoint1,
-    vector& closestPoint2,
-    double& blendFrac,
-    bool hasCommonCell
+    const vector& closestPoint1,
+    const vector& closestPoint2,
+    const vector& closestPoint3,
+    const bool hasCommonCell
 )
 {
+    // Do nothing if the points are part of a common cell
+    if (hasCommonCell)
+    {
+        return 0.0;
+    }
+
+    if ((closestPoint1 == ZERO_VECTOR) or (closestPoint2 == ZERO_VECTOR))
+    {
+        return 0.0;
+    }
+
     // Minimum and maximum edge length ratios for detecting and
     // blending high aspect ratio.
     // TODO: Optimize values and test further?
     const double minRatio = 1.5;
     const double maxRatio = 3.0;
-
-    // Initialize
-    closestPoint1 = ZERO_VECTOR;
-    closestPoint2 = ZERO_VECTOR;
-    blendFrac = 0.0;
-
-    const vectorList points = {closestProcPoint1, closestProcPoint2, closestProcPoint3, closestSyncPoint1, closestSyncPoint2};
-
-    // Calculate edge lengths and put into list
-    List<scalar> edgeLengths(points.size(), 0.0);
-    forAll(points, neighPointI)
-    {
-        const double edgeLength = mag(points[neighPointI]);
-        edgeLengths[neighPointI] = edgeLength;
-    }
-
-    // Get labels of uniquely sorted length list
-    SortList<scalar> sortedEdgeLengths(edgeLengths);
-    sortedEdgeLengths.uniqueSort();
-
-    // Exit if there is no data for points
-    if (sortedEdgeLengths.size() == 1)
-    {
-        return 0;
-    }
-
-    const labelList sLabels = sortedEdgeLengths.indices();
-
-    // Info << "pointI " << pointI << " points " << points << endl;
-    // Info << "  sortedEdgeLengths " << sortedEdgeLengths << endl;
-    closestPoint1 = points[sLabels[0]];
-    closestPoint2 = points[sLabels[1]];
-    const vector closestPoint3 = points[sLabels[2]];
-    // Info << "  closestPoints " << closestPoint1 << " " << closestPoint2 << " " << closestPoint3 << endl;
-
-    // Make note if synchronization changed the closest point
-    bool syncAffectedClosest = false;
-    if ((closestProcPoint1 != closestPoint1) or
-        (closestProcPoint2 != closestPoint2))
-        {
-            syncAffectedClosest = true;
-        }
-
-    // Info << "  hasCommonCell " << hasCommonCell << " syncAffectedClosest " << syncAffectedClosest << endl;
-
-    // Blending fraction is kept at zero if this processor contains
-    // both closest points and if the points are part of a common cell
-    if ((! syncAffectedClosest) and (hasCommonCell))
-    {
-        return 0;
-    }
 
     // Blending fraction is applied if two closest points have similar
     // length, and if the third closest point is clearly farther away.
@@ -363,12 +473,11 @@ int deduceClosestPoints
     if ((lengthRatio1 < minRatio) and (lengthRatio2 > minRatio))
     {
         const double frac = (lengthRatio2 - minRatio) / (maxRatio - minRatio);
-        blendFrac = min(1.0, max(0.0, frac));
+        const double blendFrac = min(1.0, max(0.0, frac));
+        return blendFrac;
     }
 
-    // Info << "  lengthRatio1 " << lengthRatio1 << " lengthRatio2 " << lengthRatio2 << " blendFrac " << blendFrac << endl;
-
-    return 0;
+    return 0.0;
 }
 
 // Special smoothing algorithm for high aspect ratio cells. Blends
@@ -385,19 +494,13 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     // Storage for surrounding point locations (relative to current
     // point) of closest edge points
     const label nPoints = mesh.nPoints();
-    vectorList closestProcPoints1(nPoints, ZERO_VECTOR);
-    vectorList closestProcPoints2(nPoints, ZERO_VECTOR);
-    vectorList closestProcPoints3(nPoints, ZERO_VECTOR);
-
-    // Storage for sharing closest edge relative point locations
-    // among processors
-    tmp<vectorField> tClosestSyncPoints1(new vectorField(nPoints, ZERO_VECTOR));
-    vectorField& closestSyncPoints1 = tClosestSyncPoints1.ref();
-    tmp<vectorField> tClosestSyncPoints2(new vectorField(nPoints, ZERO_VECTOR));
-    vectorField& closestSyncPoints2 = tClosestSyncPoints2.ref();
+    vectorList closestPoints1(nPoints, ZERO_VECTOR);
+    vectorList closestPoints2(nPoints, ZERO_VECTOR);
+    vectorList closestPoints3(nPoints, ZERO_VECTOR);
 
     // Boolean to mark that the two shortest local edge points share a cell
-    boolList hasCommonCell(nPoints, false);
+    tmp<boolField> tHasCommonCell(new boolField(nPoints, false));
+    boolField& hasCommonCell = tHasCommonCell.ref();
 
     // New point locations storage
     tmp<pointField> tNewPoints(new pointField(nPoints, Zero));
@@ -412,41 +515,18 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     if (USE_STABLE_FEATURES_ONLY)
         return tNewPoints;
 
-    // Find closest local edge points and initialize closest
-    // point info for synchronization among processors
-    findClosestProcPoints(mesh, isInternalPoint, closestProcPoints1, closestProcPoints2, closestProcPoints3, closestSyncPoints1, closestSyncPoints2, hasCommonCell, pointNeighSet);
+    // Find closest points among processors
+    findClosestPoints(mesh, isInternalPoint, closestPoints1, closestPoints2, closestPoints3, hasCommonCell, pointNeighSet);
 
-    // Synchronize closest points
-    syncTools::syncPointList
-    (
-         mesh,
-         closestSyncPoints1,
-         minMagSqrEqOp<vector>(),
-         UNDEF_VECTOR               // null value
-    );
-
-    syncTools::syncPointList
-    (
-         mesh,
-         closestSyncPoints2,
-         minMagSqrEqOp<vector>(),
-         UNDEF_VECTOR               // null value
-    );
-
-    // Deduce the closest point coordinates and blending fraction,
-    // then calculate new point coordinates
+    // Calculate closest middle point coordinates and blend with centroidal coordinates
     forAll(isInternalPoint, pointI)
     {
-        double blendFrac = 0.0;
-        vector closestPoint1(ZERO_VECTOR);
-        vector closestPoint2(ZERO_VECTOR);
-
-        deduceClosestPoints(mesh, pointI, closestProcPoints1[pointI], closestProcPoints2[pointI], closestProcPoints3[pointI], closestSyncPoints1[pointI], closestSyncPoints2[pointI], closestPoint1, closestPoint2, blendFrac, hasCommonCell[pointI]);
+        const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI]);
 
         if (blendFrac > 0.0)
         {
-            const vector aCoords = mesh.points()[pointI] + (closestPoint1 + closestPoint2) / 2.0;
-            const vector newCoords = (1.0 - blendFrac) * newPoints[pointI] + blendFrac * aCoords;
+            const vector aCoords = mesh.points()[pointI] + (closestPoints1[pointI] + closestPoints2[pointI]) / 2.0;
+            const vector newCoords = (1.0 - blendFrac) * centroidalPoints[pointI] + blendFrac * aCoords;
             newPoints[pointI] = newCoords;
         }
     }
