@@ -181,17 +181,15 @@ double getPointDistance
 // Help functions for aspectRatioSmoothing //
 /////////////////////////////////////////////
 
-// Generate a set of neighbour point pairs from pointPoints where the
+// Generate a lists of neighbour points from pointPoints where the
 // point pair share a cell. Used in aspectRatioSmoothing.
 
-int generatePointNeighSet
+int generatePointNeighPoints
 (
     const fvMesh& mesh,
-    std::set<std::pair<label, label>>& pointNeighSet
+    labelListList& pointNeighPoints
 )
 {
-    // TODO: Building the set is super slow, fix it
-
     forAll (mesh.points(), pointI)
     {
         forAll (mesh.pointCells(pointI), pointCellI)
@@ -202,10 +200,11 @@ int generatePointNeighSet
                 const label pointPointI = mesh.cellPoints(cellI)[pointCPI];
                 if (pointI == pointPointI)
                     continue;
-                const std::pair<label, label> pointPair = {pointI, pointPointI};
-                if (pointNeighSet.count(pointPair) == 1)
-                    continue;
-                pointNeighSet.insert(pointPair);
+
+                if (pointNeighPoints[pointI].find(pointPointI) < 0)
+                {
+                    pointNeighPoints[pointI].append(pointPointI);
+                }
             }
         }
     }
@@ -280,7 +279,7 @@ int findClosestPoints
     vectorList& closestPoints2,
     vectorList& closestPoints3,
     boolList& hasCommonCell,
-    const std::set<std::pair<label, label>>& pointNeighSet
+    const labelListList& pointNeighPoints
 )
 {
     // Storage for sharing relative point locations among processors
@@ -323,8 +322,10 @@ int findClosestPoints
         closestPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
 
         // Check if closest two points share a cell
-        const std::pair<label, label> pointPair = {pointPoints[sLabels[0]], pointPoints[sLabels[1]]};
-        hasCommonCell[pointI] = (pointNeighSet.count(pointPair) == 1);
+        if (pointNeighPoints[pointPoints[sLabels[0]]].find(pointPoints[sLabels[1]]) > 0)
+            hasCommonCell[pointI] = true;
+        else
+            hasCommonCell[pointI] = false;
 
         // Info << pointI << " at " << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << " closest2 " << closestPoints2[pointI] << " closest3 " << closestPoints3[pointI] << " pointPair " << pointPair << " pointNeighSet " << pointNeighSet.count(pointPair) << " hasCommonCell " << hasCommonCell[pointI] << endl;
     }
@@ -488,7 +489,7 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     const fvMesh& mesh,
     const bitSet isInternalPoint,
     const pointField& centroidalPoints,
-    const std::set<std::pair<label, label>>& pointNeighSet
+    const labelListList& pointNeighPoints
 )
 {
     // Storage for surrounding point locations (relative to current
@@ -516,7 +517,7 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
         return tNewPoints;
 
     // Find closest points among processors
-    findClosestPoints(mesh, isInternalPoint, closestPoints1, closestPoints2, closestPoints3, hasCommonCell, pointNeighSet);
+    findClosestPoints(mesh, isInternalPoint, closestPoints1, closestPoints2, closestPoints3, hasCommonCell, pointNeighPoints);
 
     // Calculate closest middle point coordinates and blend with centroidal coordinates
     forAll(isInternalPoint, pointI)
@@ -1782,12 +1783,12 @@ int main(int argc, char *argv[])
     // Boolean list for marking frozen points. This list is synced among processors.
     boolList isFrozenPoint(mesh.nPoints(), false);
 
-    // A set for marking pointPoints which share a cell. Used in
-    // aspectRatioSmoothing. Uses two point labels as a key.
-    Info << "Starting to build pointNeighSet" << endl;
-    std::set<std::pair<label, label>> pointNeighSet;
-    generatePointNeighSet(mesh, pointNeighSet);
-    Info << "Done building pointNeighSet" << endl;
+    // A list of point label lists to indicate cell sharing. Used in
+    // aspectRatioSmoothing.
+    Info << "Starting to build pointNeighPoints" << endl;
+    labelListList pointNeighPoints(mesh.nPoints());
+    generatePointNeighPoints(mesh, pointNeighPoints);
+    Info << "Done building pointNeighPoints" << endl;
 
     // Preparations for optional orthogonal boundary layer treatment
     if ((boundaryMaxBlendingFraction > SMALL) or
@@ -1811,7 +1812,7 @@ int main(int argc, char *argv[])
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
         // Blend centroidal points with points from aspect ratio smoothing
-        tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighSet);
+        tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
 
 
