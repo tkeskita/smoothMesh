@@ -198,13 +198,20 @@ int generatePointNeighPoints
             forAll (mesh.cellPoints(cellI), pointCPI)
             {
                 const label pointPointI = mesh.cellPoints(cellI)[pointCPI];
+
+                // Don't add self
                 if (pointI == pointPointI)
                     continue;
 
-                if (pointNeighPoints[pointI].find(pointPointI) < 0)
-                {
-                    pointNeighPoints[pointI].append(pointPointI);
-                }
+                // Ignore points which are not connected by edges
+                if (mesh.pointPoints()[pointI].find(pointPointI) < 0)
+                    continue;
+
+                // Don't add a point multiple times
+                if (pointNeighPoints[pointI].find(pointPointI) >= 0)
+                    continue;
+
+                pointNeighPoints[pointI].append(pointPointI);
             }
         }
     }
