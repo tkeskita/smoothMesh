@@ -201,7 +201,8 @@ int generatePointNeighPoints
                 if (pointI == pointPointI)
                     continue;
 
-                if (pointNeighPoints[pointI].find(pointPointI) < 0)
+                // Add if not already added
+                if (! pointNeighPoints[pointI].found(pointPointI))
                 {
                     pointNeighPoints[pointI].append(pointPointI);
                 }
@@ -322,7 +323,7 @@ int findClosestPoints
         closestPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
 
         // Check if closest two points share a cell
-        if (pointNeighPoints[pointPoints[sLabels[0]]].find(pointPoints[sLabels[1]]) > 0)
+        if (pointNeighPoints[pointPoints[sLabels[0]]].found(pointPoints[sLabels[1]]))
             hasCommonCell[pointI] = true;
         else
             hasCommonCell[pointI] = false;
