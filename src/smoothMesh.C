@@ -595,6 +595,31 @@ int restrictEdgeShortening
     return 0;
 }
 
+
+// Calculate and return the maximum edge length of the proposed new points
+
+double getProposedMaxStepLength
+(
+    const fvMesh& mesh,
+    const pointField& newPoints
+)
+{
+    double maxLength = 0.0;
+
+    forAll(mesh.points(), pointI)
+    {
+        const double length = mag(vector(newPoints[pointI] - mesh.points()[pointI]));
+
+        if (length > maxLength)
+            maxLength = length;
+    }
+
+    const double proposedMaxLength = returnReduce(maxLength, maxOp<double>());
+
+    return proposedMaxLength;
+}
+
+
 // Quality control function to constrain the length of a step jump to
 // new coordinates by an absolute length value. This increases the
 // stability of the smoothing process, in case target coordinates are
@@ -604,7 +629,8 @@ int constrainMaxStepLength
 (
     const fvMesh& mesh,
     pointField& origPoints,
-    const double maxStepLength
+    const double maxStepLength,
+    const double relStepFrac
 )
 {
     // Copy original points for temporary working point field
@@ -613,20 +639,23 @@ int constrainMaxStepLength
     forAll(newPoints, pointI)
         newPoints[pointI] = origPoints[pointI];
 
+    // Calculate global scaling factor from maximum step size and
+    // maximum allowed step size
+    const double proposedMaxLength = getProposedMaxStepLength(mesh, origPoints);
+    const double globalScale = min(1.0, maxStepLength / (proposedMaxLength * relStepFrac));
+
+    // Info << "Proposed maximum step length = " << proposedMaxLength << endl
+    //      << "Maximum allowed step length = " << maxStepLength << endl
+    //      << "Global scaling factor = " << globalScale << endl
+    //      << endl << endl;
+
     forAll(origPoints, pointI)
     {
-        const vector cCoords = mesh.points()[pointI];
-        vector nCoords = origPoints[pointI];
-
         // Scale down the length of the jump from current coordinates
         // towards new coordinates if jump would be too long
-        const vector stepDir = nCoords - cCoords;
-        const double stepLength = mag(stepDir);
-        if (stepLength > maxStepLength)
-        {
-            const double scale = maxStepLength / stepLength;
-            nCoords = cCoords + scale * stepDir;
-        }
+        const vector cCoords = mesh.points()[pointI];
+        const vector stepDir = origPoints[pointI] - cCoords;
+        const vector nCoords = cCoords + relStepFrac * globalScale * stepDir;
 
         // Save the constrained point
         newPoints[pointI] = nCoords;
@@ -1377,9 +1406,11 @@ labelList getSelectedPatches
 
 // Calculate and return the minimum edge length of the current mesh
 
-double getMeshMinEdgeLength
+int getMeshMinMaxEdgeLength
 (
-    const fvMesh& mesh
+    const fvMesh& mesh,
+    double& minEdgeLength,
+    double& maxEdgeLength
 )
 {
     double minLength = VGREAT;
@@ -1408,7 +1439,9 @@ double getMeshMinEdgeLength
     Info << "Mesh minimum edge length = " << meshMinLength << endl;
     Info << "Mesh maximum edge length = " << meshMaxLength << endl << endl;
 
-    return meshMinLength;
+    minEdgeLength = meshMinLength;
+    maxEdgeLength = meshMaxLength;
+    return 0;
 }
 
 // Calculate the average relative change in the internal point
@@ -1648,7 +1681,11 @@ int main(int argc, char *argv[])
 
     // Default minimum edge length is smaller than the minimum edge
     // length from initial mesh to allow good boundary smoothing
-    double minEdgeLength(0.5 * getMeshMinEdgeLength(mesh));
+    double meshMinEdgeLength;
+    double meshMaxEdgeLength;
+    getMeshMinMaxEdgeLength(mesh, meshMinEdgeLength, meshMaxEdgeLength);
+
+    double minEdgeLength(0.5 * meshMinEdgeLength);
     args.readIfPresent("minEdgeLength", minEdgeLength);
 
     double maxStepLength(0.3 * minEdgeLength);
@@ -1660,6 +1697,9 @@ int main(int argc, char *argv[])
              << "than half of the minimum edge length! This may "
              << "cause unstability in smoothing." << endl << endl;
     }
+
+    double relStepFrac(0.5);
+    args.readIfPresent("relStepFrac", relStepFrac);
 
     bool totalMinFreeze(false);
     args.readIfPresent("totalMinFreeze", totalMinFreeze);
@@ -1706,6 +1746,7 @@ int main(int argc, char *argv[])
     Info << "    relTol                 " << relTol << endl;
     Info << "    minEdgeLength          " << minEdgeLength << endl;
     Info << "    maxStepLength          " << maxStepLength << endl;
+    Info << "    relStepFrac            " << relStepFrac << endl;
     Info << "    totalMinFreeze         " << totalMinFreeze << endl;
 
     if (edgeAngleConstraint)
@@ -1751,7 +1792,9 @@ int main(int argc, char *argv[])
     // Storage for markers for internal points
     bitSet isInternalPoint(mesh.nPoints(), false);
     const label nPoints = findInternalMeshPoints(mesh, isInternalPoint);
-    Info << "Starting smoothing of " << nPoints << " internal mesh points" << endl << endl;
+    Info << "Starting smoothing of " << nPoints << " internal mesh points" << endl
+         << "- Mesh minimum edge length = " << meshMinEdgeLength << endl
+         << "- Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
 
     // Storage for number of edge hops to reach boundary for all mesh
     // points (for boundary layer treatment)
@@ -1855,7 +1898,7 @@ int main(int argc, char *argv[])
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-        constrainMaxStepLength(mesh, newPoints, maxStepLength);
+        constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
 
         // Avoid shortening of short edge length
         restrictEdgeShortening(mesh, newPoints, minEdgeLength, totalMinFreeze, isFrozenPoint);

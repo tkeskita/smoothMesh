@@ -51,7 +51,9 @@ wclean; wmake
 
 - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location. Freezing happens only if edge length would decrease during smoothing. Edge length is allowed to increase regardless of this value. If no value is provided, a default value of half the length of the shortest edge in the initial mesh is applied.
 
-- `-maxStepLength` is the maximum length (in metres) for moving a point in one iteration. Smoothing process seems to be stable when this value is in the range 10% - 50% of the minimum cell side length. If no value is specified, a default value of 0.3 times the `minEdgeLength` is applied.
+- `-maxStepLength` is the maximum allowed length (in metres) for moving a point in one iteration. Smoothing process seems to be stable when this value is in the range 10% - 50% of the minimum cell side length. If no value is specified, a default value of 0.3 times the `minEdgeLength` is applied.
+
+- `-relStepFrac` is a relative step scaling factor, which scales the local step length proposed by smoothing algorithms. It is applied to increase stability of the smoothing process (default value 0.5).
 
 - `-totalMinFreeze` option causes mesh points on all edges shorter than `-minEdgeLength` to freeze, even if edge length would increase in smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only, if the special boundary layer related options below are not used.
 
