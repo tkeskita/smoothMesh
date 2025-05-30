@@ -34,3 +34,4 @@
 # Ignore build files
 src/Make/linux*
 test/
+run_tests/
