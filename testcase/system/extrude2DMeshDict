@@ -19,6 +19,6 @@ expansionRatio      1.0;
 
 linearDirectionCoeffs
 {
-    direction       (0 0 1);
+    direction       (0 1 0);
     thickness       1.5;
 }

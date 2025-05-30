@@ -23,7 +23,7 @@ actions
         type    faceSet;
         action  new;
         source  boxToFace;
-        box     (-1.01 -1.01 -10) (1.01 -0.99 10);
+        box     (-10 0.74 -10) (10 0.76 10);
     }
 
     // back side
@@ -33,7 +33,7 @@ actions
         type    faceSet;
         action  new;
         source  boxToFace;
-        box     (-1.01 0.99 -10) (1.01 1.01 10);
+        box     (-10 -0.76 -10) (10 -0.74 10);
     }
 
     // left side
@@ -43,7 +43,7 @@ actions
         type    faceSet;
         action  new;
         source  boxToFace;
-        box     (-1.01 -1.01 -10) (-0.99 1.01 10);
+        box     (-1.01 -10 -10) (-0.99 10 10);
     }
 
     // right side
@@ -53,8 +53,29 @@ actions
         type    faceSet;
         action  new;
         source  boxToFace;
-        box     (0.99 -1.01 -10) (1.01 1.01 10);
+        box     (0.99 -10 -10) (1.01 10 10);
     }
+
+    // top side
+    {
+        name    topSet;
+        set     topSet;
+        type    faceSet;
+        action  new;
+        source  boxToFace;
+        box     (-10 -10 0.99) (10 10 1.01);
+    }
+
+    // bottom side
+    {
+        name    bottomSet;
+        set     bottomSet;
+        type    faceSet;
+        action  new;
+        source  boxToFace;
+        box     (-10 -10 -1.01) (10 10 -0.99);
+    }
+
 );
 
 

@@ -43,6 +43,18 @@ patches
         patchInfo { type patch; }
         constructFrom set;
     }
+    {
+        name side_top;
+        set  topSet;
+        patchInfo { type patch; }
+        constructFrom set;
+    }
+    {
+        name side_bottom;
+        set  bottomSet;
+        patchInfo { type patch; }
+        constructFrom set;
+    }
 );
 
 
