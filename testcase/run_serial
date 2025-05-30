@@ -14,8 +14,8 @@ topoSet
 createPatch -overwrite
 cp -rv constant/polyMesh 0/
 
-for i in `seq 1 100`; do
-  smoothMesh -centroidalIters 1 -minEdgeLength 0.01 -maxStepLength 0.004 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'
+for i in `seq 1 1`; do
+  smoothMesh -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.002 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'
 done
 
 # Test cases for illustration of wrong usage
