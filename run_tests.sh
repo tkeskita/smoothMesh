@@ -33,6 +33,7 @@ function do_test() {
 # Tests
 do_test "testcase"
 do_test "testcase2"
+do_test "testcase3"
 
 echo "Test runs completed"
 cd ..
