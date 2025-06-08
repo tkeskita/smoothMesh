@@ -3,12 +3,15 @@
 <img src="images/smooth_mesh.png" width="600"/>
 
 OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
-mesh points by using the Centroidal smoothing algorithm (a version of the
-[Laplacian smoothing algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing),
-which uses surrounding cell centers instead of the neighbour point
-locations to calculate the new point position). Optional heuristic
-quality constraint options exist to constrain the smoothing, to avoid
-self-intersections. No changes to mesh topology are made.
+mesh points by using primarily the Centroidal smoothing algorithm (a
+version of the [Laplacian smoothing
+algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing), which
+uses surrounding cell centers instead of the neighbour point locations
+to calculate the new point position). Midpoint of two closest points
+is applied instead of Centroidal point for high aspect ratio points.
+Optional heuristic quality constraint options exist to constrain the
+smoothing, to avoid self-intersections. No changes to mesh topology
+are made.
 
 Image below illustrates the need for restricting centroidal
 smoothing. Without quality constraints, centroidal smoothing would
@@ -110,9 +113,9 @@ Please view [the algorithm description document](algorithm_description.md).
 
 You can run smoothMesh without providing any parameter values, but the result may not be very good, depending on your initial mesh. It is suggested to adjust at least the `-centroidalIters`, `-relTol`, `-maxStepLength` and `-minEdgeLength` options according to your case.
 
-- Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 100 -relTol 0.05 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
+- Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 100 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
 
-- Serial run example: `smoothMesh -centroidalIters 100 -relTol 0.05 -maxStepLength 0.01 -minEdgeLength 0.05`
+- Serial run example: `smoothMesh -centroidalIters 100 -maxStepLength 0.01 -minEdgeLength 0.05`
 
 
 ## Test case
@@ -121,6 +124,9 @@ The folder `testcase` contains an artificial test case which contains
 skewed and non-orthogonal cells, as well as variance in geometric
 cell shapes and topology. This is meant to be a challenging (but not
 impossible) task for centroidal smoothing.
+
+Note: SmoothMesh has been developed further since this test was done
+(5/2025), the test results below have not yet been updated!
 
 [Video of the smoothing process](https://vimeo.com/1048255821) on a
 horizontal cross-section.

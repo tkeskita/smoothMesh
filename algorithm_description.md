@@ -1,25 +1,39 @@
 # SmoothMesh Algorithm Description
 
-SmoothMesh relies on two algorithms for mesh smoothing: **Centroidal
-smoothing** to *provide new target coordinates for moving each mesh
-point*, and **heuristic quality control constraints** to *disallow movement if
-mesh quality would suffer too much*.
+SmoothMesh applies two stages for mesh smoothing: **Predictor
+algorithm** to *provide new target coordinates for moving each mesh
+point*, and **heuristic quality control constraints** to *disallow
+movement if mesh quality would suffer too much*.
+In the current implementation, the predictor algorithm applies a
+combination of **Centroidal smoothing** and **Midpoint of two closest
+edge points** to come up with new point coordinates.
 
-Centroidal smoothing is a version of the
+**Centroidal smoothing** is a version of the
 [Laplacian smoothing algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing),
 which uses surrounding cell centers instead of the neighbour point
 locations to calculate the new target position for mesh points. The
 absolute length of the movement of points in each iteration is limited
 to a user given maximum step length value (`-maxStepLength` option),
-to allow stable iteration during the smoothing process. Boundary
-points are not allowed to move, to keep the mesh geometry intact.
+to allow stable iteration during the smoothing process. Additionally
+a relative step length factor (`-relStepFrac` option) is applied to
+limit the local step length, to stabilize the smoothing while allowing
+local relaxation. Boundary points are not allowed to move, to keep the
+mesh geometry intact.
+
+**The midpoint of two closest edge points** is linearly blended with the
+point coordinate from Centroidal smoothing when the third shortest
+adge is more then 1.5 times the length of the second shortest
+edge. Midpoint is forced if the ratio is more than 3. This heuristic
+is meant to deal with prismatic edges for high aspect ratio
+cells. Centroidal smoothing tends to produce twisting or folding of
+edges in this case.
 
 Unconstrained centroidal smoothing works well as such for cases where
 the initial mesh quality w.r.t face non-orthogonality, face skewness
 and cell aspect ratio is moderate. However, if the mesh contains
 very low quality cells, then centroidal smoothing can produce either
 self-intersecting or boundary-intersecting cells, depending on
-the geometry. Therefore SmoothMesh applies optional
+the geometry. Therefore SmoothMesh applies additional
 **heuristic quality control constraints** which constrain
 point movement, to avoid mesh issues. All of the constraints
 work by stopping the point movement, effectively "freezing" a point to

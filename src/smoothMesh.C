@@ -514,9 +514,6 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
         newPoints[pointI] = centroidalPoints[pointI];
     }
 
-    if (USE_STABLE_FEATURES_ONLY)
-        return tNewPoints;
-
     // Find closest points among processors
     findClosestPoints(mesh, isInternalPoint, closestPoints1, closestPoints2, closestPoints3, hasCommonCell, pointNeighPoints);
 
