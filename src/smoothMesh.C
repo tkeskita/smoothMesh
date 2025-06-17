@@ -13,9 +13,7 @@ Description
 #include "surfaceFields.H"
 #include "pointFields.H"
 #include "ReadFields.H"
-#include "regionProperties.H"
 #include "syncTools.H"
-#include "weightedPosition.H"
 #include "meshTools.H"
 #include <bits/stdc++.h> // For std::stack
 #include "vectorList.H"
@@ -96,8 +94,6 @@ int findInternalMeshPoints
 }
 
 // Function for centroidal smoothing of internal mesh points.
-// Adapted from Foam::snappySnapDriver::smoothInternalDisplacement in
-// https://develop.openfoam.com/Development/openfoam/-/blob/OpenFOAM-v2312/src/mesh/snappyHexMesh/snappyHexMeshDriver/snappySnapDriver.C
 
 Foam::tmp<Foam::pointField> centroidalSmoothing
 (
@@ -108,13 +104,13 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     // Centroidal smoothing algorithm
 
     // Calculate number and sum of surrounding cell center
-    // coordinates using weightedPosition class for data storage
+    // coordinates
 
-    Field<weightedPosition> wps
-    (
-        mesh.nPoints(),
-        pTraits<weightedPosition>::zero
-    );
+    tmp<vectorField> tCellPoints(new vectorField(mesh.points().size(), ZERO_VECTOR));
+    vectorField& cellPoints = tCellPoints.ref();
+
+    tmp<scalarField> tNPoints(new scalarField(mesh.points().size(), scalar(0)));
+    scalarField& nPoints = tNPoints.ref();
 
     forAll(isInternalPoint, pointI)
     {
@@ -123,34 +119,44 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
             const labelList& pCells = mesh.pointCells(pointI);
 
             // First element of Tuple2 stores number of entries
-            wps[pointI].first() = pCells.size();
+            nPoints[pointI] = pCells.size();
 
             // Second element of Tuple2 stores the sum of coordinates
             for (const label celli : pCells)
             {
-                wps[pointI].second() += mesh.cellCentres()[celli];
+                cellPoints[pointI] += mesh.cellCentres()[celli];
             }
         }
     }
 
     // Synchronize among processors
-    weightedPosition::syncPoints(mesh, wps);
+    syncTools::syncPointList
+    (
+        mesh,
+        cellPoints,
+        plusEqOp<vector>(),
+        UNDEF_VECTOR               // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        nPoints,
+        plusEqOp<scalar>(),
+        scalar(0)                  // null value
+    );
 
     // Calculate new point locations
     tmp<pointField> tnewPoints(new pointField(mesh.nPoints(), Zero));
     pointField& newPoints = tnewPoints.ref();
 
-    label nPoints = 0;
     forAll(newPoints, pointI)
     {
-        const weightedPosition& wp = wps[pointI];
-
         // internal point
-        if (mag(wp.first()) > VSMALL)
+        if (nPoints[pointI] > VSMALL)
         {
             newPoints[pointI] =
-                wp.second()/wp.first();
-            nPoints++;
+                cellPoints[pointI] / nPoints[pointI];
         }
 
         // boundary point
