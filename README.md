@@ -28,21 +28,27 @@ vertices.
 
 - Works on 3D polyhedron meshes
 - Can be run in parallel
-- Requires a consistent (not self-intersecting or tangled) initial mesh with "good enough" quality
+- Requires a consistent (not self-intersecting or tangled) initial
+  mesh with "good enough" quality
 - Smoothes internal mesh points
-- NEW: Limited boundary point smoothing (work in progress, see options below)
+- NEW: Limited boundary point smoothing (work in progress, see options
+  below)
 - Optional handling of prismatic boundary layers
-- Developed on OpenFOAM.com v2312, tested on v2412
-
+- Works on both OpenFOAM.org v12 and OpenFOAM.com v2412 (likely also
+  on older versions)
 
 ## Compilation instructions
 
+You need to first source OpenFOAM, then compile with
 ```
-. /usr/lib/openfoam/openfoam2412/etc/bashrc
-cd smoothMesh/src
-wclean; wmake
+./Allwclean; ./Allwmake
 ```
 
+You can optionally run the tests (copied to folder `run_tests`) after
+compilation with
+```
+./run_tests.sh
+```
 
 ## Command line options
 

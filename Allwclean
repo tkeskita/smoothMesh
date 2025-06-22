@@ -1,0 +1,23 @@
+#!/bin/bash
+
+cd "${0%/*}" || exit  # Run from the file location
+
+# Check if OpenFOAM/FOAM has been sourced
+if [[ -z "${WM_PROJECT}" ]]; then
+    echo "Error: No OpenFOAM has been sourced. Stopping.."
+    exit 1
+fi
+
+# Clear the test directory
+if [[ -d run_tests ]]; then
+    echo "Removing run_tests"
+    rm -rf run_tests
+fi
+
+# Clear all build logs
+echo "Removing all log.Allwmake build logs"
+find . -name log.Allwmake | xargs rm
+
+(cd src && wclean)
+
+echo "Clean-up finished"

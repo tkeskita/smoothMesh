@@ -1614,7 +1614,7 @@ int main(int argc, char *argv[])
     );
 
     #include "setRootCase.H"
-    #include "createTimeNoFunctionObjects.H"
+    #include "createTime.H"
 
     const bool overwrite = args.optionFound("overwrite");
 
@@ -1632,7 +1632,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    #include "createMesh.H"
+    #ifdef OPENFOAM_ORG
+        #include "createMesh.H"
+    #elif OPENFOAM_COM
+        #include "createMeshNoClear.H"
+    #endif
 
     const word oldInstance = mesh.pointsInstance();
 

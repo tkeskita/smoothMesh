@@ -37,5 +37,6 @@
 
 # Ignore build files
 src/Make/linux*
+log.Allwmake
 test/
 run_tests/
