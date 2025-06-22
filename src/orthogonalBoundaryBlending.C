@@ -141,8 +141,8 @@ int calculateBoundaryPointNormals
         {
             // Sf is unit normal vector multiplied by surface area, so
             // need to normalise it before use
-            vector Sf = mesh.Sf()[faceI];
-            Sf.normalise();
+            const vector cSf = mesh.Sf()[faceI];
+            vector Sf = cSf / mag(cSf);
 
             const face& f = mesh.faces()[faceI];
             forAll (f, facePointI)
@@ -199,12 +199,14 @@ int calculateBoundaryPointNormals
         }
     }
 
-    // Normalize the point normal vectors
+    // Normalise the point normal vectors
 
     forAll(pointNormals, pointI)
     {
         if (pointNormals[pointI] != ZERO_VECTOR)
-            pointNormals[pointI].normalise();
+        {
+            pointNormals[pointI] /= mag(pointNormals[pointI]);
+        }
     }
 
     return 0;
@@ -268,7 +270,7 @@ int propagateOuterNeighInfo
 (
     const fvMesh& mesh,
     const labelList& patchIds,
-    bitSet& isNeighInProc,
+    boolList& isNeighInProc,
     labelList& pointToOuterPointMap,
     pointField& pointNormals,
     const labelList& pointHopsToBoundary,
@@ -328,7 +330,7 @@ int propagateOuterNeighInfo
 
                 // Mark that the neighbour point is inside this
                 // processor domain
-                isNeighInProc.set(pointI);
+                isNeighInProc[pointI] = true;
 
                 // Add index of neighbour to map
                 pointToOuterPointMap[pointI] = neighPointI;
@@ -389,7 +391,7 @@ int propagateInnerNeighInfo
 (
     const fvMesh& mesh,
     const labelList& patchIds,
-    bitSet& isNeighInProc,
+    boolList& isNeighInProc,
     labelList& pointToInnerPointMap,
     const labelList& pointHopsToBoundary
 )
@@ -436,7 +438,7 @@ int propagateInnerNeighInfo
 
             // Mark that the neighbour point is inside this
             // processor domain
-            isNeighInProc.set(pointI);
+            isNeighInProc[pointI] = true;
 
             // Add index of neighbour to map
             pointToInnerPointMap[pointI] = neighPointI;
@@ -452,7 +454,7 @@ int propagateInnerNeighInfo
 int updateNeighCoords
 (
     const fvMesh& mesh,
-    bitSet& isNeighInProc,
+    boolList& isNeighInProc,
     labelList& pointToPointMap,
     pointField& neighCoords
 )
@@ -496,7 +498,7 @@ int blendWithOrthogonalPoints
 (
     const polyMesh& mesh,
     pointField& newPoints,
-    const bitSet& isInternalPoint,
+    const boolList& isInternalPoint,
     const labelList& pointHopsToBoundary,
     const pointField& pointNormals,
     const pointField& outerNeighCoords,

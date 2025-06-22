@@ -14,7 +14,7 @@ mkdir 0
 cp -rv constant/polyMesh 0/
 
 for i in `seq 1 1`; do
-  smoothMesh -centroidalIters 100 -boundaryMaxBlendingFraction 0.3 -boundaryExpansionRatio 1.2 -boundaryEdgeLength 0.05 -boundaryMaxLayers 10 -minEdgeLength 0.05 -maxStepLength 0.05 -patches 'wall_sphere'
+  smoothMesh -centroidalIters 100 -boundaryMaxBlendingFraction 0.3 -boundaryExpansionRatio 1.2 -boundaryEdgeLength 0.05 -boundaryMaxLayers 10 -minEdgeLength 0.05 -maxStepLength 0.05 -patches '(wall_sphere)'
 
 
 done

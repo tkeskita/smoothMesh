@@ -7,8 +7,8 @@ Description
 \*---------------------------------------------------------------------------*/
 
 #include "argList.H"
+#include "polyMesh.H"
 #include "Time.H"
-#include "fvMesh.H"
 #include "volFields.H"
 #include "surfaceFields.H"
 #include "pointFields.H"
@@ -18,7 +18,8 @@ Description
 #include <bits/stdc++.h> // For std::stack
 #include "vectorList.H"
 #include "stringListOps.H"  // For stringListOps::findMatching()
-#include "SortList.H"
+#include "SortableList.H"
+#include "wordReList.H"
 
 // Macros for value definitions
 #define UNDEF_LABEL -1
@@ -42,18 +43,18 @@ using namespace Foam;
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 // Help function to find internal points of the argument mesh.
-// Updates argument bitSet accordingly: true for internal points
+// Updates argument boolList accordingly: true for internal points
 // (including processor points) and false for boundary points.
 
 int findInternalMeshPoints
 (
     const fvMesh& mesh,
-    bitSet& isInternalPoint
+    boolList& isInternalPoint
 )
 {
     // Start from all points in
     forAll(isInternalPoint, pointI)
-        isInternalPoint.set(pointI);
+        isInternalPoint[pointI] = true;
 
     // Remove points on boundary patches from bit set, except not
     // processor patches nor empty patches
@@ -77,7 +78,7 @@ int findInternalMeshPoints
             forAll (f, pointI)
             {
                 const label i = faces[faceI][pointI];
-                isInternalPoint.unset(i);
+                isInternalPoint[i] = false;
             }
         }
     }
@@ -85,7 +86,7 @@ int findInternalMeshPoints
     label nPoints = 0;
     forAll(isInternalPoint, pointI)
     {
-        if (isInternalPoint.test(pointI))
+        if (isInternalPoint[pointI])
             ++nPoints;
     }
 
@@ -98,7 +99,7 @@ int findInternalMeshPoints
 Foam::tmp<Foam::pointField> centroidalSmoothing
 (
     const fvMesh& mesh,
-    const bitSet isInternalPoint
+    const boolList isInternalPoint
 )
 {
     // Centroidal smoothing algorithm
@@ -114,7 +115,7 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 
     forAll(isInternalPoint, pointI)
     {
-        if (isInternalPoint.test(pointI))
+        if (isInternalPoint[pointI])
         {
             const labelList& pCells = mesh.pointCells(pointI);
 
@@ -208,7 +209,7 @@ int generatePointNeighPoints
                     continue;
 
                 // Add if not already added
-                if (! pointNeighPoints[pointI].found(pointPointI))
+                if (findIndex(pointNeighPoints[pointI], pointPointI) == -1)
                 {
                     pointNeighPoints[pointI].append(pointPointI);
                 }
@@ -281,7 +282,7 @@ bool isCloserPoint
 int findClosestPoints
 (
     const fvMesh& mesh,
-    const bitSet isInternalPoint,
+    const boolList isInternalPoint,
     vectorList& closestPoints1,
     vectorList& closestPoints2,
     vectorList& closestPoints3,
@@ -296,7 +297,7 @@ int findClosestPoints
     // Initialize with local information
     forAll (mesh.points(), pointI)
     {
-        if (! isInternalPoint.test(pointI))
+        if (! isInternalPoint[pointI])
         {
             closestPoints1[pointI] = ZERO_VECTOR;
             closestPoints2[pointI] = ZERO_VECTOR;
@@ -319,8 +320,7 @@ int findClosestPoints
         }
 
         // Get labels of sorted length list
-        SortList<scalar> sortedEdgeLengths(edgeLengths);
-        sortedEdgeLengths.sort();
+        SortableList<scalar> sortedEdgeLengths(edgeLengths);
         const labelList sLabels = sortedEdgeLengths.indices();
 
         // Save local values
@@ -329,7 +329,7 @@ int findClosestPoints
         closestPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
 
         // Check if closest two points share a cell
-        if (pointNeighPoints[pointPoints[sLabels[0]]].found(pointPoints[sLabels[1]]))
+        if (findIndex(pointNeighPoints[pointPoints[sLabels[0]]], pointPoints[sLabels[1]]) >= 0)
             hasCommonCell[pointI] = true;
         else
             hasCommonCell[pointI] = false;
@@ -428,7 +428,7 @@ int findClosestPoints
     (
          mesh,
          hasCommonCell,
-         bitOrEqOp<bool>(),
+         orEqOp<bool>(),
          false                      // null value
     );
 
@@ -494,7 +494,7 @@ double calcARSmoothingRatio
 Foam::tmp<Foam::pointField> aspectRatioSmoothing
 (
     const fvMesh& mesh,
-    const bitSet isInternalPoint,
+    const boolList isInternalPoint,
     const pointField& centroidalPoints,
     const labelListList& pointNeighPoints
 )
@@ -507,8 +507,8 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     vectorList closestPoints3(nPoints, ZERO_VECTOR);
 
     // Boolean to mark that the two shortest local edge points share a cell
-    tmp<boolField> tHasCommonCell(new boolField(nPoints, false));
-    boolField& hasCommonCell = tHasCommonCell.ref();
+    tmp<Field<bool>> tHasCommonCell(new Field<bool>(nPoints, false));
+    Field<bool>& hasCommonCell = tHasCommonCell.ref();
 
     // New point locations storage
     tmp<pointField> tNewPoints(new pointField(nPoints, Zero));
@@ -692,8 +692,8 @@ double edgeEdgeAngle
 {
     vector vec1 = (p1Coords - cCoords);
     vector vec2 = (p2Coords - cCoords);
-    vec1.normalise();
-    vec2.normalise();
+    vec1 /= mag(vec1);
+    vec2 /= mag(vec2);
 
     const double cosA = vec1 & vec2;
 
@@ -1097,7 +1097,7 @@ int calcMinMaxFaceAngleForEdge
     const vector cCoords = 0.5 * (e0 + e1);
 
     // Edge normal vector
-    const vector eVec = (e1 - e0).normalise();
+    const vector eVec = (e1 - e0) / mag(e1 - e0);
 
     // Note: Edge center and edge normal vector defines the plane
     // where points are projected to, prior to angle calculation.
@@ -1118,7 +1118,7 @@ int calcMinMaxFaceAngleForEdge
         const vector pCoords = fCoords + dotProd * eVec;
 
         // Save projected face center coordinate vector
-        const vector cp = (pCoords - cCoords).normalise();
+        const vector cp = (pCoords - cCoords) / mag(pCoords - cCoords);
         pVecs[edgeFaceI] = cp;
 
         // Save face index for pairing below
@@ -1145,7 +1145,7 @@ int calcMinMaxFaceAngleForEdge
         const vector cf = cCoords - cellCenter;
         const double dotProd = cf & eVec;
         const vector pCoords = cellCenter + dotProd * eVec;
-        const vector cp = (pCoords - cCoords).normalise();
+        const vector cp = (pCoords - cCoords) / mag(pCoords - cCoords);
         cVecs[i] = cp;
     }
 
@@ -1359,53 +1359,36 @@ int restrictFaceAngleDeterioration
 }
 
 
-// Help function to get patch numbers from regex. Copied from
-// https://develop.openfoam.com/Development/openfoam/-/blob/OpenFOAM-v2412/applications/utilities/surface/surfaceMeshExtract/surfaceMeshExtract.C
+// Help function to get patch numbers from a given command line option
 
-labelList getSelectedPatches
+labelList getPatchIdsForOption
 (
-    const polyBoundaryMesh& patches,
-    const wordRes& allow,
-    const wordRes& deny
+    const fvMesh& mesh,
+    const Foam::argList& args,
+    const word optionName
 )
 {
-    // Name-based selection
-    labelList indices
-    (
-        stringListOps::findMatching
-        (
-            patches,
-            allow,
-            deny,
-            nameOp<polyPatch>()
-        )
-    );
+    labelList patchIds;
 
+    const polyBoundaryMesh& patches = mesh.boundaryMesh();
+    labelHashSet patchesHashSet(patches.size());
 
-    // Remove undesirable patches
-
-    label count = 0;
-    for (const label patchi : indices)
+    if (args.optionFound(optionName))
     {
-        const polyPatch& pp = patches[patchi];
+        patchesHashSet = patches.patchSet
+        (
+            wordReList(args.optionLookup(optionName)())
+        );
 
-        if (isType<emptyPolyPatch>(pp))
+        forAllConstIter(labelHashSet, patchesHashSet, iter)
         {
-            continue;
+            patchIds.append(iter.key());
         }
-        else if (Pstream::parRun() && bool(isA<processorPolyPatch>(pp)))
-        {
-            break; // No processor patches for parallel output
-        }
-
-        indices[count] = patchi;
-        ++count;
     }
 
-    indices.resize(count);
-
-    return indices;
+    return patchIds;
 }
+
 
 // Calculate and return the minimum edge length of the current mesh
 
@@ -1455,7 +1438,7 @@ double calculateResidual
 (
     const fvMesh& mesh,
     const pointField& newPoints,
-    const bitSet isInternalPoint,
+    const boolList isInternalPoint,
     const double maxStepLength
 )
 {
@@ -1464,7 +1447,7 @@ double calculateResidual
 
     forAll(isInternalPoint, pointI)
     {
-        if (! isInternalPoint.test(pointI))
+        if (! isInternalPoint[pointI])
             continue;
 
         ++nPoints;
@@ -1488,6 +1471,7 @@ int main(int argc, char *argv[])
     (
         "Move internal mesh points to increase mesh quality"
     );
+
     #include "addRegionOption.H"
     #include "addOverwriteOption.H"
 
@@ -1497,6 +1481,7 @@ int main(int argc, char *argv[])
         "time",
         "Specify the time (default is latest)"
     );
+
 
     argList::addOption
     (
@@ -1599,19 +1584,19 @@ int main(int argc, char *argv[])
     argList::addOption
     (
         "patches",
-        "wordRes",
-        "Specify single patch or multiple patches for the boundary layer treatment.\n"
-        "All patches are included by default.\n"
-        "For example 'walls' or '( stator \"rotor.*\" )'"
+        "wordRe",
+        "Specify single patch or multiple patches for the boundary layer treatment."
+        " All patches are included by default."
+        " For example 'walls' or '( stator \"rotor.*\" )'"
     );
 
     argList::addOption
     (
         "boundaryPointSmoothingPatches",
         "wordRes",
-        "Specify single patch or multiple patches for boundary point smoothing.\n"
-        "All patches are included by default.\n"
-        "For example 'walls' or '( stator \"rotor.*\" )'"
+        "Specify single patch or multiple patches for boundary point smoothing."
+        " All patches are included by default."
+        " For example 'walls' or '( stator \"rotor.*\" )'"
     );
 
     argList::addOption
@@ -1628,17 +1613,13 @@ int main(int argc, char *argv[])
         "Boolean option to allow smoothing of boundary points (default false)"
     );
 
-
-    #include "addOverwriteOption.H"
     #include "setRootCase.H"
-    #include "createTime.H"
-    #include "createNamedMesh.H"
+    #include "createTimeNoFunctionObjects.H"
 
-    const bool overwrite = args.found("overwrite");
-    const word oldInstance = mesh.pointsInstance();
+    const bool overwrite = args.optionFound("overwrite");
 
     // Handle time
-    if (args.found("time"))
+    if (args.optionFound("time"))
     {
         if (args["time"] == "constant")
         {
@@ -1646,17 +1627,21 @@ int main(int argc, char *argv[])
         }
         else
         {
-            const scalar timeValue = args.get<scalar>("time");
+            const scalar timeValue = args.optionRead<scalar>("time");
             runTime.setTime(instant(timeValue), 0);
         }
     }
 
-    // Read in patches for boundary layer treatment
-    wordRes includePatches, excludePatches;
-    if (args.readListIfPresent<wordRe>("patches", includePatches))
+    #include "createMesh.H"
+
+    const word oldInstance = mesh.pointsInstance();
+
+    // Get patch ids for boundary layer treatment
+    labelList patchIds = getPatchIdsForOption(mesh, args, "patches");
+    if (patchIds.size() > 0)
     {
         Info<< "Patches for boundary layer treatment limited to: "
-            << flatOutput(includePatches) << endl;
+            << args["patches"] << endl;
     }
     else
     {
@@ -1664,23 +1649,18 @@ int main(int argc, char *argv[])
             << endl;
     }
 
-    // Read in patches for boundary point smoothing
-    wordRes includeBoundaryPointSmoothingPatches, excludeBoundaryPointSmoothingPatches;
-    if (args.readListIfPresent<wordRe>("boundaryPointSmoothingPatches", includeBoundaryPointSmoothingPatches))
+    // Get patch ids for boundary point smoothing
+    labelList BPSPatchIds = getPatchIdsForOption(mesh, args, "boundaryPointSmoothingPatches");
+    if (BPSPatchIds.size() > 0)
     {
-        Info<< "Patches for boundary point smoothing limited to: "
-            << flatOutput(includeBoundaryPointSmoothingPatches) << nl << endl;
+        Info<< "Patches for boundary layer treatment limited to: "
+            << args["boundaryPointSmoothingPatches"] << endl;
     }
     else
     {
         Info<< "Patches for boundary point smoothing limited to: all patches"
-            << nl << endl;
+            << endl;
     }
-
-    // Generate a list of patches for boundary layer treatment
-    const polyBoundaryMesh& bMesh = mesh.boundaryMesh();
-    const labelList patchIds = getSelectedPatches(bMesh, includePatches, excludePatches);
-    const labelList boundaryPointSmoothingPatchIds = getSelectedPatches(bMesh, includeBoundaryPointSmoothingPatches, excludeBoundaryPointSmoothingPatches);
 
     // Default minimum edge length is smaller than the minimum edge
     // length from initial mesh to allow good boundary smoothing
@@ -1688,11 +1668,11 @@ int main(int argc, char *argv[])
     double meshMaxEdgeLength;
     getMeshMinMaxEdgeLength(mesh, meshMinEdgeLength, meshMaxEdgeLength);
 
-    double minEdgeLength(0.5 * meshMinEdgeLength);
-    args.readIfPresent("minEdgeLength", minEdgeLength);
+    double minEdgeLength =
+        args.optionLookupOrDefault("minEdgeLength", 0.5 * meshMinEdgeLength);
 
-    double maxStepLength(0.3 * minEdgeLength);
-    args.readIfPresent("maxStepLength", maxStepLength);
+    double maxStepLength =
+        args.optionLookupOrDefault("maxStepLength", 0.3 * minEdgeLength);
 
     if (maxStepLength > 0.5 * minEdgeLength)
     {
@@ -1701,47 +1681,47 @@ int main(int argc, char *argv[])
              << "cause unstability in smoothing." << endl << endl;
     }
 
-    double relStepFrac(0.5);
-    args.readIfPresent("relStepFrac", relStepFrac);
+    double relStepFrac =
+        args.optionLookupOrDefault("relStepFrac", 0.5);
 
-    bool totalMinFreeze(false);
-    args.readIfPresent("totalMinFreeze", totalMinFreeze);
+    bool totalMinFreeze =
+        args.optionLookupOrDefault("totalMinFreeze", false);
 
-    double minAngle(35);
-    args.readIfPresent("minAngle", minAngle);
+    double minAngle =
+        args.optionLookupOrDefault("minAngle", 35.0);
 
-    double maxAngle(160);
-    args.readIfPresent("maxAngle", maxAngle);
+    double maxAngle =
+        args.optionLookupOrDefault("maxAngle", 160.0);
 
-    bool edgeAngleConstraint(true);
-    args.readIfPresent("edgeAngleConstraint", edgeAngleConstraint);
+    bool edgeAngleConstraint =
+        args.optionLookupOrDefault("edgeAngleConstraint", true);
 
-    bool faceAngleConstraint(true);
-    args.readIfPresent("faceAngleConstraint", faceAngleConstraint);
+    bool faceAngleConstraint =
+        args.optionLookupOrDefault("faceAngleConstraint", true);
 
-    double boundaryMaxBlendingFraction(0.0);
-    args.readIfPresent("boundaryMaxBlendingFraction", boundaryMaxBlendingFraction);
+    double boundaryMaxBlendingFraction =
+        args.optionLookupOrDefault("boundaryMaxBlendingFraction", 0.0);
 
-    double boundaryMaxPointBlendingFraction(0.0);
-    args.readIfPresent("boundaryMaxPointBlendingFraction", boundaryMaxPointBlendingFraction);
+    double boundaryMaxPointBlendingFraction =
+        args.optionLookupOrDefault("boundaryMaxPointBlendingFraction", 0.0);
 
-    double boundaryEdgeLength(minEdgeLength);
-    args.readIfPresent("boundaryEdgeLength", boundaryEdgeLength);
+    double boundaryEdgeLength =
+        args.optionLookupOrDefault("boundaryEdgeLength", minEdgeLength);
 
-    double boundaryExpansionRatio(1.3);
-    args.readIfPresent("boundaryExpansionRatio", boundaryExpansionRatio);
+    double boundaryExpansionRatio =
+        args.optionLookupOrDefault("boundaryExpansionRatio", 1.3);
 
-    label boundaryMinLayers(1);
-    args.readIfPresent("boundaryMinLayers", boundaryMinLayers);
+    label boundaryMinLayers =
+        args.optionLookupOrDefault("boundaryMinLayers", 1);
 
-    label boundaryMaxLayers(4);
-    args.readIfPresent("boundaryMaxLayers", boundaryMaxLayers);
+    label boundaryMaxLayers =
+        args.optionLookupOrDefault("boundaryMaxLayers", 4);
 
-    double relTol(0.02);
-    args.readIfPresent("relTol", relTol);
+    double relTol =
+        args.optionLookupOrDefault("relTol", 0.02);
 
-    label centroidalIters(1000);
-    args.readIfPresent("centroidalIters", centroidalIters);
+    label centroidalIters =
+        args.optionLookupOrDefault("centroidalIters", 1000);
 
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
@@ -1793,7 +1773,7 @@ int main(int argc, char *argv[])
 
 
     // Storage for markers for internal points
-    bitSet isInternalPoint(mesh.nPoints(), false);
+    boolList isInternalPoint(mesh.nPoints(), false);
     const label nPoints = findInternalMeshPoints(mesh, isInternalPoint);
     Info << "Starting smoothing of " << nPoints << " internal mesh points" << endl
          << "- Mesh minimum edge length = " << meshMinEdgeLength << endl
@@ -1815,8 +1795,8 @@ int main(int argc, char *argv[])
 
     // Storage for marking neighbour point being inside same processor
     // domain (for boundary layer treatment)
-    bitSet isInnerNeighInProc(mesh.nPoints(), false);
-    bitSet isOuterNeighInProc(mesh.nPoints(), false);
+    boolList isInnerNeighInProc(mesh.nPoints(), false);
+    boolList isOuterNeighInProc(mesh.nPoints(), false);
 
     // Storage for index map from point to neighbour point inside same
     // processor domain. One map points towards inner mesh, and
@@ -1844,7 +1824,7 @@ int main(int argc, char *argv[])
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
         calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
         propagateOuterNeighInfo(mesh, patchIds, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
-        propagateInnerNeighInfo(mesh, boundaryPointSmoothingPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
+        propagateInnerNeighInfo(mesh, BPSPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
     }
 
     // Carry out smoothing iterations
@@ -1895,7 +1875,7 @@ int main(int argc, char *argv[])
                 pointHopsToBoundary,
                 pointNormals,
                 innerNeighCoords,
-                boundaryPointSmoothingPatchIds,
+                BPSPatchIds,
                 boundaryMaxPointBlendingFraction
             );
         }
@@ -1957,8 +1937,8 @@ int main(int argc, char *argv[])
     {
         if (!overwrite)
         {
-            ++runTime;
-            mesh.setInstance(runTime.timeName());
+            runTime++;
+            // mesh.setInstance(runTime.timeName());
         }
         else
         {
@@ -1968,14 +1948,17 @@ int main(int argc, char *argv[])
         // Set the precision of the points data to 10
         IOstream::defaultPrecision(max(10u, IOstream::defaultPrecision()));
 
-        Info << "Writing new mesh to time " << runTime.timeName()
-             << nl << endl;
+        Info << "Writing new mesh to time " << runTime.name()
+             << endl << endl;
 
         mesh.write();
-        runTime.printExecutionTime(Info);
+
     }
 
-    Info << nl << "End" << nl << endl;
+    Info<< "ClockTime = "
+        << runTime.elapsedClockTime() << " s." << endl;
+
+    Info << endl << "End" << endl;
 
     return 0;
 }

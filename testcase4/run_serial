@@ -14,7 +14,7 @@ mkdir 0
 cp -rv constant/polyMesh 0/
 
 for i in `seq 1 1`; do
-  smoothMesh -boundaryMaxBlendingFraction 0.8 -boundaryMaxPointBlendingFraction 0.8 -boundaryExpansionRatio 1.2 -boundaryEdgeLength 0.05 -boundaryMaxLayers 3 -patches 'walls' -boundaryPointSmoothingPatches '(top bottom)'
+  smoothMesh -boundaryMaxBlendingFraction 0.8 -boundaryMaxPointBlendingFraction 0.8 -boundaryExpansionRatio 1.2 -boundaryEdgeLength 0.05 -boundaryMaxLayers 3 -patches '(walls)' -boundaryPointSmoothingPatches '(top bottom)'
 
   # smoothMesh -boundaryMaxBlendingFraction 0.3 -boundaryMaxPointBlendingFraction 0.8
 done
