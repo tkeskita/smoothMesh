@@ -1634,7 +1634,7 @@ int main(int argc, char *argv[])
 
     #ifdef OPENFOAM_ORG
         #include "createMesh.H"
-    #elif OPENFOAM_COM
+    #else
         #include "createMeshNoClear.H"
     #endif
 
