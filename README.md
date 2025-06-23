@@ -8,7 +8,7 @@ version of the [Laplacian smoothing
 algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing), which
 uses surrounding cell centers instead of the neighbour point locations
 to calculate the new point position). Midpoint of two closest points
-is applied instead of Centroidal point for high aspect ratio points.
+is applied instead of centroidal point for prismatic high aspect ratio points.
 Optional heuristic quality constraint options exist to constrain the
 smoothing, to avoid self-intersections. No changes to mesh topology
 are made.
@@ -16,7 +16,7 @@ are made.
 Image below illustrates the need for restricting centroidal
 smoothing. Without quality constraints, centroidal smoothing would
 move the point highlighted in blue to the location highlighted with
-green, which is outside of the domain. Thereby, centroidal smoothing
+green, which is outside of the domain. Thereby, unconstrained centroidal smoothing
 can create self-intersecting cells, depending on the geometry and
 topology of the mesh. Self-intersections can be avoided by using
 additional quality constraints, which restrict the movement of
@@ -27,25 +27,25 @@ vertices.
 ## Current features and restrictions
 
 - Works on 3D polyhedron meshes
+- Works on both OpenFOAM.org v12 and OpenFOAM.com v2412 (likely also
+  on older versions)
 - Can be run in parallel
 - Requires a consistent (not self-intersecting or tangled) initial
   mesh with "good enough" quality
 - Smoothes internal mesh points
-- NEW: Limited boundary point smoothing (work in progress, see options
-  below)
 - Optional handling of prismatic boundary layers
-- Works on both OpenFOAM.org v12 and OpenFOAM.com v2412 (likely also
-  on older versions)
+- Limited boundary point smoothing (work in progress, see options
+  below)
 
 ## Compilation instructions
 
-You need to first source OpenFOAM, then compile with
+You need to first source OpenFOAM in a terminal, then compile with
 ```
 ./Allwclean; ./Allwmake
 ```
 
-You can optionally run the tests (copied to folder `run_tests`) after
-compilation with
+You can optionally run the test cases (they will be copied to folder
+`run_tests`) after compilation with
 ```
 ./run_tests.sh
 ```
@@ -69,8 +69,6 @@ compilation with
 ### Quality constraint options
 
 The following options are related to additional **heuristic quality control constraints for smoothing**. The constraints work by disallowing movement of point (freezing of points) if the movement would cause quality of the mesh to suffer too much. Without constraining, centroidal smoothing may squish cells and create self-intersecting cells e.g. near concave geometry features, depending on the mesh details. Have a look at [the algorithm description document](algorithm_description.md) for details.
-
-**Note:** The old `-qualityControl` option has been superceded by the options below.
 
 - `-edgeAngleConstraint` boolean option enables an additional quality control which restricts decrease of smallest edge-edge angle below `minAngle` (default is true).
 
@@ -100,6 +98,13 @@ Warning: This is an experimental feature!
 
 - `-patches` option can be used to limit the boundary layer treatment to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`. All patches are affected by default.
 
+## Boundary point smoothing options
+
+Currently smoothMesh has only limited capability to smoothen the
+points located on the boundary patches.
+
+Warning: This is an experimental feature!
+
 - `-boundaryMaxPointBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary points are projected orthogonally to the boundary from the first layer prismatic points. Value like 0.8 seems to produce good results in practice. Note: Projection is made only if the boundary faces surrounding the boundary form a flat surface.
 
 - `-boundaryPointSmoothingPatches` option can be used to limit the boundary point projection defined with the above option (`-boundaryMaxPointBlendingFraction`) to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`. All patches are affected by default.
@@ -107,7 +112,6 @@ Warning: This is an experimental feature!
 **Note:** The combination of `-boundaryMaxBlendingFraction` and `-boundaryMaxPointBlendingFraction` gives different results, depending on the mesh and geometry. Figure below illustrates one example, showing a cross section in the middle of the mesh.
 
 <img src="images/boundary_treatment.png" width="600"/>
-
 
 
 ## Description of the algorithm
