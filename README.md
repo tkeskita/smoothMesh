@@ -1,6 +1,6 @@
 # smoothMesh
 
-<img src="images/smooth_mesh.png" width="600"/>
+<img src="images/smooth_mesh.png"/>
 
 OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
 mesh points by using primarily the Centroidal smoothing algorithm (a
