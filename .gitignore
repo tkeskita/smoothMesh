@@ -32,8 +32,8 @@
 *.app
 
 # Ignore Blender files
-.blend
-.blend1
+*.blend
+*.blend1
 
 # Ignore build files
 src/Make/linux*
