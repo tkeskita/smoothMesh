@@ -18,13 +18,15 @@ if [[ "$WM_PROJECT" != "OpenFOAM" ]]; then
     exit 1
 fi
 
-# Deduce the OpenFOAM fork/variant in use
+# Deduce the OpenFOAM fork/variant in use and initialize accordingly
 if [[ "$WM_PROJECT_VERSION" == *"v"* ]]; then
     echo "Compiling openfoam.com variant"
     export VERSION_SPECIFIC_INC="-DOPENFOAM_COM"
+    cp -f src/Make/options.com src/Make/options
 else
     echo "Compiling openfoam.org variant"
     export VERSION_SPECIFIC_INC="-DOPENFOAM_ORG"
+    cp -f src/Make/options.org src/Make/options
 fi
 
 # Warn if version numbers are not any of the supported ones
@@ -43,7 +45,7 @@ N_ERRORS_1=$(find . -name log.Allwmake | xargs grep " Error " | wc -l)
 N_ERRORS_2=$(find . -name log.Allwmake | xargs grep " Stop." | wc -l)
 if [[ $N_ERRORS_1 -gt 0 ]] || [[ $N_ERRORS_2 -gt 0 ]]
 then
-    echo "Following errors were found in the following logs:"
+    echo "Errors were found in the following log files:"
     echo $(find . -name log.Allwmake | xargs grep -l " Error ")
     echo $(find . -name log.Allwmake | xargs grep -l " Stop.")
     echo "Compilation of smoothMesh FAILED!"

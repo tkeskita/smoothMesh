@@ -18,6 +18,7 @@ fi
 echo "Removing all log.Allwmake build logs"
 find . -name log.Allwmake | xargs rm
 
+rm -f src/Make/options
 (cd src && wclean)
 
 echo "Clean-up finished"

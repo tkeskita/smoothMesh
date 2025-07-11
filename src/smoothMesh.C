@@ -20,6 +20,8 @@ Description
 #include "stringListOps.H"  // For stringListOps::findMatching()
 #include "SortableList.H"
 #include "wordReList.H"
+#include "triSurface.H"
+#include "triSurfaceSearch.H"
 
 // Macros for value definitions
 #define UNDEF_LABEL -1
@@ -37,6 +39,7 @@ Description
 // c++filt -t N4Foam4faceE
 
 #include "orthogonalBoundaryBlending.C"
+#include "boundaryPointSmoothing.C"
 
 using namespace Foam;
 
@@ -1727,6 +1730,10 @@ int main(int argc, char *argv[])
     label centroidalIters =
         args.optionLookupOrDefault("centroidalIters", 1000);
 
+    // Boundary point smoothing edge and surface meshes
+    fileName initEdgesFileName("initEdges.obj");
+    fileName targetSurfacesFileName("targetSurfaces.obj");
+
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
     Info << "    centroidalIters        " << centroidalIters << endl;
@@ -1831,6 +1838,16 @@ int main(int argc, char *argv[])
         propagateInnerNeighInfo(mesh, BPSPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
     }
 
+    // Preparations for boundary point snapping to surfaces
+    autoPtr<triSurface> targetSurfaces(nullptr);
+    autoPtr<triSurfaceSearch> searchSurfaces(nullptr);
+    if (! USE_STABLE_FEATURES_ONLY)
+    {
+        targetSurfaces.reset(new triSurface(targetSurfacesFileName));
+        targetSurfaces().writeStats(Info);
+        searchSurfaces.reset(new triSurfaceSearch(targetSurfaces));
+    }
+
     // Carry out smoothing iterations
     for (label i = 0; i < centroidalIters; ++i)
     {
@@ -1871,17 +1888,33 @@ int main(int argc, char *argv[])
                  boundaryMaxLayers + 1  // +1 for correct number of layers
             );
 
-            projectBoundaryPoints
-            (
-                mesh,
-                newPoints,
-                isFlatPatchPoint,
-                pointHopsToBoundary,
-                pointNormals,
-                innerNeighCoords,
-                BPSPatchIds,
-                boundaryMaxPointBlendingFraction
-            );
+            if (boundaryMaxPointBlendingFraction > 0.0)
+            {
+                if (USE_STABLE_FEATURES_ONLY)
+                {
+                    projectBoundaryPoints
+                    (
+                        mesh,
+                        newPoints,
+                        isFlatPatchPoint,
+                        pointHopsToBoundary,
+                        pointNormals,
+                        innerNeighCoords,
+                        BPSPatchIds,
+                        boundaryMaxPointBlendingFraction
+                    );
+                }
+                else
+                {
+                    projectBoundaryPointsToEdgesAndSurfaces
+                    (
+                        mesh,
+                        newPoints,
+                        searchSurfaces,
+                        boundaryMaxPointBlendingFraction
+                    );
+                }
+            }
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing

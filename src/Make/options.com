@@ -1,0 +1,10 @@
+EXE_INC = \
+    $(VERSION_SPECIFIC_INC) \
+    -I$(LIB_SRC)/finiteVolume/lnInclude \
+    -I$(LIB_SRC)/meshTools/lnInclude \
+    -I$(LIB_SRC)/surfMesh/lnInclude \
+
+EXE_LIBS = \
+    -lfiniteVolume \
+    -lmeshTools \
+    -lsurfMesh
