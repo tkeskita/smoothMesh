@@ -116,20 +116,24 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     tmp<scalarField> tNPoints(new scalarField(mesh.points().size(), scalar(0)));
     scalarField& nPoints = tNPoints.ref();
 
-    forAll(isInternalPoint, pointI)
+    forAll(mesh.points(), pointI)
     {
-        if (isInternalPoint[pointI])
+        // Carry out centroidal smoothing only for internal points in
+        // the current stable feature set
+        if ((USE_STABLE_FEATURES_ONLY) and (! isInternalPoint[pointI]))
         {
-            const labelList& pCells = mesh.pointCells(pointI);
+            continue;
+        }
 
-            // First element of Tuple2 stores number of entries
-            nPoints[pointI] = pCells.size();
+        const labelList& pCells = mesh.pointCells(pointI);
 
-            // Second element of Tuple2 stores the sum of coordinates
-            for (const label celli : pCells)
-            {
-                cellPoints[pointI] += mesh.cellCentres()[celli];
-            }
+        // Number of points
+        nPoints[pointI] = pCells.size();
+
+        // Sum of cell center coordinates
+        for (const label celli : pCells)
+        {
+            cellPoints[pointI] += mesh.cellCentres()[celli];
         }
     }
 
@@ -1731,8 +1735,8 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("centroidalIters", 1000);
 
     // Boundary point smoothing edge and surface meshes
-    fileName initEdgesFileName("initEdges.obj");
-    fileName targetSurfacesFileName("targetSurfaces.obj");
+    fileName initEdgesFileName("constant/geometry/initEdges.obj");
+    fileName targetSurfacesFileName("constant/geometry/targetSurfaces.obj");
 
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
@@ -1838,14 +1842,42 @@ int main(int argc, char *argv[])
         propagateInnerNeighInfo(mesh, BPSPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
     }
 
-    // Preparations for boundary point snapping to surfaces
-    autoPtr<triSurface> targetSurfaces(nullptr);
+    // Objects for boundary point snapping to surfaces
+    autoPtr<triSurface> surf(nullptr);
     autoPtr<triSurfaceSearch> searchSurfaces(nullptr);
+    autoPtr<indexedOctree<treeDataTriSurface>> tree(nullptr);
+
     if (! USE_STABLE_FEATURES_ONLY)
     {
-        targetSurfaces.reset(new triSurface(targetSurfacesFileName));
-        targetSurfaces().writeStats(Info);
-        searchSurfaces.reset(new triSurfaceSearch(targetSurfaces));
+        surf.reset(new triSurface(targetSurfacesFileName));
+        Info << "Target surfaces file " << targetSurfacesFileName << " stats:" << endl;
+        surf().writeStats(Info);
+
+        // Debug prints for localPoints and localSurfaces
+        // Info << "nFaces " << surf().faces().size() << endl;
+        // Info << "nPoints " << surf().points().size() << endl;
+        // Info << "nPatches " << surf().patches().size() << endl;
+        // Info << "nPointFaces " << surf().pointFaces().size() << endl;
+
+        // Info << "pointFaces 0 " << surf().pointFaces()[0] << endl;
+        // Info << "localPoint 0 " << surf().localPoints()[0] << endl;
+        // Info << "localFace 0 " << surf().localFaces()[0] << endl;
+        // Info << "localFace 1 " << surf().localFaces()[1] << endl;
+        // Info << "localFace 6 " << surf().localFaces()[6] << endl;
+        // Info << "localFace 108 " << surf().localFaces()[108] << endl;
+        // Info << "localFace 110 " << surf().localFaces()[110] << endl;
+        // Info << "localFace 111 " << surf().localFaces()[111] << endl;
+
+        // Info << "localFace 6[0] " << surf().localFaces()[6][0] << endl;
+        // Info << "localFace 6[1] " << surf().localFaces()[6][1] << endl;
+        // Info << "localFace 6[2] " << surf().localFaces()[6][2] << endl;
+
+        // Info << "localFace 0 center " << surf().faceCentres()[0] << endl;
+        // Info << "localFace 1 center " << surf().faceCentres()[1] << endl;
+        // Info << "localFace 6 center " << surf().faceCentres()[6] << endl;
+
+        searchSurfaces.reset(new triSurfaceSearch(surf));
+        tree.reset(new indexedOctree<treeDataTriSurface>(searchSurfaces().tree()));
     }
 
     // Carry out smoothing iterations
@@ -1910,9 +1942,13 @@ int main(int argc, char *argv[])
                     (
                         mesh,
                         newPoints,
-                        searchSurfaces,
+                        isInternalPoint,
+                        surf,
+                        tree,
+                        meshMaxEdgeLength,
                         boundaryMaxPointBlendingFraction
                     );
+                    // FatalError << "DEBUG STOP HERE" << endl << abort(FatalError);
                 }
             }
         }
