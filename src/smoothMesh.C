@@ -712,6 +712,7 @@ double edgeEdgeAngle
     return angle;
 }
 
+
 // Find the neighbour mesh point indices neighPI1 and neighPI2 for the
 // point with index pointI, where all points are part of face index
 // faceI.
