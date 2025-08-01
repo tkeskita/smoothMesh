@@ -22,6 +22,8 @@ Description
 #include "wordReList.H"
 #include "triSurface.H"
 #include "triSurfaceSearch.H"
+#include "edgeMesh.H"
+//#include "extendedFeatureEdgeMesh.H"
 
 // Macros for value definitions
 #define UNDEF_LABEL -1
@@ -30,7 +32,7 @@ Description
 
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.
-#define USE_STABLE_FEATURES_ONLY true
+#define USE_STABLE_FEATURES_ONLY false
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
@@ -1737,6 +1739,7 @@ int main(int argc, char *argv[])
 
     // Boundary point smoothing edge and surface meshes
     fileName initEdgesFileName("constant/geometry/initEdges.obj");
+    fileName targetEdgesFileName("constant/geometry/targetEdges.obj");
     fileName targetSurfacesFileName("constant/geometry/targetSurfaces.obj");
 
     // Print out applied parameter values
@@ -1831,7 +1834,7 @@ int main(int argc, char *argv[])
     Info << "Starting to build pointNeighPoints" << endl;
     labelListList pointNeighPoints(mesh.nPoints());
     generatePointNeighPoints(mesh, pointNeighPoints);
-    Info << "Done building pointNeighPoints" << endl;
+    Info << "Done building pointNeighPoints" << endl << endl;
 
     // Preparations for optional orthogonal boundary layer treatment
     if ((boundaryMaxBlendingFraction > SMALL) or
@@ -1848,11 +1851,21 @@ int main(int argc, char *argv[])
     autoPtr<triSurfaceSearch> searchSurfaces(nullptr);
     autoPtr<indexedOctree<treeDataTriSurface>> tree(nullptr);
 
+    // Objects for boundary point snapping to feature edges
+    autoPtr<edgeMesh> initEdges(nullptr);
+    autoPtr<edgeMesh> targetEdges(nullptr);
+
+    // Identification of corner points and corner target locations
+    boolList isCornerPoint(mesh.nPoints(), false);
+    boolList isFeatureEdgePoint(mesh.nPoints(), false);
+    vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
+
     if (! USE_STABLE_FEATURES_ONLY)
     {
         surf.reset(new triSurface(targetSurfacesFileName));
         Info << "Target surfaces file " << targetSurfacesFileName << " stats:" << endl;
         surf().writeStats(Info);
+        Info << endl;
 
         // Debug prints for localPoints and localSurfaces
         // Info << "nFaces " << surf().faces().size() << endl;
@@ -1879,6 +1892,23 @@ int main(int argc, char *argv[])
 
         searchSurfaces.reset(new triSurfaceSearch(surf));
         tree.reset(new indexedOctree<treeDataTriSurface>(searchSurfaces().tree()));
+
+        // Initial and target feature edge meshes
+        initEdges.reset(new edgeMesh(initEdgesFileName));
+        Info << "Initial feature edges file " << initEdgesFileName << " stats:" << endl;
+        initEdges().writeStats(Info);
+        Info << endl;
+
+        targetEdges.reset(new edgeMesh(targetEdgesFileName));
+        Info << "Target feature edges file " << targetEdgesFileName << " stats:" << endl;
+        targetEdges().writeStats(Info);
+        Info << endl;
+
+        // Identify corner points and corner target coordinates
+        findCornersAndFeatureEdges(mesh, initEdges, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, cornerPoints);
+
+        // Info << "nFeatureEdges " << sum(List<int>(isFeatureEdgePoint)) << endl;
+        // FatalError << "DEBUG STOP HERE" << endl << abort(FatalError);
     }
 
     // Carry out smoothing iterations
@@ -1888,6 +1918,8 @@ int main(int argc, char *argv[])
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;
 
+        // Info  << " 11 start point is " << mesh.points()[11] << endl;
+
         // Calculate new point locations using centroidal smoothing
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint);
         pointField& centroidalPoints = tCentroidalPoints.ref();
@@ -1895,7 +1927,6 @@ int main(int argc, char *argv[])
         // Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
-
 
         // Optional orthogonal boundary layer treatment
         if ((boundaryMaxBlendingFraction > SMALL) or
@@ -1939,11 +1970,18 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
+                    // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+                    constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
+
                     projectBoundaryPointsToEdgesAndSurfaces
                     (
                         mesh,
                         newPoints,
                         isInternalPoint,
+                        isFeatureEdgePoint,
+                        isCornerPoint,
+                        cornerPoints,
+                        targetEdges,
                         surf,
                         tree,
                         meshMaxEdgeLength,

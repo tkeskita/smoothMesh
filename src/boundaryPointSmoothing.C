@@ -4,7 +4,6 @@ Library
 
 Description
     Projection of boundary points to feature edges and boundary surfaces
-
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"
@@ -14,6 +13,11 @@ Description
 #define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
 #define ZERO_VECTOR vector(0, 0, 0)
 #define ZERO 0.0
+
+// Minimum distance for detection of points by coordinates.
+// The value is fairly large to allow single precision point data from
+// third party applications.
+#define DISTANCE_TOLERANCE 1e-6
 
 using namespace Foam;
 
@@ -147,6 +151,150 @@ int projectPointToFaces
     return 0;
 }
 
+
+// Find index of closest point in an edge mesh. Search may be limited
+// to corner points only.
+
+label findClosestEdgeMeshPointIndex
+(
+    const point pt,
+    const edgeMesh& em,
+    const bool mustBeCorner,
+    const bool mustNotBeCorner
+)
+{
+    // TODO: Replace linear search with an octree search for efficiency
+
+    scalar distance = GREAT;
+    label closestI = UNDEF_LABEL;
+
+    forAll(em.points(), pointI)
+    {
+        // Disregard non-corner points if it's required
+        if ((mustBeCorner) and (em.pointEdges()[pointI].size() == 2))
+        {
+            continue;
+        }
+
+        // Disregard corner point if it's required
+        if ((mustNotBeCorner) and (em.pointEdges()[pointI].size() != 2))
+        {
+            continue;
+        }
+
+        const point p = em.points()[pointI];
+        const scalar testDistance = mag(pt - p);
+        if (testDistance < distance)
+        {
+            distance = testDistance;
+            closestI = pointI;
+        }
+    }
+
+    return closestI;
+}
+
+// Find corner points and target locations for the corners using the
+// provided edge meshes
+
+int findCornersAndFeatureEdges
+(
+    const fvMesh& mesh,
+    const edgeMesh& initEdges,
+    const edgeMesh& targetEdges,
+    const boolList& isInternalPoint,
+    boolList& isFeatureEdgePoint,
+    boolList& isCornerPoint,
+    vectorList& cornerPoints
+)
+{
+    forAll(mesh.points(), pointI)
+    {
+        if (isInternalPoint[pointI])
+            continue;
+
+        const point pt = mesh.points()[pointI];
+        const label closestInitPointI = findClosestEdgeMeshPointIndex(pt, initEdges, false, false);
+        const point closestInitPoint = initEdges.points()[closestInitPointI];
+
+        // Identify and handle corner points
+        if (initEdges.pointEdges()[closestInitPointI].size() != 2)
+        {
+            isCornerPoint[pointI] = true;
+            const label closestCornerPointI = findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false);
+            cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
+            continue;
+        }
+
+        // Identify feature edges
+        if (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE)
+        {
+            isFeatureEdgePoint[pointI] = true;
+        }
+    }
+
+    return 0;
+}
+
+
+// Project point to closest edge in edge mesh
+
+point projectPointToClosestEdge
+(
+    const point pt,
+    const edgeMesh& em,
+    const label meshPointI
+)
+{
+    const label pointI = findClosestEdgeMeshPointIndex(pt, em, false, false);
+    const point closestPoint = em.points()[pointI];
+    const point c2pt = pt - closestPoint;
+
+    scalar minDistance = GREAT;
+    vector deltaVec(ZERO_VECTOR);
+
+    // if (meshPointI == 11)
+    //   Info << "  pointEdges " << em.pointEdges()[pointI].size() << endl;
+    forAll(em.pointEdges()[pointI], i)
+    {
+        const label edgeI = em.pointEdges()[pointI][i];
+        label endPointI = em.edges()[edgeI][0];
+        if (endPointI == pointI)
+        {
+            endPointI = em.edges()[edgeI][1];
+        }
+
+        const point endPoint = em.points()[endPointI];
+        const point edgeVec = (endPoint - closestPoint) / mag(endPoint - closestPoint);
+        const double dotProd = c2pt & edgeVec;
+        const point projPoint = dotProd * edgeVec;
+        const double distance = mag(projPoint - c2pt);
+
+        // if (meshPointI == 11)
+        //    Info << "    pt " << pt << " endPoint " << endPoint << " edgeVec " << edgeVec << " dotProd " << dotProd << " projPoint " << projPoint << " distance " << distance << endl;
+
+        if ((dotProd > 0) and (distance < minDistance))
+        {
+            minDistance = distance;
+            deltaVec = projPoint;
+        }
+    }
+
+    // Return the projection with a smallest positive vector scaling
+    // factor (the point projection hits the edge), or the closest
+    // point if neither edge results in a good projection
+    if (minDistance < GREAT)
+    {
+        // if (meshPointI == 11)
+        //     Info << "    deltaVec " << deltaVec << " from closestpoint " << closestPoint << endl;
+        return closestPoint + deltaVec;
+    }
+
+    // if (meshPointI == 11)
+    //    Info << "        using closest point" << endl;
+    return closestPoint;
+}
+
 // Projection of boundary points to feature edges and boundary surfaces
 
 int projectBoundaryPointsToEdgesAndSurfaces
@@ -154,6 +302,10 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const fvMesh& mesh,
     pointField& newPoints,
     const boolList& isInternalPoint,
+    const boolList& isFeatureEdgePoint,
+    const boolList& isCornerPoint,
+    const vectorList& cornerPoints,
+    const edgeMesh& targetEdges,
     const triSurface& surf,
     const indexedOctree<treeDataTriSurface>& tree,
     const double meshMaxEdgeLength,
@@ -166,7 +318,33 @@ int projectBoundaryPointsToEdgesAndSurfaces
             continue;
 
         const vector origPoint = newPoints[pointI];
+        // Info << "Projecting pointI " << pointI << " at " << origPoint << endl;
 
+        // if (pointI == 11)
+        //      Info << pointI << " at " << origPoint << " iscorner " << isCornerPoint[pointI] << " isFeature " << isFeatureEdgePoint[pointI] << endl;
+
+        // Project to closest corner points
+        // --------------------------------
+        if (isCornerPoint[pointI])
+        {
+            newPoints[pointI] = cornerPoints[pointI];
+            // Info << "corner point " << pointI << " to " << newPoints[pointI] << endl;
+            continue;
+        }
+
+        // Project to closest feature edges
+        // --------------------------------
+        if (isFeatureEdgePoint[pointI])
+        {
+            newPoints[pointI] = projectPointToClosestEdge(origPoint, targetEdges, pointI);
+            // Info << "edge point " << pointI << " to " << newPoints[pointI] << endl;
+            // if (pointI == 11)
+            //     Info << "   projected final point is " << newPoints[pointI] << endl;
+            continue;
+        }
+
+        // Project to closest tri face
+        // ---------------------------
         // Find closest point and closest face info
         const pointIndexHit hitInfo = tree.findNearest(origPoint, sqr(meshMaxEdgeLength));
         if (! hitInfo.hit())
@@ -176,100 +354,11 @@ int projectBoundaryPointsToEdgesAndSurfaces
                 << " within distance " << meshMaxEdgeLength
                 << exit(FatalError);
         }
+
         const point& closestPoint = hitInfo.hitPoint();
-        const label faceI = hitInfo.index();
-
-        // Search closest mesh point index
-        const label vertexPointI = findVertexPointI(surf, faceI, closestPoint);
-        const point vertexPoint = surf.localPoints()[vertexPointI];
-
-        // Get faces surrounding the vertex
-        const labelList closestFaces = surf.pointFaces()[vertexPointI];
-
-        // Project original point to each face normal plane and
-        // calculate edge angles at the surface point
-        vectorList projPoints(closestFaces.size(), ZERO_VECTOR);
-        scalarList edgeAngles(closestFaces.size(), ZERO);
-        projectPointToFaces(surf, origPoint, vertexPointI, closestFaces, projPoints, edgeAngles);
-
-        // Primary data includes only points which are closer to face
-        // center compared to vertex point
-        point primaryPoint(ZERO_VECTOR);
-        scalar sumPrimaryDist(ZERO);
-
-        // Secondary (fall back) data includes all projected points
-        point secondaryPoint(ZERO_VECTOR);
-        scalar sumSecondaryDist(ZERO);
-
-        point newPoint(ZERO_VECTOR);
-        bool isProjectedPointOnFace(false);
-        forAll (closestFaces, i)
-        {
-            const point faceCenter = surf.faceCentres()[closestFaces[i]];
-            const point projPoint = projPoints[i];
-
-            const scalar vertexPointToFaceCenter = mag(vertexPoint - faceCenter);
-            const scalar projPointToFaceCenter = mag(projPoint - faceCenter);
-            const scalar origPointToPlaneDist = mag(origPoint - projPoint);
-            // const scalar invDist = 1.0 / pow4(origPointToPlaneDist);
-            const scalar invDist = 1.0 / sqr(origPointToPlaneDist);
-            // const scalar invDist = 1.0 / origPointToPlaneDist;
-            // const scalar invDist = 1.0;
-
-            const scalar angleFactor = edgeAngles[i] / sum(edgeAngles);
-
-            // If point is on a plane, projection is already complete
-            if (origPointToPlaneDist < VSMALL)
-            {
-                isProjectedPointOnFace = true;
-                primaryPoint = projPoint;
-                break;
-            }
-
-            // Add projection to secondary data
-            secondaryPoint += projPoint * invDist * angleFactor;
-            sumSecondaryDist += invDist * angleFactor;
-
-            // Add projection to primary data, but only if the
-            // projected point is closer to face centers than the
-            // vertex point.
-            if (projPointToFaceCenter < vertexPointToFaceCenter)
-            {
-                primaryPoint += projPoint * invDist * angleFactor;
-                sumPrimaryDist += invDist * angleFactor;
-            }
-        }
-
-        // New point coordinate
-        if (isProjectedPointOnFace)
-        {
-            newPoint = primaryPoint;
-        }
-        else if (sumPrimaryDist > VSMALL)
-        {
-            newPoint = primaryPoint / sumPrimaryDist;
-        }
-        else
-        {
-            newPoint = secondaryPoint / sumSecondaryDist;
-        }
-
-        // Project the new point on the closest face normal plane
-        // along the vector from original point to new point.
-        const point fc = surf.faceCentres()[faceI];
-        const vector fNormal =
-            surf.faceNormals()[faceI] / mag(surf.faceNormals()[faceI]);
-        const vector o2fc = fc - origPoint;
-        const double fcProj = o2fc & fNormal;
-        const vector o2n = newPoint - origPoint;
-        const double nProj = o2n & fNormal;
-        const vector projCoords = origPoint + fcProj/nProj * o2n;
-        newPoint = projCoords;
-
-        // Blend and save
         const vector newCoords =
             (1 - boundaryMaxPointBlendingFraction) * origPoint
-            + boundaryMaxPointBlendingFraction * newPoint;
+            + boundaryMaxPointBlendingFraction * closestPoint;
         newPoints[pointI] = newCoords;
     }
 
