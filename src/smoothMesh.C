@@ -23,7 +23,7 @@ Description
 #include "triSurface.H"
 #include "triSurfaceSearch.H"
 #include "edgeMesh.H"
-//#include "extendedFeatureEdgeMesh.H"
+#include <fstream> // for fileExists
 
 // Macros for value definitions
 #define UNDEF_LABEL -1
@@ -1473,6 +1473,17 @@ double calculateResidual
 }
 
 
+// Help function to check does a file exists on the system
+
+bool fileExists
+(
+    const std::string& fileName
+)
+{
+    std::ifstream file(fileName);
+    return file.good();
+}
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main(int argc, char *argv[])
@@ -1738,9 +1749,13 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("centroidalIters", 1000);
 
     // Boundary point smoothing edge and surface meshes
-    fileName initEdgesFileName("constant/geometry/initEdges.obj");
-    fileName targetEdgesFileName("constant/geometry/targetEdges.obj");
-    fileName targetSurfacesFileName("constant/geometry/targetSurfaces.obj");
+    const string initEdgesFileString("constant/geometry/initEdges.obj");
+    const string targetEdgesFileString("constant/geometry/targetEdges.obj");
+    const string targetSurfacesFileString("constant/geometry/targetSurfaces.obj");
+
+    fileName initEdgesFileName(initEdgesFileString);
+    fileName targetEdgesFileName(targetEdgesFileString);
+    fileName targetSurfacesFileName(targetSurfacesFileString);
 
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
@@ -1899,9 +1914,19 @@ int main(int argc, char *argv[])
         initEdges().writeStats(Info);
         Info << endl;
 
-        targetEdges.reset(new edgeMesh(targetEdgesFileName));
-        Info << "Target feature edges file " << targetEdgesFileName << " stats:" << endl;
-        targetEdges().writeStats(Info);
+        if (fileExists(targetEdgesFileString))
+        {
+            targetEdges.reset(new edgeMesh(targetEdgesFileName));
+            Info << "Target feature edges file " << targetEdgesFileName << " stats:" << endl;
+            targetEdges().writeStats(Info);
+        }
+        else
+        {
+            targetEdges.reset(new edgeMesh(initEdgesFileName));
+            Info << "Warning: Initial feature edges will be used also as target edges, because" << endl
+
+            << "did not find file " << targetEdgesFileString << "." << endl;
+        }
         Info << endl;
 
         // Identify corner points and corner target coordinates
