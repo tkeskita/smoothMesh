@@ -32,7 +32,7 @@ Description
 
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.
-#define USE_STABLE_FEATURES_ONLY false
+#define USE_STABLE_FEATURES_ONLY true
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
@@ -99,12 +99,14 @@ int findInternalMeshPoints
     return sumNPoints;
 }
 
+
 // Function for centroidal smoothing of internal mesh points.
 
 Foam::tmp<Foam::pointField> centroidalSmoothing
 (
     const fvMesh& mesh,
-    const boolList isInternalPoint
+    const boolList isInternalPoint,
+    const bool doBoundaryPointSmoothing
 )
 {
     // Centroidal smoothing algorithm
@@ -122,7 +124,7 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     {
         // Carry out centroidal smoothing only for internal points in
         // the current stable feature set
-        if ((USE_STABLE_FEATURES_ONLY) and (! isInternalPoint[pointI]))
+        if ((! doBoundaryPointSmoothing) and (! isInternalPoint[pointI]))
         {
             continue;
         }
@@ -342,16 +344,7 @@ int findClosestPoints
             hasCommonCell[pointI] = true;
         else
             hasCommonCell[pointI] = false;
-
-        // Info << pointI << " at " << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << " closest2 " << closestPoints2[pointI] << " closest3 " << closestPoints3[pointI] << " pointPair " << pointPair << " pointNeighSet " << pointNeighSet.count(pointPair) << " hasCommonCell " << hasCommonCell[pointI] << endl;
     }
-
-    // // Debug print
-    // forAll (mesh.points(), pointI)
-    // {
-    //     if (mag(mesh.points()[pointI] - vector(-2.49596, 0.0032181, 0.487783)) < 1e-3)
-    //         Pout << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << "_mag_" << mag(closestPoints1[pointI]) << " closest2 " << closestPoints2[pointI] << "_mag_" << mag(closestPoints2[pointI]) << " closest3 " << closestPoints3[pointI] << "_mag_" << mag(closestPoints3[pointI]) << endl;
-    // }
 
     // For each position, deduce the globally closest points among processors
 
@@ -440,13 +433,6 @@ int findClosestPoints
          orEqOp<bool>(),
          false                      // null value
     );
-
-    // // Debug print
-    // forAll (mesh.points(), pointI)
-    // {
-    //     if (mag(mesh.points()[pointI] - vector(-2.49596, 0.0032181, 0.487783)) < 1e-3)
-    //         Pout << mesh.points()[pointI] << " closest1 " << closestPoints1[pointI] << "_mag_" << mag(closestPoints1[pointI]) << " closest2 " << closestPoints2[pointI] << "_mag_" << mag(closestPoints2[pointI]) << " closest3 " << closestPoints3[pointI] << "_mag_" << mag(closestPoints3[pointI]) << endl;
-    // }
 
     return 0;
 }
@@ -1875,35 +1861,37 @@ int main(int argc, char *argv[])
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
 
-    if (! USE_STABLE_FEATURES_ONLY)
+    // Check prerequisites for carrying out boundary point smoothing
+    bool doBoundaryPointSmoothing = false;
+    if ((! USE_STABLE_FEATURES_ONLY) and
+        (fileExists(targetSurfacesFileString)) and
+        (fileExists(initEdgesFileString)))
     {
+        doBoundaryPointSmoothing = true;
+
+        if (boundaryMaxPointBlendingFraction == ZERO)
+        {
+            boundaryMaxPointBlendingFraction = 1.0;
+        }
+
+        Info << "Enabled boundary point smoothing with blend fraction "
+             << boundaryMaxPointBlendingFraction << endl << endl;
+    }
+    else if (! USE_STABLE_FEATURES_ONLY)
+    {
+        Info << "Disabled boundary point smoothing because of missing one or both files:" << endl
+             << targetSurfacesFileString << endl
+             << initEdgesFileString << endl;
+    }
+
+    if (doBoundaryPointSmoothing)
+    {
+
+        // Target surface mesh, build search tree
         surf.reset(new triSurface(targetSurfacesFileName));
         Info << "Target surfaces file " << targetSurfacesFileName << " stats:" << endl;
         surf().writeStats(Info);
         Info << endl;
-
-        // Debug prints for localPoints and localSurfaces
-        // Info << "nFaces " << surf().faces().size() << endl;
-        // Info << "nPoints " << surf().points().size() << endl;
-        // Info << "nPatches " << surf().patches().size() << endl;
-        // Info << "nPointFaces " << surf().pointFaces().size() << endl;
-
-        // Info << "pointFaces 0 " << surf().pointFaces()[0] << endl;
-        // Info << "localPoint 0 " << surf().localPoints()[0] << endl;
-        // Info << "localFace 0 " << surf().localFaces()[0] << endl;
-        // Info << "localFace 1 " << surf().localFaces()[1] << endl;
-        // Info << "localFace 6 " << surf().localFaces()[6] << endl;
-        // Info << "localFace 108 " << surf().localFaces()[108] << endl;
-        // Info << "localFace 110 " << surf().localFaces()[110] << endl;
-        // Info << "localFace 111 " << surf().localFaces()[111] << endl;
-
-        // Info << "localFace 6[0] " << surf().localFaces()[6][0] << endl;
-        // Info << "localFace 6[1] " << surf().localFaces()[6][1] << endl;
-        // Info << "localFace 6[2] " << surf().localFaces()[6][2] << endl;
-
-        // Info << "localFace 0 center " << surf().faceCentres()[0] << endl;
-        // Info << "localFace 1 center " << surf().faceCentres()[1] << endl;
-        // Info << "localFace 6 center " << surf().faceCentres()[6] << endl;
 
         searchSurfaces.reset(new triSurfaceSearch(surf));
         tree.reset(new indexedOctree<treeDataTriSurface>(searchSurfaces().tree()));
@@ -1931,9 +1919,6 @@ int main(int argc, char *argv[])
 
         // Identify corner points and corner target coordinates
         findCornersAndFeatureEdges(mesh, initEdges, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, cornerPoints);
-
-        // Info << "nFeatureEdges " << sum(List<int>(isFeatureEdgePoint)) << endl;
-        // FatalError << "DEBUG STOP HERE" << endl << abort(FatalError);
     }
 
     // Carry out smoothing iterations
@@ -1943,10 +1928,8 @@ int main(int argc, char *argv[])
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;
 
-        // Info  << " 11 start point is " << mesh.points()[11] << endl;
-
         // Calculate new point locations using centroidal smoothing
-        tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint);
+        tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundaryPointSmoothing);
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
         // Blend centroidal points with points from aspect ratio smoothing
@@ -1979,21 +1962,7 @@ int main(int argc, char *argv[])
 
             if (boundaryMaxPointBlendingFraction > 0.0)
             {
-                if (USE_STABLE_FEATURES_ONLY)
-                {
-                    projectBoundaryPoints
-                    (
-                        mesh,
-                        newPoints,
-                        isFlatPatchPoint,
-                        pointHopsToBoundary,
-                        pointNormals,
-                        innerNeighCoords,
-                        BPSPatchIds,
-                        boundaryMaxPointBlendingFraction
-                    );
-                }
-                else
+                if (doBoundaryPointSmoothing)
                 {
                     // Constrain absolute length of jump to new coordinates, to stabilize smoothing
                     constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
@@ -2012,7 +1981,20 @@ int main(int argc, char *argv[])
                         meshMaxEdgeLength,
                         boundaryMaxPointBlendingFraction
                     );
-                    // FatalError << "DEBUG STOP HERE" << endl << abort(FatalError);
+                }
+                else
+                {
+                    projectBoundaryPoints
+                    (
+                        mesh,
+                        newPoints,
+                        isFlatPatchPoint,
+                        pointHopsToBoundary,
+                        pointNormals,
+                        innerNeighCoords,
+                        BPSPatchIds,
+                        boundaryMaxPointBlendingFraction
+                    );
                 }
             }
         }
