@@ -80,6 +80,9 @@ int findCornersAndFeatureEdges
     vectorList& cornerPoints
 )
 {
+    label nCornerPoints = 0;
+    label nFeatureEdgePoints = 0;
+
     forAll(mesh.points(), pointI)
     {
         if (isInternalPoint[pointI])
@@ -95,6 +98,7 @@ int findCornersAndFeatureEdges
             isCornerPoint[pointI] = true;
             const label closestCornerPointI = findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false);
             cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
+            nCornerPoints++;
             continue;
         }
 
@@ -102,8 +106,15 @@ int findCornersAndFeatureEdges
         if (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE)
         {
             isFeatureEdgePoint[pointI] = true;
+            nFeatureEdgePoints++;
         }
     }
+
+    const label nSumCornerPoints  = returnReduce(nCornerPoints, sumOp<label>());
+    const label nSumFeatureEdgePoints  = returnReduce(nFeatureEdgePoints, sumOp<label>());
+    Info << "Detected number of corner points: " << nSumCornerPoints << endl;
+    Info << "Detected number of feature edge points: " << nSumFeatureEdgePoints << endl;
+    Info << endl;
 
     return 0;
 }
@@ -201,12 +212,13 @@ int projectBoundaryPointsToEdgesAndSurfaces
         // Project to closest tri face
         // ---------------------------
         // Find closest point and closest face info
-        const pointIndexHit hitInfo = tree.findNearest(origPoint, sqr(meshMaxEdgeLength));
+        const pointIndexHit hitInfo = tree.findNearest(origPoint, 8.0*sqr(meshMaxEdgeLength));
         if (! hitInfo.hit())
         {
             FatalError
-                << "No nearest points for pointI " << pointI << endl
-                << " within distance " << meshMaxEdgeLength
+                << "findNearest for surface failed for pointI " << pointI
+                << " located at " << origPoint << ". Search distance was "
+                << meshMaxEdgeLength << "." << endl
                 << exit(FatalError);
         }
 

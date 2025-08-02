@@ -32,7 +32,7 @@ Description
 
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.
-#define USE_STABLE_FEATURES_ONLY true
+#define USE_STABLE_FEATURES_ONLY false
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
@@ -122,8 +122,8 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 
     forAll(mesh.points(), pointI)
     {
-        // Carry out centroidal smoothing only for internal points in
-        // the current stable feature set
+        // Carry out centroidal smoothing only for internal points
+        // if boundary point smoothing is disabled
         if ((! doBoundaryPointSmoothing) and (! isInternalPoint[pointI]))
         {
             continue;
@@ -164,14 +164,14 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 
     forAll(newPoints, pointI)
     {
-        // internal point
+        // centroidal point
         if (nPoints[pointI] > VSMALL)
         {
             newPoints[pointI] =
                 cellPoints[pointI] / nPoints[pointI];
         }
 
-        // boundary point
+        // fall back to current mesh point
         else
         {
             newPoints[pointI] = mesh.points()[pointI];
@@ -510,7 +510,7 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     pointField& newPoints = tNewPoints.ref();
 
     // Initialize with centroidal coordinates
-    forAll(isInternalPoint, pointI)
+    forAll(centroidalPoints, pointI)
     {
         newPoints[pointI] = centroidalPoints[pointI];
     }
@@ -519,7 +519,7 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     findClosestPoints(mesh, isInternalPoint, closestPoints1, closestPoints2, closestPoints3, hasCommonCell, pointNeighPoints);
 
     // Calculate closest middle point coordinates and blend with centroidal coordinates
-    forAll(isInternalPoint, pointI)
+    forAll(mesh.points(), pointI)
     {
         const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI]);
 
@@ -1426,9 +1426,8 @@ int getMeshMinMaxEdgeLength
     return 0;
 }
 
-// Calculate the average relative change in the internal point
-// positions, to be used as a measure of residual of the effect of
-// smoothing
+// Calculate the maximum relative change in the point positions, to be
+// used as a measure of residual of smoothing
 
 double calculateResidual
 (
@@ -1438,24 +1437,22 @@ double calculateResidual
     const double maxStepLength
 )
 {
-    label nPoints = 0;
-    double res = 0.0;
+    scalar maxStep = ZERO;
 
     forAll(isInternalPoint, pointI)
     {
-        if (! isInternalPoint[pointI])
-            continue;
+        const scalar distance =
+            mag(newPoints[pointI] - mesh.points()[pointI]) / maxStepLength;
 
-        ++nPoints;
-
-        // Normalise the step length by the maximum step length
-        res += mag(newPoints[pointI] - mesh.points()[pointI]) / maxStepLength;
+        if (distance > maxStep)
+        {
+            maxStep = distance;
+        }
     }
 
-    const label sumNPoints = returnReduce(nPoints, sumOp<label>());
-    const double sumRes = returnReduce(res, sumOp<double>());
+    const scalar maxMaxStep = returnReduce(maxStep, maxOp<scalar>());
 
-    return (sumRes / sumNPoints);
+    return maxMaxStep;
 }
 
 
@@ -1868,11 +1865,7 @@ int main(int argc, char *argv[])
         (fileExists(initEdgesFileString)))
     {
         doBoundaryPointSmoothing = true;
-
-        if (boundaryMaxPointBlendingFraction == ZERO)
-        {
-            boundaryMaxPointBlendingFraction = 1.0;
-        }
+        boundaryMaxPointBlendingFraction = 1.0;
 
         Info << "Enabled boundary point smoothing with blend fraction "
              << boundaryMaxPointBlendingFraction << endl << endl;
@@ -1938,12 +1931,11 @@ int main(int argc, char *argv[])
 
         // Optional orthogonal boundary layer treatment
         if ((boundaryMaxBlendingFraction > SMALL) or
-            (boundaryMaxPointBlendingFraction > SMALL))
+             (boundaryMaxPointBlendingFraction > SMALL))
         {
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
             updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerNeighCoords);
-
             // Blend orthogonal and centroidal coordinates to newPoints
             blendWithOrthogonalPoints
             (
@@ -1960,43 +1952,28 @@ int main(int argc, char *argv[])
                  boundaryMaxLayers + 1  // +1 for correct number of layers
             );
 
-            if (boundaryMaxPointBlendingFraction > 0.0)
-            {
-                if (doBoundaryPointSmoothing)
-                {
-                    // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-                    constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
 
-                    projectBoundaryPointsToEdgesAndSurfaces
-                    (
-                        mesh,
-                        newPoints,
-                        isInternalPoint,
-                        isFeatureEdgePoint,
-                        isCornerPoint,
-                        cornerPoints,
-                        targetEdges,
-                        surf,
-                        tree,
-                        meshMaxEdgeLength,
-                        boundaryMaxPointBlendingFraction
-                    );
-                }
-                else
-                {
-                    projectBoundaryPoints
-                    (
-                        mesh,
-                        newPoints,
-                        isFlatPatchPoint,
-                        pointHopsToBoundary,
-                        pointNormals,
-                        innerNeighCoords,
-                        BPSPatchIds,
-                        boundaryMaxPointBlendingFraction
-                    );
-                }
+            if (doBoundaryPointSmoothing)
+            {
+                // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+                constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
+
+                projectBoundaryPointsToEdgesAndSurfaces
+                (
+                    mesh,
+                    newPoints,
+                    isInternalPoint,
+                    isFeatureEdgePoint,
+                    isCornerPoint,
+                    cornerPoints,
+                    targetEdges,
+                    surf,
+                    tree,
+                    meshMaxEdgeLength,
+                    boundaryMaxPointBlendingFraction
+                 );
             }
+
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
