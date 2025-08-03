@@ -24,6 +24,38 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Calculate and return the edge-edge angle (in radians,
+// 0 < angle < pi) of two edges which share a common point
+// at coordinate cCoords. The two edge end point coordinates are
+// p1Coords and p2Coords.
+
+// TODO: Find out how to import edgeEdgeAngle from helpFunctions.H and
+// get rid of this copy
+
+double edgeEdgeAngle2
+(
+    const vector cCoords,
+    const vector p1Coords,
+    const vector p2Coords
+)
+{
+    vector vec1 = (p1Coords - cCoords);
+    vector vec2 = (p2Coords - cCoords);
+    vec1 /= mag(vec1);
+    vec2 /= mag(vec2);
+
+    const double cosA = vec1 & vec2;
+
+    // Ensure cos angle is in sane range before calling arc cos
+    const double MAX = 0.99999;
+    const double cosAlpha = std::max(-MAX, std::min(MAX, cosA));
+    const double angle = std::acos(cosAlpha);
+
+    return angle;
+}
+
+
+
 // Find index of closest point in an edge mesh. Search may be limited
 // to corner points only.
 
@@ -169,12 +201,84 @@ point projectPointToClosestEdge
     return closestPoint;
 }
 
+// Find intersection with triSurface faces in point normal direction
+
+point findIntersection
+(
+    const indexedOctree<treeDataTriSurface>& tree,
+    const label pointI,
+    const point origPoint,
+    const vector pointNormal,
+    const double searchDistance
+)
+{
+    if (pointNormal == ZERO_VECTOR)
+    {
+        FatalError
+            << "pointNormal is zero for pointI " << pointI << " at " << origPoint << endl
+            << abort(FatalError);
+    }
+
+    // Search towards normal direction
+    vector hitPoint1(UNDEF_VECTOR);
+    {
+        const point endPoint = origPoint + pointNormal * searchDistance;
+        const pointIndexHit hitInfo = tree.findLine(origPoint, endPoint);
+        if (hitInfo.hit())
+        {
+            hitPoint1 = hitInfo.hitPoint();
+        }
+    }
+
+    // Search towards opposite direction
+    vector hitPoint2(UNDEF_VECTOR);
+    {
+        const point endPoint = origPoint - pointNormal * searchDistance;
+        const pointIndexHit hitInfo = tree.findLine(origPoint, endPoint);
+        if (hitInfo.hit())
+        {
+            hitPoint2 = hitInfo.hitPoint();
+        }
+    }
+
+    // Return the closest hit point
+    const double distance1 = mag(origPoint - hitPoint1);
+    const double distance2 = mag(origPoint - hitPoint2);
+    if (distance1 < distance2)
+    {
+        return hitPoint1;
+    }
+    else if (distance2 < distance1)
+    {
+        return hitPoint2;
+    }
+
+    // Otherwise search in between
+    {
+        const point endPoint1 = origPoint + pointNormal * searchDistance;
+        const point endPoint2 = origPoint - pointNormal * searchDistance;
+        const pointIndexHit hitInfo = tree.findLine(endPoint1, endPoint2);
+        if (hitInfo.hit())
+        {
+            return hitInfo.hitPoint();
+        }
+    }
+
+    FatalError
+        << "Did not find surface intersection for pointI " << pointI
+        << " at " << origPoint << endl
+        << abort(FatalError);
+
+    return UNDEF_VECTOR;
+}
+
 // Projection of boundary points to feature edges and boundary surfaces
 
 int projectBoundaryPointsToEdgesAndSurfaces
 (
     const fvMesh& mesh,
     pointField& newPoints,
+    const pointField& pointNormals,
     const boolList& isInternalPoint,
     const boolList& isFeatureEdgePoint,
     const boolList& isCornerPoint,
@@ -182,8 +286,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const edgeMesh& targetEdges,
     const triSurface& surf,
     const indexedOctree<treeDataTriSurface>& tree,
-    const double meshMaxEdgeLength,
-    const double boundaryMaxPointBlendingFraction
+    const double meshMaxEdgeLength
 )
 {
     forAll(mesh.points(), pointI)
@@ -209,24 +312,12 @@ int projectBoundaryPointsToEdgesAndSurfaces
             continue;
         }
 
-        // Project to closest tri face
-        // ---------------------------
-        // Find closest point and closest face info
-        const pointIndexHit hitInfo = tree.findNearest(origPoint, 8.0*sqr(meshMaxEdgeLength));
-        if (! hitInfo.hit())
-        {
-            FatalError
-                << "findNearest for surface failed for pointI " << pointI
-                << " located at " << origPoint << ". Search distance was "
-                << meshMaxEdgeLength << "." << endl
-                << exit(FatalError);
-        }
+        // Project to closest tri face in normal or opposite direction
+        // -----------------------------------------------------------
+        const point pointNormal = pointNormals[pointI];
+        const double searchDistance = 10 * meshMaxEdgeLength;
 
-        const point& closestPoint = hitInfo.hitPoint();
-        const vector newCoords =
-            (1 - boundaryMaxPointBlendingFraction) * origPoint
-            + boundaryMaxPointBlendingFraction * closestPoint;
-        newPoints[pointI] = newCoords;
+        newPoints[pointI] = findIntersection(tree, pointI, origPoint, pointNormal, searchDistance);
     }
 
     return 0;

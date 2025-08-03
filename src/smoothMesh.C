@@ -1552,13 +1552,6 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "boundaryMaxPointBlendingFraction",
-        "double",
-        "Maximum blending fraction to move boundary points towards orthogonal position (default: 0)"
-    );
-
-    argList::addOption
-    (
         "boundaryEdgeLength",
         "double",
         "Target thickness for first boundary layer (default: 0.05)"
@@ -1615,6 +1608,13 @@ int main(int argc, char *argv[])
         "boundaryPointSmoothing",
         "bool",
         "Boolean option to allow smoothing of boundary points (default false)"
+    );
+
+    argList::addOption
+    (
+        "writeInterval",
+        "label",
+        "Interval to write mesh during iterations (default value 0)"
     );
 
     #include "setRootCase.H"
@@ -1710,9 +1710,6 @@ int main(int argc, char *argv[])
     double boundaryMaxBlendingFraction =
         args.optionLookupOrDefault("boundaryMaxBlendingFraction", 0.0);
 
-    double boundaryMaxPointBlendingFraction =
-        args.optionLookupOrDefault("boundaryMaxPointBlendingFraction", 0.0);
-
     double boundaryEdgeLength =
         args.optionLookupOrDefault("boundaryEdgeLength", minEdgeLength);
 
@@ -1731,14 +1728,17 @@ int main(int argc, char *argv[])
     label centroidalIters =
         args.optionLookupOrDefault("centroidalIters", 1000);
 
+    label writeInterval =
+        args.optionLookupOrDefault("writeInterval", 0);
+
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
     const string targetEdgesFileString("constant/geometry/targetEdges.obj");
     const string targetSurfacesFileString("constant/geometry/targetSurfaces.obj");
 
-    fileName initEdgesFileName(initEdgesFileString);
-    fileName targetEdgesFileName(targetEdgesFileString);
-    fileName targetSurfacesFileName(targetSurfacesFileString);
+    const fileName initEdgesFileName(initEdgesFileString);
+    const fileName targetEdgesFileName(targetEdgesFileString);
+    const fileName targetSurfacesFileName(targetSurfacesFileString);
 
     // Print out applied parameter values
     Info << "Applying following parameter values in smoothing:" << endl;
@@ -1770,11 +1770,9 @@ int main(int argc, char *argv[])
         Info << "    faceAngleConstraint    false (face angle quality constraints are NOT applied)" << endl;
     }
 
-    if ((boundaryMaxBlendingFraction > SMALL) or
-        (boundaryMaxPointBlendingFraction > SMALL))
+    if (boundaryMaxBlendingFraction > SMALL)
     {
         Info << "    boundaryMaxBlendingFraction " << boundaryMaxBlendingFraction << endl;
-        Info << "    boundaryMaxPointBlendingFraction " << boundaryMaxPointBlendingFraction << endl;
         Info << "    boundaryEdgeLength     " << boundaryEdgeLength << endl;
         Info << "    boundaryExpansionRatio " << boundaryExpansionRatio << endl;
         Info << "    boundaryMinLayers      " << boundaryMinLayers << endl;
@@ -1783,7 +1781,6 @@ int main(int argc, char *argv[])
     else
     {
         Info << "    boundaryMaxBlendingFraction 0 (boundary layer treatment is NOT applied)" << endl;
-        Info << "    boundaryMaxPointBlendingFraction 0 (boundary point smoothing is NOT applied)" << endl;
     }
 
     Info << endl;
@@ -1834,9 +1831,24 @@ int main(int argc, char *argv[])
     generatePointNeighPoints(mesh, pointNeighPoints);
     Info << "Done building pointNeighPoints" << endl << endl;
 
+    // Check prerequisites for carrying out boundary point smoothing
+    bool doBoundaryPointSmoothing = false;
+    if ((! USE_STABLE_FEATURES_ONLY) and
+        (fileExists(targetSurfacesFileString)) and
+        (fileExists(initEdgesFileString)))
+    {
+        doBoundaryPointSmoothing = true;
+        Info << "Enabled boundary point smoothing" << endl << endl;
+    }
+    else if (! USE_STABLE_FEATURES_ONLY)
+    {
+        Info << "Disabled boundary point smoothing because of missing one or both files:" << endl
+             << targetSurfacesFileString << endl
+             << initEdgesFileString << endl;
+    }
+
     // Preparations for optional orthogonal boundary layer treatment
-    if ((boundaryMaxBlendingFraction > SMALL) or
-        (boundaryMaxPointBlendingFraction > SMALL))
+    if (boundaryMaxBlendingFraction > SMALL)
     {
         calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
         calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
@@ -1858,25 +1870,7 @@ int main(int argc, char *argv[])
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
 
-    // Check prerequisites for carrying out boundary point smoothing
-    bool doBoundaryPointSmoothing = false;
-    if ((! USE_STABLE_FEATURES_ONLY) and
-        (fileExists(targetSurfacesFileString)) and
-        (fileExists(initEdgesFileString)))
-    {
-        doBoundaryPointSmoothing = true;
-        boundaryMaxPointBlendingFraction = 1.0;
-
-        Info << "Enabled boundary point smoothing with blend fraction "
-             << boundaryMaxPointBlendingFraction << endl << endl;
-    }
-    else if (! USE_STABLE_FEATURES_ONLY)
-    {
-        Info << "Disabled boundary point smoothing because of missing one or both files:" << endl
-             << targetSurfacesFileString << endl
-             << initEdgesFileString << endl;
-    }
-
+    // Preparations for boundary point smoothing
     if (doBoundaryPointSmoothing)
     {
 
@@ -1915,11 +1909,16 @@ int main(int argc, char *argv[])
     }
 
     // Carry out smoothing iterations
+    // ------------------------------
+
     for (label i = 0; i < centroidalIters; ++i)
     {
         // Reset frozen points
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;
+
+        // Recalculate point normals
+        calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
 
         // Calculate new point locations using centroidal smoothing
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundaryPointSmoothing);
@@ -1930,8 +1929,7 @@ int main(int argc, char *argv[])
         pointField& newPoints = tNewPoints.ref();
 
         // Optional orthogonal boundary layer treatment
-        if ((boundaryMaxBlendingFraction > SMALL) or
-             (boundaryMaxPointBlendingFraction > SMALL))
+        if (boundaryMaxBlendingFraction > SMALL)
         {
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
@@ -1951,29 +1949,27 @@ int main(int argc, char *argv[])
                  boundaryMinLayers,
                  boundaryMaxLayers + 1  // +1 for correct number of layers
             );
+        }
 
+        if (doBoundaryPointSmoothing)
+        {
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
 
-            if (doBoundaryPointSmoothing)
-            {
-                // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-                constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
-
-                projectBoundaryPointsToEdgesAndSurfaces
-                (
-                    mesh,
-                    newPoints,
-                    isInternalPoint,
-                    isFeatureEdgePoint,
-                    isCornerPoint,
-                    cornerPoints,
-                    targetEdges,
-                    surf,
-                    tree,
-                    meshMaxEdgeLength,
-                    boundaryMaxPointBlendingFraction
-                 );
-            }
-
+            projectBoundaryPointsToEdgesAndSurfaces
+            (
+                mesh,
+                newPoints,
+                pointNormals,
+                isInternalPoint,
+                isFeatureEdgePoint,
+                isCornerPoint,
+                cornerPoints,
+                targetEdges,
+                surf,
+                tree,
+                meshMaxEdgeLength
+             );
         }
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
@@ -2027,6 +2023,28 @@ int main(int argc, char *argv[])
         {
             Info << "Maximum centroidalIters reached, stopping." << endl;
         }
+
+        if ((writeInterval > 0) and ((i % writeInterval) == 0))
+        {
+
+            // Save mesh
+            if (!overwrite)
+            {
+                runTime++;
+            }
+            else
+            {
+                mesh.setInstance(oldInstance);
+            }
+
+            // Set the precision of the points data to 10
+            IOstream::defaultPrecision(max(10u, IOstream::defaultPrecision()));
+
+            Info << "Writing new mesh to time " << runTime.name()
+                 << endl << endl;
+
+            mesh.write();
+        }
     }
 
     // Save mesh
@@ -2048,7 +2066,6 @@ int main(int argc, char *argv[])
              << endl << endl;
 
         mesh.write();
-
     }
 
     Info<< "ClockTime = "
