@@ -103,7 +103,7 @@ Warning: This is an experimental feature!
 Currently smoothMesh has only limited capability to smoothen the
 points located on the boundary patches.
 
-Warning: This is an experimental feature!
+Warning: WIP! This feature is now broken, working on the replacement. DO NOT USE. (Or use the commit 7db1f91 from July 2025).
 
 - `-boundaryMaxPointBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary points are projected orthogonally to the boundary from the first layer prismatic points. Value like 0.8 seems to produce good results in practice. Note: Projection is made only if the boundary faces surrounding the boundary form a flat surface.
 

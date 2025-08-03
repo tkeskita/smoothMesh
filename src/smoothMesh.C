@@ -32,7 +32,7 @@ Description
 
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.
-#define USE_STABLE_FEATURES_ONLY false
+#define USE_STABLE_FEATURES_ONLY true
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
