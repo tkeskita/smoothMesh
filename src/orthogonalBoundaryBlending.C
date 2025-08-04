@@ -21,18 +21,19 @@ using namespace Foam;
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 // Calculate the minimum number of edge hops required to reach
-// any boundary point for all mesh points
+// a boundary point on given patchIds for all mesh points
 
 int calculatePointHopsToBoundary
 (
     const fvMesh& mesh,
+    const labelList& patchIds,
     labelList& pointHopsToBoundary,
     const label boundaryMaxLayers
 )
 {
-    // Set boundary patch points to zero hops
+    // Set boundary patch points for selected patches to zero hops
 
-    forAll(mesh.boundary(), patchI)
+    for (const label patchI : patchIds)
     {
         const polyPatch& pp = mesh.boundaryMesh()[patchI];
 
@@ -100,6 +101,38 @@ int calculatePointHopsToBoundary
             maxEqOp<label>(),
             UNDEF_LABEL               // null value
         );
+    }
+
+    // Finally, set hop count of boundary patch points for
+    // non-selected patches to undefined value -1 to avoid boundary
+    // point smoothing issues
+    forAll (mesh.boundary(), patchI)
+    {
+        if (findIndex(patchIds, patchI) >= 0)
+        {
+            continue;
+        }
+
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+
+        // Skip processor and empty patches
+        if (isA<processorPolyPatch>(pp))
+            continue;
+        if (isA<emptyPolyPatch>(pp))
+            continue;
+
+        const label startI = mesh.boundary()[patchI].start();
+        const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+        for (label faceI = startI; faceI < endI; faceI++)
+        {
+            const face& f = mesh.faces()[faceI];
+            forAll (f, facePointI)
+            {
+                const label pointI = mesh.faces()[faceI][facePointI];
+                pointHopsToBoundary[pointI] = UNDEF_LABEL;
+            }
+        }
     }
 
     return 0;
@@ -514,13 +547,14 @@ int blendWithOrthogonalPoints
         // Skip points without required information
         if (pointNormals[pointI] == ZERO_VECTOR)
             continue;
-        if (! isInternalPoint[pointI])
-            continue;
+        //if (! isInternalPoint[pointI])
+        //    continue;
 
         const label nHops = pointHopsToBoundary[pointI];
         if (nHops < 1)
-            FatalError << "Sanity broken, nHops<1 for pointI "
-                       << pointI << endl << abort(FatalError);
+            //FatalError << "Sanity broken, nHops<1 for pointI "
+            //           << pointI << endl << abort(FatalError);
+            continue;
 
         const vector pointNormal = pointNormals[pointI];
         if (pointNormal == ZERO_VECTOR)

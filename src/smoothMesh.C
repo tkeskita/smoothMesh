@@ -1661,7 +1661,7 @@ int main(int argc, char *argv[])
     labelList BPSPatchIds = getPatchIdsForOption(mesh, args, "boundaryPointSmoothingPatches");
     if (BPSPatchIds.size() > 0)
     {
-        Info<< "Patches for boundary layer treatment limited to: "
+        Info<< "Patches for boundary point smoothing limited to: "
             << args["boundaryPointSmoothingPatches"] << endl;
     }
     else
@@ -1826,7 +1826,7 @@ int main(int argc, char *argv[])
 
     // A list of point label lists to indicate cell sharing. Used in
     // aspectRatioSmoothing.
-    Info << "Starting to build pointNeighPoints" << endl;
+    Info << "Starting to build pointNeighPoints (this may be slow..)" << endl;
     labelListList pointNeighPoints(mesh.nPoints());
     generatePointNeighPoints(mesh, pointNeighPoints);
     Info << "Done building pointNeighPoints" << endl << endl;
@@ -1850,7 +1850,7 @@ int main(int argc, char *argv[])
     // Preparations for optional orthogonal boundary layer treatment
     if (boundaryMaxBlendingFraction > SMALL)
     {
-        calculatePointHopsToBoundary(mesh, pointHopsToBoundary, boundaryMaxLayers + 1);
+        calculatePointHopsToBoundary(mesh, patchIds, pointHopsToBoundary, boundaryMaxLayers + 1);
         calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
         propagateOuterNeighInfo(mesh, patchIds, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
         propagateInnerNeighInfo(mesh, BPSPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
