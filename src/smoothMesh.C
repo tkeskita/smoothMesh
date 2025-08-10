@@ -32,7 +32,7 @@ Description
 
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.
-#define USE_STABLE_FEATURES_ONLY true
+// #define USE_STABLE_FEATURES_ONLY true
 
 // #include <typeinfo>
 // Typeinfo is needed only for getting types while debugging, for example:
@@ -61,7 +61,7 @@ int findInternalMeshPoints
     forAll(isInternalPoint, pointI)
         isInternalPoint[pointI] = true;
 
-    // Remove points on boundary patches from bit set, except not
+    // Remove points on boundary patches, except not
     // processor patches nor empty patches
     const faceList& faces = mesh.faces();
     forAll(mesh.boundary(), patchI)
@@ -71,8 +71,14 @@ int findInternalMeshPoints
         // Skip processor and empty patches
         if (isA<processorPolyPatch>(pp))
             continue;
+
+        // No smoothing for non-3D meshes
         if (isA<emptyPolyPatch>(pp))
-            continue;
+        {
+            FatalError
+                << "Smoothing of non-3D meshes (meshes with type empty patches) is not supported"
+                << endl << abort(FatalError);
+        }
 
         const label startI = mesh.boundary()[patchI].start();
         const label endI = startI + mesh.boundary()[patchI].Cf().size();
@@ -106,7 +112,7 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
 (
     const fvMesh& mesh,
     const boolList isInternalPoint,
-    const bool doBoundaryPointSmoothing
+    const bool doBoundarySmoothing
 )
 {
     // Centroidal smoothing algorithm
@@ -124,7 +130,7 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     {
         // Carry out centroidal smoothing only for internal points
         // if boundary point smoothing is disabled
-        if ((! doBoundaryPointSmoothing) and (! isInternalPoint[pointI]))
+        if ((! doBoundarySmoothing) and (! isInternalPoint[pointI]))
         {
             continue;
         }
@@ -1378,10 +1384,13 @@ labelList getPatchIdsForOption
 
         forAllConstIter(labelHashSet, patchesHashSet, iter)
         {
-            patchIds.append(iter.key());
+            const label id = iter.key();
+            if (findIndex(patchIds, id) == -1)
+            {
+                patchIds.append(id);
+            }
         }
     }
-
     return patchIds;
 }
 
@@ -1417,9 +1426,6 @@ int getMeshMinMaxEdgeLength
 
     const double meshMinLength = returnReduce(minLength, minOp<double>());
     const double meshMaxLength = returnReduce(maxLength, maxOp<double>());
-
-    Info << "Mesh minimum edge length = " << meshMinLength << endl;
-    Info << "Mesh maximum edge length = " << meshMaxLength << endl << endl;
 
     minEdgeLength = meshMinLength;
     maxEdgeLength = meshMaxLength;
@@ -1545,54 +1551,54 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
-        "boundaryMaxBlendingFraction",
+        "layerMaxBlendingFraction",
         "double",
         "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0)"
     );
 
     argList::addOption
     (
-        "boundaryEdgeLength",
+        "layerEdgeLength",
         "double",
         "Target thickness for first boundary layer (default: 0.05)"
     );
 
     argList::addOption
     (
-        "boundaryExpansionRatio",
+        "layerExpansionRatio",
         "double",
         "The expansion ratio for the increase in boundary layer thickness (default: 1.3)"
     );
 
     argList::addOption
     (
-        "boundaryMinLayers",
+        "minLayers",
         "label",
         "Number of outermost boundary layers that receive maximum blending (default: 1)"
     );
 
     argList::addOption
     (
-        "boundaryMaxLayers",
+        "maxLayers",
         "label",
         "Number of boundary layers affected by the boundary layer treatment (default: 4)"
     );
 
     argList::addOption
     (
-        "patches",
+        "layerPatches",
         "wordRe",
         "Specify single patch or multiple patches for the boundary layer treatment."
-        " All patches are included by default."
+        " No patches are included by default."
         " For example 'walls' or '( stator \"rotor.*\" )'"
     );
 
     argList::addOption
     (
-        "boundaryPointSmoothingPatches",
-        "wordRes",
+        "smoothingPatches",
+        "wordRe",
         "Specify single patch or multiple patches for boundary point smoothing."
-        " All patches are included by default."
+        " No patches are included by default."
         " For example 'walls' or '( stator \"rotor.*\" )'"
     );
 
@@ -1601,13 +1607,6 @@ int main(int argc, char *argv[])
         "relTol",
         "double",
         "Relative tolerance for stopping the smoothing iterations (default: 0.02)"
-    );
-
-    argList::addOption
-    (
-        "boundaryPointSmoothing",
-        "bool",
-        "Boolean option to allow smoothing of boundary points (default false)"
     );
 
     argList::addOption
@@ -1645,28 +1644,28 @@ int main(int argc, char *argv[])
     const word oldInstance = mesh.pointsInstance();
 
     // Get patch ids for boundary layer treatment
-    labelList patchIds = getPatchIdsForOption(mesh, args, "patches");
-    if (patchIds.size() > 0)
+    labelList layerPatchIds = getPatchIdsForOption(mesh, args, "layerPatches");
+    if (layerPatchIds.size() > 0)
     {
-        Info<< "Patches for boundary layer treatment limited to: "
-            << args["patches"] << endl;
+        Info<< "Patches for boundary layer treatment: "
+            << args["layerPatches"] << endl;
     }
     else
     {
-        Info<< "Patches for boundary layer treatment limited to: all patches"
+        Info<< "Patches for boundary layer treatment: none"
             << endl;
     }
 
     // Get patch ids for boundary point smoothing
-    labelList BPSPatchIds = getPatchIdsForOption(mesh, args, "boundaryPointSmoothingPatches");
-    if (BPSPatchIds.size() > 0)
+    labelList smoothingPatchIds = getPatchIdsForOption(mesh, args, "smoothingPatches");
+    if (smoothingPatchIds.size() > 0)
     {
-        Info<< "Patches for boundary point smoothing limited to: "
-            << args["boundaryPointSmoothingPatches"] << endl;
+        Info<< "Patches for boundary point smoothing: "
+            << args["smoothingPatches"] << endl;
     }
     else
     {
-        Info<< "Patches for boundary point smoothing limited to: all patches"
+        Info<< "Patches for boundary point smoothing: none"
             << endl;
     }
 
@@ -1707,20 +1706,20 @@ int main(int argc, char *argv[])
     bool faceAngleConstraint =
         args.optionLookupOrDefault("faceAngleConstraint", true);
 
-    double boundaryMaxBlendingFraction =
-        args.optionLookupOrDefault("boundaryMaxBlendingFraction", 0.0);
+    double layerMaxBlendingFraction =
+        args.optionLookupOrDefault("layerMaxBlendingFraction", 0.5);
 
-    double boundaryEdgeLength =
-        args.optionLookupOrDefault("boundaryEdgeLength", minEdgeLength);
+    double layerEdgeLength =
+        args.optionLookupOrDefault("layerEdgeLength", minEdgeLength);
 
-    double boundaryExpansionRatio =
-        args.optionLookupOrDefault("boundaryExpansionRatio", 1.3);
+    double layerExpansionRatio =
+        args.optionLookupOrDefault("layerExpansionRatio", 1.3);
 
-    label boundaryMinLayers =
-        args.optionLookupOrDefault("boundaryMinLayers", 1);
+    label minLayers =
+        args.optionLookupOrDefault("minLayers", 1);
 
-    label boundaryMaxLayers =
-        args.optionLookupOrDefault("boundaryMaxLayers", 4);
+    label maxLayers =
+        args.optionLookupOrDefault("maxLayers", 4);
 
     double relTol =
         args.optionLookupOrDefault("relTol", 0.02);
@@ -1770,17 +1769,17 @@ int main(int argc, char *argv[])
         Info << "    faceAngleConstraint    false (face angle quality constraints are NOT applied)" << endl;
     }
 
-    if (boundaryMaxBlendingFraction > SMALL)
+    if (layerMaxBlendingFraction > SMALL)
     {
-        Info << "    boundaryMaxBlendingFraction " << boundaryMaxBlendingFraction << endl;
-        Info << "    boundaryEdgeLength     " << boundaryEdgeLength << endl;
-        Info << "    boundaryExpansionRatio " << boundaryExpansionRatio << endl;
-        Info << "    boundaryMinLayers      " << boundaryMinLayers << endl;
-        Info << "    boundaryMaxLayers      " << boundaryMaxLayers << endl;
+        Info << "    layerMaxBlendingFraction " << layerMaxBlendingFraction << endl;
+        Info << "    layerEdgeLength          " << layerEdgeLength << endl;
+        Info << "    layerExpansionRatio      " << layerExpansionRatio << endl;
+        Info << "    minLayers                " << minLayers << endl;
+        Info << "    maxLayers                " << maxLayers << endl;
     }
     else
     {
-        Info << "    boundaryMaxBlendingFraction 0 (boundary layer treatment is NOT applied)" << endl;
+        Info << "    layerMaxBlendingFraction 0 (boundary layer treatment is NOT applied)" << endl;
     }
 
     Info << endl;
@@ -1788,14 +1787,12 @@ int main(int argc, char *argv[])
 
     // Storage for markers for internal points
     boolList isInternalPoint(mesh.nPoints(), false);
-    const label nPoints = findInternalMeshPoints(mesh, isInternalPoint);
-    Info << "Starting smoothing of " << nPoints << " internal mesh points" << endl
-         << "- Mesh minimum edge length = " << meshMinEdgeLength << endl
-         << "- Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
+    const label nInternalPoints = findInternalMeshPoints(mesh, isInternalPoint);
 
-    // Storage for number of edge hops to reach boundary for all mesh
-    // points (for boundary layer treatment)
-    labelList pointHopsToBoundary(mesh.nPoints(), -1);
+    // Storage for number of edge hops to reach layer and free
+    // boundaries for mesh points (for boundary layer treatment)
+    labelList pointHopsToLayerBoundary(mesh.nPoints(), UNDEF_LABEL);
+    labelList pointHopsToSmoothingBoundary(mesh.nPoints(), UNDEF_LABEL);
 
     // Storage for point normals (for boundary layer treatment)
     tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), ZERO_VECTOR));
@@ -1814,46 +1811,52 @@ int main(int argc, char *argv[])
 
     // Storage for index map from point to neighbour point inside same
     // processor domain. One map points towards inner mesh, and
-    // another map towards boundary. (for boundary layer treatment)
+    // another map towards outer boundary. (for boundary layer treatment)
     labelList pointToInnerPointMap(mesh.nPoints(), UNDEF_LABEL);
     labelList pointToOuterPointMap(mesh.nPoints(), UNDEF_LABEL);
 
-    // Storage for marking points on a flat (not curving) boundary patch
-    boolList isFlatPatchPoint(mesh.nPoints(), false);
-
-    // Boolean list for marking frozen points. This list is synced among processors.
+    // Boolean list for marking frozen points (points not allowed to
+    // move during smoothing). This list is synced among processors.
     boolList isFrozenPoint(mesh.nPoints(), false);
 
     // A list of point label lists to indicate cell sharing. Used in
     // aspectRatioSmoothing.
-    Info << "Starting to build pointNeighPoints (this may be slow..)" << endl;
+    Info << "Starting to build pointNeighPoints (this may take some time)" << endl;
     labelListList pointNeighPoints(mesh.nPoints());
     generatePointNeighPoints(mesh, pointNeighPoints);
     Info << "Done building pointNeighPoints" << endl << endl;
 
-    // Check prerequisites for carrying out boundary point smoothing
-    bool doBoundaryPointSmoothing = false;
-    if ((! USE_STABLE_FEATURES_ONLY) and
-        (fileExists(targetSurfacesFileString)) and
-        (fileExists(initEdgesFileString)))
+    // Check prerequisites for carrying out boundary layer treatment
+    bool doLayerTreatment = false;
+    if ((layerPatchIds.size() > 0) and (layerMaxBlendingFraction > SMALL))
     {
-        doBoundaryPointSmoothing = true;
-        Info << "Enabled boundary point smoothing" << endl << endl;
+        doLayerTreatment = true;
+        Info << "Enabled boundary layer treatment" << endl;
     }
-    else if (! USE_STABLE_FEATURES_ONLY)
+    else
     {
-        Info << "Disabled boundary point smoothing because of missing one or both files:" << endl
-             << targetSurfacesFileString << endl
-             << initEdgesFileString << endl;
+        Info << "Boundary layer treatment is disabled. Either no layerPatches were specified or boundaryMaxBlendingFraction is zero" << endl;
     }
 
-    // Preparations for optional orthogonal boundary layer treatment
-    if (boundaryMaxBlendingFraction > SMALL)
+    // Check prerequisites for carrying out boundary point smoothing
+    bool doBoundarySmoothing = false;
+    if ((fileExists(targetSurfacesFileString)) and
+        (fileExists(initEdgesFileString)) and
+        (smoothingPatchIds.size() > 0))
     {
-        calculatePointHopsToBoundary(mesh, patchIds, pointHopsToBoundary, boundaryMaxLayers + 1);
-        calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
-        propagateOuterNeighInfo(mesh, patchIds, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToBoundary, boundaryMaxLayers + 1);
-        propagateInnerNeighInfo(mesh, BPSPatchIds, isInnerNeighInProc, pointToInnerPointMap, pointHopsToBoundary);
+        doBoundarySmoothing = true;
+        Info << "Enabled boundary point smoothing" << endl << endl;
+    }
+    else
+    {
+        Info << "Boundary point smoothing is disabled. Missing smoothingPatches, or one or both of files:" << endl
+             << targetSurfacesFileString << endl
+             << initEdgesFileString << endl << endl;
+    }
+
+    if ((doLayerTreatment) and (! doBoundarySmoothing))
+    {
+        Info << "WARNING: Boundary layer treatment will be done without boundary point smoothing. This can result in distorted boundary cells." << endl << endl;
     }
 
     // Objects for boundary point snapping to surfaces
@@ -1865,15 +1868,18 @@ int main(int argc, char *argv[])
     autoPtr<edgeMesh> initEdges(nullptr);
     autoPtr<edgeMesh> targetEdges(nullptr);
 
-    // Identification of corner points and corner target locations
-    boolList isCornerPoint(mesh.nPoints(), false);
+    // Point classification lists and corner target locations
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
+    boolList isLayerSurfacePoint(mesh.nPoints(), false);
+    boolList isSmoothingSurfacePoint(mesh.nPoints(), false);
+    boolList isFrozenSurfacePoint(mesh.nPoints(), false);
+    boolList isProcessorPoint(mesh.nPoints(), false);
+    boolList isCornerPoint(mesh.nPoints(), false);
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
 
     // Preparations for boundary point smoothing
-    if (doBoundaryPointSmoothing)
+    if (doBoundarySmoothing)
     {
-
         // Target surface mesh, build search tree
         surf.reset(new triSurface(targetSurfacesFileName));
         Info << "Target surfaces file " << targetSurfacesFileName << " stats:" << endl;
@@ -1903,9 +1909,47 @@ int main(int argc, char *argv[])
             << "did not find file " << targetEdgesFileString << "." << endl;
         }
         Info << endl;
+    }
+    else
+    {
+        // Initialize empty edge mesh, to avoid issues in
+        // classifyBoundaryPoints()
+        initEdges.reset(new edgeMesh());
+        targetEdges.reset(new edgeMesh());
+    }
 
-        // Identify corner points and corner target coordinates
-        findCornersAndFeatureEdges(mesh, initEdges, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, cornerPoints);
+    Info << "Mesh includes a total of " << mesh.nPoints() << " points:" << endl
+         << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
+         << "  - " << mesh.nPoints() - nInternalPoints << " boundary points" << endl
+         << "Mesh minimum edge length = " << meshMinEdgeLength << endl
+         << "Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
+
+    // Classify boundary points and find target corner points for feature edge snapping
+    classifyBoundaryPoints
+    (
+        mesh,
+        initEdges,
+        targetEdges,
+        layerPatchIds,
+        smoothingPatchIds,
+        isInternalPoint,
+        isProcessorPoint,
+        isFeatureEdgePoint,
+        isCornerPoint,
+        cornerPoints,
+        isLayerSurfacePoint,
+        isSmoothingSurfacePoint,
+        isFrozenSurfacePoint
+    );
+
+    // Preparations for optional smoothing and treatment
+    if ((doBoundarySmoothing) or (doLayerTreatment))
+    {
+        calculatePointHopsToBoundary(mesh, layerPatchIds, pointHopsToLayerBoundary, maxLayers + 1);
+        calculatePointHopsToBoundary(mesh, smoothingPatchIds, pointHopsToSmoothingBoundary, 2);
+        calculateBoundaryPointNormals(mesh, pointNormals);
+        propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
+        propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
     }
 
     // Carry out smoothing iterations
@@ -1918,21 +1962,20 @@ int main(int argc, char *argv[])
             isFrozenPoint[pointI] = false;
 
         // Recalculate point normals
-        calculateBoundaryPointNormals(mesh, pointNormals, isFlatPatchPoint);
+        calculateBoundaryPointNormals(mesh, pointNormals);
 
         // Calculate new point locations using centroidal smoothing
-        tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundaryPointSmoothing);
+        tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundarySmoothing);
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
         // Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
 
-        // Optional orthogonal boundary layer treatment
-        if (boundaryMaxBlendingFraction > SMALL)
+        // Optional boundary layer treatment
+        if (doLayerTreatment)
         {
             // Update neighbour coordinates and synchronize among processors
-            updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
             updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerNeighCoords);
             // Blend orthogonal and centroidal coordinates to newPoints
             blendWithOrthogonalPoints
@@ -1940,19 +1983,35 @@ int main(int argc, char *argv[])
                  mesh,
                  newPoints,
                  isInternalPoint,
-                 pointHopsToBoundary,
+                 pointHopsToLayerBoundary,
                  pointNormals,
                  outerNeighCoords,
-                 boundaryMaxBlendingFraction,
-                 boundaryEdgeLength,
-                 boundaryExpansionRatio,
-                 boundaryMinLayers,
-                 boundaryMaxLayers + 1  // +1 for correct number of layers
+                 layerMaxBlendingFraction,
+                 layerEdgeLength,
+                 layerExpansionRatio,
+                 minLayers,
+                 maxLayers + 1  // +1 for correct number of layers
             );
         }
 
-        if (doBoundaryPointSmoothing)
+        if (doBoundarySmoothing)
         {
+            // Update neighbour coordinates and synchronize among processors
+            updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
+            // Apply first layer inner points for projecting points to
+            // boundary surfaces
+            projectFreeBoundaryPointsToSurfaces
+            (
+                mesh,
+                newPoints,
+                pointHopsToSmoothingBoundary,
+                pointNormals,
+                isInternalPoint,
+                isFeatureEdgePoint,
+                isCornerPoint,
+                innerNeighCoords
+            );
+
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
 

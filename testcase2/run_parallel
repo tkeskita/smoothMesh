@@ -13,6 +13,5 @@ blockMesh
 decomposePar
 
 for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -boundaryMaxBlendingFraction 0.3 -boundaryExpansionRatio 1.2 -boundaryEdgeLength 0.05 -boundaryMaxLayers 10 -minEdgeLength 0.05 -maxStepLength 0.05 -patches '(wall_sphere)'
-
+  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.05 -maxStepLength 0.05 -layerExpansionRatio 1.2 -maxLayers 10 -layerPatches '(wall_sphere)'
 done

@@ -20,40 +20,57 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Help function to get list of point indices belonging to patch
+// with index patchI
+
+labelList getPatchPointIndices
+(
+    const fvMesh& mesh,
+    const label patchI
+)
+{
+    labelList pointIs;
+
+    const label startI = mesh.boundary()[patchI].start();
+    const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+    for (label faceI = startI; faceI < endI; faceI++)
+    {
+        const face& f = mesh.faces()[faceI];
+        forAll (f, facePointI)
+        {
+            const label pointI = mesh.faces()[faceI][facePointI];
+            if (findIndex(pointIs, pointI) == -1)
+            {
+                pointIs.append(pointI);
+            }
+        }
+    }
+    return pointIs;
+}
+
+
 // Calculate the minimum number of edge hops required to reach
 // a boundary point on given patchIds for all mesh points
 
 int calculatePointHopsToBoundary
 (
     const fvMesh& mesh,
-    const labelList& patchIds,
+    const labelList& layerPatchIds,
     labelList& pointHopsToBoundary,
-    const label boundaryMaxLayers
+    const label maxIter
 )
 {
     // Set boundary patch points for selected patches to zero hops
 
-    for (const label patchI : patchIds)
+    for (const label patchI : layerPatchIds)
     {
-        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+        const labelList patchPointIs =
+            getPatchPointIndices(mesh, patchI);
 
-        // Skip processor and empty patches
-        if (isA<processorPolyPatch>(pp))
-            continue;
-        if (isA<emptyPolyPatch>(pp))
-            continue;
-
-        const label startI = mesh.boundary()[patchI].start();
-        const label endI = startI + mesh.boundary()[patchI].Cf().size();
-
-        for (label faceI = startI; faceI < endI; faceI++)
+        forAll (patchPointIs, pointI)
         {
-            const face& f = mesh.faces()[faceI];
-            forAll (f, facePointI)
-            {
-                const label pointI = mesh.faces()[faceI][facePointI];
-                pointHopsToBoundary[pointI] = 0;
-            }
+            pointHopsToBoundary[patchPointIs[pointI]] = 0;
         }
     }
 
@@ -61,7 +78,7 @@ int calculatePointHopsToBoundary
     labelList newHopCounts(mesh.nPoints(), -1);
 
     // Propagate hop information to internal mesh points
-    for (label iter = 0; iter < boundaryMaxLayers; ++iter)
+    for (label iter = 0; iter < maxIter; ++iter)
     {
         forAll(mesh.points(), pointI)
         {
@@ -76,10 +93,13 @@ int calculatePointHopsToBoundary
             {
                 const label neighI = mesh.pointPoints(pointI)[pointPpI];
                 if (pointHopsToBoundary[neighI] > maxHops)
+                {
                     maxHops = pointHopsToBoundary[neighI];
+                }
             }
 
-            // If maximum is > 0, then assign maximum + 1 to current point
+            // If maximum hops is > 0, then assign maximum + 1 to
+            // current point
             if (maxHops >= 0)
             {
                 newHopCounts[pointI] = maxHops + 1;
@@ -103,38 +123,6 @@ int calculatePointHopsToBoundary
         );
     }
 
-    // Finally, set hop count of boundary patch points for
-    // non-selected patches to undefined value -1 to avoid boundary
-    // point smoothing issues
-    forAll (mesh.boundary(), patchI)
-    {
-        if (findIndex(patchIds, patchI) >= 0)
-        {
-            continue;
-        }
-
-        const polyPatch& pp = mesh.boundaryMesh()[patchI];
-
-        // Skip processor and empty patches
-        if (isA<processorPolyPatch>(pp))
-            continue;
-        if (isA<emptyPolyPatch>(pp))
-            continue;
-
-        const label startI = mesh.boundary()[patchI].start();
-        const label endI = startI + mesh.boundary()[patchI].Cf().size();
-
-        for (label faceI = startI; faceI < endI; faceI++)
-        {
-            const face& f = mesh.faces()[faceI];
-            forAll (f, facePointI)
-            {
-                const label pointI = mesh.faces()[faceI][facePointI];
-                pointHopsToBoundary[pointI] = UNDEF_LABEL;
-            }
-        }
-    }
-
     return 0;
 }
 
@@ -148,8 +136,7 @@ int calculatePointHopsToBoundary
 int calculateBoundaryPointNormals
 (
     const fvMesh& mesh,
-    pointField& pointNormals,
-    boolList& isFlatPatchPoint
+    pointField& pointNormals
 )
 {
     // Storage for number of boundary faces for points
@@ -214,16 +201,7 @@ int calculateBoundaryPointNormals
         if (nFaces[pointI] < 1)
             continue;
 
-        const double idealLength = double(nFaces[pointI]);
         const double magNorm = mag(pointNormals[pointI]);
-        const double flatness = magNorm / idealLength;
-
-        // Flatness limit
-        if (flatness > 0.9999)
-        {
-            isFlatPatchPoint[pointI] = true;
-            // Info << "pointI " << pointI << " flatness " << flatness << endl;
-        }
 
         // Zero the normal vector for baffle edge points
         if (magNorm < 0.1)
@@ -297,17 +275,18 @@ bool boundaryPatchCheck
 // points to internal points, to be used for orthogonal alignment of
 // internal edges. This is done only for the internal mesh points
 // which have a unique shortest edge hop route to one and only one
-// boundary point by an edge.
+// boundary point by an edge on an allowed patch.
 
 int propagateOuterNeighInfo
 (
     const fvMesh& mesh,
-    const labelList& patchIds,
+    const boolList& isInternalPoint,
+    const boolList& isLayerSurfacePoint,
     boolList& isNeighInProc,
     labelList& pointToOuterPointMap,
     pointField& pointNormals,
     const labelList& pointHopsToBoundary,
-    const label boundaryMaxLayers
+    const label maxIter
 )
 {
     // Debug option to set true for printing edges as a STL file
@@ -323,7 +302,7 @@ int propagateOuterNeighInfo
     // Neighbour search is done iteratively to propagate information from
     // boundary towards internal mesh points
 
-    for (label iter = 1; iter < boundaryMaxLayers + 1; ++iter)
+    for (label iter = 1; iter < maxIter + 1; ++iter)
     {
         forAll(mesh.points(), pointI)
         {
@@ -355,10 +334,10 @@ int propagateOuterNeighInfo
             // hop number, then there is a mapping towards boundary
             if (nNeighHops == 1)
             {
-                // If point is a boundary point, then check if the
-                // point belongs to a patch eligible for boundary
-                // layer treatment. If not, do nothing.
-                if (! boundaryPatchCheck(mesh, neighPointI, patchIds, nHops))
+                // If neighbour point is a boundary point, then check
+                // if the point belongs to a patch eligible for
+                // boundary layer treatment. If not, do nothing.
+                if ((! isInternalPoint[neighPointI]) and (! isLayerSurfacePoint[neighPointI]))
                     continue;
 
                 // Mark that the neighbour point is inside this
@@ -423,7 +402,7 @@ int propagateOuterNeighInfo
 int propagateInnerNeighInfo
 (
     const fvMesh& mesh,
-    const labelList& patchIds,
+    const boolList& isSmoothingSurfacePoint,
     boolList& isNeighInProc,
     labelList& pointToInnerPointMap,
     const labelList& pointHopsToBoundary
@@ -437,9 +416,15 @@ int propagateInnerNeighInfo
         // Number of hops this point has to boundary
         const label nHops = pointHopsToBoundary[pointI];
 
-        // Process only the points with a correct hop number
-        if (nHops != 0)
+        // Process only smoothing surface points
+        if (! isSmoothingSurfacePoint[pointI])
             continue;
+
+        // Process only boundary points
+        if (nHops != 0)
+        {
+            FatalError << pointI << " is not boundary point" << endl << abort(FatalError);
+        }
 
         // Number of neighbour points with a lower hop count
         label nNeighHops = 0;
@@ -458,16 +443,10 @@ int propagateInnerNeighInfo
             }
         }
 
-        // If exactly one neighbour point was found with a lower
-        // hop number, then there is a mapping towards boundary
+        // If exactly one neighbour point was found with a higher hop
+        // number, then there is a prismatic edge towards inner mesh
         if (nNeighHops == 1)
         {
-
-            // If point is a boundary point, then check if the
-            // point belongs to a patch eligible for boundary
-            // layer treatment. If not, do nothing.
-            if (! boundaryPatchCheck(mesh, pointI, patchIds, nHops))
-                continue;
 
             // Mark that the neighbour point is inside this
             // processor domain
@@ -535,11 +514,11 @@ int blendWithOrthogonalPoints
     const labelList& pointHopsToBoundary,
     const pointField& pointNormals,
     const pointField& outerNeighCoords,
-    const double boundaryMaxBlendingFraction,
-    const double boundaryEdgeLength,
-    const double boundaryExpansionRatio,
-    const double boundaryMinLayers,
-    const double boundaryMaxLayers
+    const double layerMaxBlendingFraction,
+    const double layerEdgeLength,
+    const double layerExpansionRatio,
+    const double minLayers,
+    const double maxLayers
 )
 {
     forAll(mesh.points(), pointI)
@@ -547,8 +526,8 @@ int blendWithOrthogonalPoints
         // Skip points without required information
         if (pointNormals[pointI] == ZERO_VECTOR)
             continue;
-        //if (! isInternalPoint[pointI])
-        //    continue;
+        if (! isInternalPoint[pointI])
+            continue;
 
         const label nHops = pointHopsToBoundary[pointI];
         if (nHops < 1)
@@ -564,17 +543,18 @@ int blendWithOrthogonalPoints
         const vector outerNeighCoord = outerNeighCoords[pointI];
         if (outerNeighCoord == UNDEF_VECTOR)
             FatalError << "Sanity broken, outerNeighCoord is zero for pointI "
-                       << pointI << endl << abort(FatalError);
+                       << pointI << " at " << mesh.points()[pointI]
+                       << endl << abort(FatalError);
 
         // Target length of edge towards boundary
-        const label maxHops = min((nHops - 1), boundaryMaxLayers);
-        const double length = boundaryEdgeLength * pow(boundaryExpansionRatio, maxHops);
+        const label maxHops = min((nHops - 1), maxLayers);
+        const double length = layerEdgeLength * pow(layerExpansionRatio, maxHops);
 
         // Target blending fraction
-        const double slope = -boundaryMaxBlendingFraction / (boundaryMaxLayers - boundaryMinLayers);
-        const double y0 = -slope * boundaryMaxLayers;
+        const double slope = -layerMaxBlendingFraction / (maxLayers - minLayers);
+        const double y0 = -slope * maxLayers;
         const double y = y0 + slope * nHops;
-        const double blendFrac = max(0.0, min(y, boundaryMaxBlendingFraction));
+        const double blendFrac = max(0.0, min(y, layerMaxBlendingFraction));
 
         const vector newPoint = newPoints[pointI];
         const vector orthoPoint = outerNeighCoord + length * pointNormal;
@@ -587,5 +567,61 @@ int blendWithOrthogonalPoints
 
     return 0;
 }
+
+// Projection of free boundary points (points not part of orthogonal
+// smoothing) to surfaces. Projection is done from the first layer
+// prismatic points orthogonally towards boundary.
+
+int projectFreeBoundaryPointsToSurfaces
+(
+    const fvMesh& mesh,
+    pointField& newPoints,
+    const labelList& pointHopsToBoundary,
+    const pointField& pointNormals,
+    const boolList& isInternalPoint,
+    const boolList& isFeatureEdgePoint,
+    const boolList& isCornerPoint,
+    const pointField& innerNeighCoords
+)
+{
+    forAll(mesh.points(), pointI)
+    {
+        const label nHops = pointHopsToBoundary[pointI];
+        const vector pointNormal = pointNormals[pointI];
+        const vector innerNeighCoord = innerNeighCoords[pointI];
+
+        // Info << "pointI " << pointI << " isFlat " << isFlatPatchPoint[pointI] << " nHops " << nHops << " pointNormal " << pointNormal << " innerNeighCoord " << innerNeighCoord << endl;
+
+        // Skip points without required information
+        if (isInternalPoint[pointI])
+            continue;
+        if (isFeatureEdgePoint[pointI])
+            continue;
+        if (isCornerPoint[pointI])
+            continue;
+        if (nHops != UNDEF_LABEL)
+            continue;
+        if (pointNormal == ZERO_VECTOR)
+            FatalError << "Point " << pointI << " has zero point normal" << endl << abort(FatalError);
+        if (innerNeighCoord == UNDEF_VECTOR)
+            FatalError << "Point " << pointI << " has no inner neigh coord" << endl << abort(FatalError);
+
+        // Info << "Boundary smoothing for pointI " << pointI << endl;
+
+        // Calculate new coordinates for this boundary point
+        const vector cCoords = newPoints[pointI];
+        const vector neighVec = cCoords - innerNeighCoord;
+        const double dotProd = neighVec & pointNormal;
+        const vector pVec = neighVec - dotProd * pointNormal;
+        const vector newCoords = cCoords - pVec;
+
+        // Update point coordinates
+        newPoints[pointI] = newCoords;
+    }
+
+    return 0;
+}
+
+
 
 // ************************************************************************* //

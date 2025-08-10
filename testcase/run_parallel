@@ -16,10 +16,11 @@ cp -rv constant/polyMesh 0/
 decomposePar
 
 for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.002 -minAngle 15 -maxAngle 160 -faceAngleConstraint true -boundaryMaxBlendingFraction 0.8 -boundaryEdgeLength 0.01 -patches '("def.*")'
+  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.002 -minAngle 15 -maxAngle 160 -layerPatches '("def.*")'
 done
 
 # Test cases for illustration of wrong usage
+# TODO: Update new parameter names
 
 # No boundary layers, without faceAngleConstraint, produces self-intersections
 # mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.004 -faceAngleConstraint false

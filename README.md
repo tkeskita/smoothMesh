@@ -3,7 +3,8 @@
 <img src="images/smooth_mesh.png"/>
 
 OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
-mesh points by using primarily the Centroidal smoothing algorithm (a
+mesh points (and now also optionally boundary mesh points)
+by using primarily the Centroidal smoothing algorithm (a
 version of the [Laplacian smoothing
 algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing), which
 uses surrounding cell centers instead of the neighbour point locations
@@ -22,20 +23,20 @@ topology of the mesh. Self-intersections can be avoided by using
 additional quality constraints, which restrict the movement of
 vertices.
 
-<img src="images/base_mesh_with_problematic_vertex.png" width="600"/>
+<img src="images/base_mesh_with_problematic_vertex.png" width="300"/>
 
 ## Current features and restrictions
 
-- Works on 3D polyhedron meshes
-- Works on both OpenFOAM.org v12 and OpenFOAM.com v2412 (likely also
-  on older versions)
-- Can be run in parallel
+- Works on 3D polyhedron meshes (2D meshes are not supported)
+- Tested on both OpenFOAM.org v12 and OpenFOAM.com v2412 (likely works
+  also on older and newer versions)
+- Can be run in parallel or in serial
 - Requires a consistent (not self-intersecting or tangled) initial
   mesh with "good enough" quality
-- Smoothes internal mesh points
-- Optional handling of prismatic boundary layers
-- Limited boundary point smoothing (work in progress, see options
-  below)
+- Smoothes internal and (optionally) boundary mesh points
+- Optionally controls the thickness and orthogonality of prismatic
+  boundary layers to preserve / create boundary layers using existing
+  mesh cells
 
 ## Compilation instructions
 
@@ -80,38 +81,45 @@ The following options are related to additional **heuristic quality control cons
 
 - Note: `-minAngle` value causes point freezing *only* if the minimum angle is below this value and if the minimum angle would *decrease* in smoothing. Points are allowed to move if the minimum angle value *increases* with smoothing, regardless of this value. The same applies for the `-maxAngle` option: Freezing takes place only if maximum angle is above the specified value and if the maximum angle would *increase* in smoothing.
 
-### Boundary layer related options
+### Boundary layer treatment related options
 
-The options below are related to handling of prismatic cells near mesh boundaries, to either preserve or improve the orthogonality and the thickness of boundary layer cells in the mesh. If the mesh contains prismatic boundary layers, the unconstrained centroidal smoothing will tend to bloat the boundary layer cells into normal size. That can be avoided using the options below. These options affect only the prismatic cell edges near the mesh boundaries (see [the algorithm description document](algorithm_description.md) for details).
+The options below are related to handling of prismatic cells near mesh boundaries, to either preserve or improve the orthogonality and control the thickness of boundary layer cells in the mesh. If the mesh contains prismatic boundary layers, the unconstrained centroidal smoothing will tend to bloat the boundary layer cells into normal size. That can be avoided using the options below. These options affect only the prismatic cell edges near the mesh boundaries (see [the algorithm description document](algorithm_description.md) for details).
 
 Warning: This is an experimental feature!
 
-- `-boundaryMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default 0). Values like 0.3 or 0.8 seems to produce good results in practice.
+- `-layerPatches` option is used to limit the boundary layer treatment to cells next to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-layerPatches 'walls'` or `-layerPatches '( stator "rotor.*" )'`. No patches are included by default.
 
-- `-boundaryEdgeLength` specifies the target thickness for the first boundary layer cells (prismatic side edge length). If no value is provided, the value of `minEdgeLength` is applied.
+- `-layerMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default value 0.5). Values between 0.3 and 0.8 seems to produce good results in practice.
 
-- `-boundaryExpansionRatio` specifies the thickness ratio by which the boundary edge length is assumed to increase (default: 1.3).
+- `-layerEdgeLength` specifies the target thickness for the first boundary layer cells (prismatic side edge length). If no value is provided, the value of `minEdgeLength` is applied.
 
-- `-boundaryMinLayers` is an integer value specifying the number of boundary layers which experience a full force of boundary blending specified with the `-boundaryMaxBlendingFraction` option (default: 1).
+- `-layerExpansionRatio` specifies the thickness ratio by which the boundary edge length is assumed to increase (default value 1.3).
 
-- `-boundaryMaxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default: 4).
+- `-minLayers` is an integer value specifying the number of boundary layers which experience a full force of boundary blending specified with the `-boundaryMaxBlendingFraction` option (default value 1).
 
-- `-patches` option can be used to limit the boundary layer treatment to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`. All patches are affected by default.
+- `-maxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default value 4).
 
 ## Boundary point smoothing options
 
-Currently smoothMesh has only limited capability to smoothen the
-points located on the boundary patches.
+Warning: This is a new an experimental feature!
 
-Warning: WIP! This feature is now broken, working on the replacement. DO NOT USE. (Or use the commit 7db1f91 from July 2025).
+SmoothMesh now has a possibility to move and smooth also boundary points. The usage of this feature requires that the user provides following files in the `constant/geometry` folder in the case directory in Wavefront OBJ format:
 
-- `-boundaryMaxPointBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary points are projected orthogonally to the boundary from the first layer prismatic points. Value like 0.8 seems to produce good results in practice. Note: Projection is made only if the boundary faces surrounding the boundary form a flat surface.
+- `constant/geometry/initEdges.obj` (**required**). This edge mesh must contain the initial feature edges (sharp edges) of the whole initial mesh. This edge mesh is used to identify which points in the initial mesh are feature edge points. Identification of points is currently based on point locations. Feature edge mesh can be generated e.g. by `Feature Edges` Filter in Paraview, or by `surfaceFeatures` or `surfaceFeatureExtract` commands in OpenFOAM.
 
-- `-boundaryPointSmoothingPatches` option can be used to limit the boundary point projection defined with the above option (`-boundaryMaxPointBlendingFraction`) to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-patches 'walls'` or `-patches '( stator "rotor.*" )'`. All patches are affected by default.
+- `constant/geometry/targetEdges.obj` (**optional**). This edge mesh file contains the edge mesh locations for the final target mesh. If `targetEdges.obj` is provided, the points on the initial feature edges are projected to these edges during smoothing. If `targetEdges.obj` is not provided, then target edge mesh is assumed to be identical to the initial feature edge mesh. In practice, the result of providing no `targetEdges.obj` is that feature edges stay in their initial locations, but edge points may still move along the feature edges. However, providing `targetEdges.obj `allows projection of e.g. linear block mesh edges to curves.
 
-**Note:** The combination of `-boundaryMaxBlendingFraction` and `-boundaryMaxPointBlendingFraction` gives different results, depending on the mesh and geometry. Figure below illustrates one example, showing a cross section in the middle of the mesh.
+- `constant/geometry/targetSurfaces.obj` (**required**). This surface mesh file must contain the target surface mesh for all boundary surfaces. The boundary points (besides feature edge points) are projected to closest triangulated surface mesh face provided in this file. The surface mesh can be generated e.g. by `Extract Surface Filter` in Paraview, or `surfaceMeshTriangulate` command in OpenFOAM.
 
-<img src="images/boundary_treatment.png" width="600"/>
+There is only one option for smoothMesh related to boundary point smoothing:
+
+- `-smoothingPatches` option is used to limit the boundary point movement to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-smoothingPatches 'walls'` or `-smoothingPatches '( stator "rotor.*" )'`. All patches are included in smoothing by default.
+
+**Note:** Always view the initial mesh and all OBJ files visually in Paraview for correctness before use!
+
+Example from testcase4 is illustrated below.
+
+<img src="images/boundary_point_smoothing.png" width="600"/>
 
 
 ## Description of the algorithm
@@ -128,9 +136,9 @@ You can run smoothMesh without providing any parameter values, but the result ma
 - Serial run example: `smoothMesh -centroidalIters 100 -maxStepLength 0.01 -minEdgeLength 0.05`
 
 
-## Test case
+## Test cases
 
-The folder `testcase` contains an artificial test case which contains
+The folders named like `testcaseX` contain test cases. E.g. the first `testcase` contains
 skewed and non-orthogonal cells, as well as variance in geometric
 cell shapes and topology. This is meant to be a challenging (but not
 impossible) task for centroidal smoothing.

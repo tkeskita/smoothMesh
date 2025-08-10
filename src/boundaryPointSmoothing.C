@@ -98,54 +98,119 @@ label findClosestEdgeMeshPointIndex
     return closestI;
 }
 
-// Find corner points and target locations for the corners using the
-// provided edge meshes
+// Classify boundary points, find corner points and target locations
+// for the corners using the provided edge meshes
 
-int findCornersAndFeatureEdges
+int classifyBoundaryPoints
 (
     const fvMesh& mesh,
     const edgeMesh& initEdges,
     const edgeMesh& targetEdges,
+    const labelList& layerPatchIds,
+    const labelList& smoothingPatchIds,
     const boolList& isInternalPoint,
+    boolList& isProcessorPoint,
     boolList& isFeatureEdgePoint,
     boolList& isCornerPoint,
-    vectorList& cornerPoints
+    vectorList& cornerPoints,
+    boolList& isLayerSurfacePoint,
+    boolList& isSmoothingSurfacePoint,
+    boolList& isFrozenSurfacePoint
 )
 {
-    label nCornerPoints = 0;
     label nFeatureEdgePoints = 0;
+    label nCornerPoints = 0;
+    label nLayerSurfacePoints = 0;
+    label nSmoothingSurfacePoints = 0;
+    label nFrozenSurfacePoints = 0;
 
-    forAll(mesh.points(), pointI)
+    boolList isVisitedPoint(mesh.nPoints(), false);
+
+    forAll (mesh.boundary(), patchI)
     {
-        if (isInternalPoint[pointI])
-            continue;
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
 
-        const point pt = mesh.points()[pointI];
-        const label closestInitPointI = findClosestEdgeMeshPointIndex(pt, initEdges, false, false);
-        const point closestInitPoint = initEdges.points()[closestInitPointI];
+        const label startI = mesh.boundary()[patchI].start();
+        const label endI = startI + mesh.boundary()[patchI].Cf().size();
 
-        // Identify and handle corner points
-        if (initEdges.pointEdges()[closestInitPointI].size() != 2)
+        for (label faceI = startI; faceI < endI; faceI++)
         {
-            isCornerPoint[pointI] = true;
-            const label closestCornerPointI = findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false);
-            cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
-            nCornerPoints++;
-            continue;
-        }
+            const face& f = mesh.faces()[faceI];
+            forAll (f, facePointI)
+            {
+                const label pointI = mesh.faces()[faceI][facePointI];
 
-        // Identify feature edges
-        if (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE)
-        {
-            isFeatureEdgePoint[pointI] = true;
-            nFeatureEdgePoints++;
+                // Process each point only once
+                if (isVisitedPoint[pointI])
+                    continue;
+                isVisitedPoint[pointI] = true;
+
+                // Processor patch
+                if (isA<processorPolyPatch>(pp))
+                {
+                    isProcessorPoint[pointI] = true;
+                }
+
+                if ((initEdges.points().size() > 0) and (targetEdges.points().size() > 0))
+                {
+                    const point pt = mesh.points()[pointI];
+                    const label closestInitPointI = findClosestEdgeMeshPointIndex(pt, initEdges, false, false);
+                    const point closestInitPoint = initEdges.points()[closestInitPointI];
+
+                    // Corner points
+                    if (initEdges.pointEdges()[closestInitPointI].size() != 2)
+                    {
+                        isCornerPoint[pointI] = true;
+                        const label closestCornerPointI = findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false);
+                        cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
+                        nCornerPoints++;
+                    }
+
+                    // Feature edges
+                    else if (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE)
+                    {
+                        isFeatureEdgePoint[pointI] = true;
+                        nFeatureEdgePoints++;
+                    }
+                }
+
+                // Layer treatment surface point
+                if (findIndex(layerPatchIds, patchI) >= 0)
+                {
+                    isLayerSurfacePoint[pointI] = true;
+                    nLayerSurfacePoints++;
+                }
+
+                // Smoothing surface points
+                if (findIndex(smoothingPatchIds, patchI) >= 0)
+                {
+                    isSmoothingSurfacePoint[pointI] = true;
+                    nSmoothingSurfacePoints++;
+                    continue;
+                }
+                // Frozen surface points
+                else
+                {
+                    isFrozenSurfacePoint[pointI] = true;
+                    nFrozenSurfacePoints++;
+                    continue;
+                }
+            }
         }
     }
 
+    // Summarize
     const label nSumCornerPoints  = returnReduce(nCornerPoints, sumOp<label>());
     const label nSumFeatureEdgePoints  = returnReduce(nFeatureEdgePoints, sumOp<label>());
+    const label nSumLayerSurfacePoints  = returnReduce(nLayerSurfacePoints, sumOp<label>());
+    const label nSumSmoothingSurfacePoints  = returnReduce(nSmoothingSurfacePoints, sumOp<label>());
+    const label nSumFrozenSurfacePoints  = returnReduce(nFrozenSurfacePoints, sumOp<label>());
+
     Info << "Detected number of corner points: " << nSumCornerPoints << endl;
     Info << "Detected number of feature edge points: " << nSumFeatureEdgePoints << endl;
+    Info << "Detected number of layer surface points: " << nSumLayerSurfacePoints << endl;
+    Info << "Detected number of smoothing surface points: " << nSumSmoothingSurfacePoints << endl;
+    Info << "Detected number of frozen surface points: " << nSumFrozenSurfacePoints << endl;
     Info << endl;
 
     return 0;

@@ -13,7 +13,7 @@ blockMesh
 decomposePar
 
 for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -boundaryMaxBlendingFraction 0.8 -boundaryMaxPointBlendingFraction 0.8 -boundaryExpansionRatio 1.2 -boundaryEdgeLength 0.05 -boundaryMaxLayers 3 -patches '(walls)' -boundaryPointSmoothingPatches '(top bottom)'
+  mpirun -np 3 smoothMesh -parallel -layerExpansionRatio 1.2 -layerEdgeLength 0.05 -maxLayers 3 -layerPatches '(walls)' -smoothingPatches '(".*")'
 
-  # mpirun -np 3 smoothMesh -parallel -boundaryMaxBlendingFraction 0.3 -boundaryMaxPointBlendingFraction 0.8
+  # mpirun -np 3 smoothMesh -parallel
 done
