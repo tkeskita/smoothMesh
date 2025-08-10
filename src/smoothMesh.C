@@ -1598,7 +1598,7 @@ int main(int argc, char *argv[])
         "smoothingPatches",
         "wordRe",
         "Specify single patch or multiple patches for boundary point smoothing."
-        " No patches are included by default."
+        " All patches are included by default."
         " For example 'walls' or '( stator \"rotor.*\" )'"
     );
 
@@ -1656,7 +1656,13 @@ int main(int argc, char *argv[])
             << endl;
     }
 
-    // Get patch ids for boundary point smoothing
+    // Add all patches as default for smoothing patches if nothing is
+    // specified
+    if (! args.optionFound("smoothingPatches"))
+    {
+        args.setOption("smoothingPatches", "(\".*\")");
+    }
+
     labelList smoothingPatchIds = getPatchIdsForOption(mesh, args, "smoothingPatches");
     if (smoothingPatchIds.size() > 0)
     {
@@ -1831,11 +1837,11 @@ int main(int argc, char *argv[])
     if ((layerPatchIds.size() > 0) and (layerMaxBlendingFraction > SMALL))
     {
         doLayerTreatment = true;
-        Info << "Enabled boundary layer treatment" << endl;
+        Info << "Enabled boundary layer treatment" << endl << endl;
     }
     else
     {
-        Info << "Boundary layer treatment is disabled. Either no layerPatches were specified or boundaryMaxBlendingFraction is zero" << endl;
+        Info << "Boundary layer treatment is disabled. Either no layerPatches were specified or boundaryMaxBlendingFraction is zero" << endl << endl;
     }
 
     // Check prerequisites for carrying out boundary point smoothing

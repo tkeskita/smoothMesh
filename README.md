@@ -67,6 +67,9 @@ You can optionally run the test cases (they will be copied to folder
 
 - `-totalMinFreeze` option causes mesh points on all edges shorter than `-minEdgeLength` to freeze, even if edge length would increase in smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only, if the special boundary layer related options below are not used.
 
+- `-writeInterval` option writes mesh at the interval of given number of iterations, e.g. value 10 causes write every tenth iteration (default value 0).
+
+
 ### Quality constraint options
 
 The following options are related to additional **heuristic quality control constraints for smoothing**. The constraints work by disallowing movement of point (freezing of points) if the movement would cause quality of the mesh to suffer too much. Without constraining, centroidal smoothing may squish cells and create self-intersecting cells e.g. near concave geometry features, depending on the mesh details. Have a look at [the algorithm description document](algorithm_description.md) for details.
