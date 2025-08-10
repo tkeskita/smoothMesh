@@ -158,7 +158,8 @@ int classifyBoundaryPoints
                     const point closestInitPoint = initEdges.points()[closestInitPointI];
 
                     // Corner points
-                    if (initEdges.pointEdges()[closestInitPointI].size() != 2)
+                    if ((initEdges.pointEdges()[closestInitPointI].size() != 2)
+                        and (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE))
                     {
                         isCornerPoint[pointI] = true;
                         const label closestCornerPointI = findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false);

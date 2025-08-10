@@ -57,7 +57,7 @@ You can optionally run the test cases (they will be copied to folder
 
 - `-centroidalIters` specifies the maximum number of smoothing iterations (default 1000).
 
-- `-relTol` is the relative tolerance convergence criteria for stopping smoothing iterations (default 0.02). If residual (average length of point movement relative to `maxStepLength`) drops below this value, then smoothing is ended.
+- `-relTol` is the relative tolerance convergence criteria for stopping smoothing iterations (default 0.02). If residual (maximum length of point moved relative to `maxStepLength`) drops below this value, then smoothing is stopped.
 
 - `-minEdgeLength` defines edge length below which edge points are fully frozen at their current location. Freezing happens only if edge length would decrease during smoothing. Edge length is allowed to increase regardless of this value. If no value is provided, a default value of half the length of the shortest edge in the initial mesh is applied.
 
@@ -98,13 +98,13 @@ Warning: This is an experimental feature!
 
 - `-layerExpansionRatio` specifies the thickness ratio by which the boundary edge length is assumed to increase (default value 1.3).
 
-- `-minLayers` is an integer value specifying the number of boundary layers which experience a full force of boundary blending specified with the `-boundaryMaxBlendingFraction` option (default value 1).
+- `-minLayers` is an integer value specifying the number of boundary layers which experience a full force of boundary blending specified with the `-layerMaxBlendingFraction` option (default value 1).
 
 - `-maxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default value 4).
 
 ## Boundary point smoothing options
 
-Warning: This is a new an experimental feature!
+Warning: This is a new and experimental feature!
 
 SmoothMesh now has a possibility to move and smooth also boundary points. The usage of this feature requires that the user provides following files in the `constant/geometry` folder in the case directory in Wavefront OBJ format:
 
