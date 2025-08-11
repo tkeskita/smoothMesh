@@ -58,8 +58,7 @@ int findInternalMeshPoints
 )
 {
     // Start from all points in
-    forAll(isInternalPoint, pointI)
-        isInternalPoint[pointI] = true;
+    isInternalPoint = true;
 
     // Remove points on boundary patches, except not
     // processor patches nor empty patches
@@ -299,7 +298,7 @@ bool isCloserPoint
 int findClosestPoints
 (
     const fvMesh& mesh,
-    const boolList isInternalPoint,
+    const boolList& isInternalPoint,
     vectorList& closestPoints1,
     vectorList& closestPoints2,
     vectorList& closestPoints3,
@@ -495,7 +494,7 @@ double calcARSmoothingRatio
 Foam::tmp<Foam::pointField> aspectRatioSmoothing
 (
     const fvMesh& mesh,
-    const boolList isInternalPoint,
+    const boolList& isInternalPoint,
     const pointField& centroidalPoints,
     const labelListList& pointNeighPoints
 )
@@ -1439,7 +1438,7 @@ double calculateResidual
 (
     const fvMesh& mesh,
     const pointField& newPoints,
-    const boolList isInternalPoint,
+    const boolList& isInternalPoint,
     const double maxStepLength
 )
 {
