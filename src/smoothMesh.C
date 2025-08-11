@@ -18,7 +18,7 @@ Description
 #include <bits/stdc++.h> // For std::stack
 #include "vectorList.H"
 #include "stringListOps.H"  // For stringListOps::findMatching()
-#include "SortableList.H"
+#include "ListOps.H"
 #include "wordReList.H"
 #include "triSurface.H"
 #include "triSurfaceSearch.H"
@@ -119,11 +119,9 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     // Calculate number and sum of surrounding cell center
     // coordinates
 
-    tmp<vectorField> tCellPoints(new vectorField(mesh.points().size(), ZERO_VECTOR));
-    vectorField& cellPoints = tCellPoints.ref();
+    vectorField cellPoints(mesh.points().size(), Zero);
 
-    tmp<scalarField> tNPoints(new scalarField(mesh.points().size(), scalar(0)));
-    scalarField& nPoints = tNPoints.ref();
+    labelList nPoints(mesh.points().size(), Zero);
 
     forAll(mesh.points(), pointI)
     {
@@ -159,32 +157,28 @@ Foam::tmp<Foam::pointField> centroidalSmoothing
     (
         mesh,
         nPoints,
-        plusEqOp<scalar>(),
-        scalar(0)                  // null value
+        plusEqOp<label>(),
+        label(0)                   // null value
     );
 
     // Calculate new point locations
-    tmp<pointField> tnewPoints(new pointField(mesh.nPoints(), Zero));
-    pointField& newPoints = tnewPoints.ref();
+    // - init with fallback value (the current mesh points)
+    tmp<pointField> tnewPoints(new pointField(mesh.points()));
+    auto& newPoints = tnewPoints.ref();
 
     forAll(newPoints, pointI)
     {
         // centroidal point
-        if (nPoints[pointI] > VSMALL)
+        if (nPoints[pointI])
         {
             newPoints[pointI] =
                 cellPoints[pointI] / nPoints[pointI];
-        }
-
-        // fall back to current mesh point
-        else
-        {
-            newPoints[pointI] = mesh.points()[pointI];
         }
     }
 
     return tnewPoints;
 }
+
 
 // Help function to return distance to current mesh point with index
 // pointI from argument coords.
@@ -306,10 +300,6 @@ int findClosestPoints
     const labelListList& pointNeighPoints
 )
 {
-    // Storage for sharing relative point locations among processors
-    tmp<vectorField> tSyncPoints(new vectorField(mesh.points().size(), ZERO_VECTOR));
-    vectorField& syncPoints = tSyncPoints.ref();
-
     // Initialize with local information
     forAll (mesh.points(), pointI)
     {
@@ -323,7 +313,7 @@ int findClosestPoints
         }
 
         const vector cCoords = mesh.points()[pointI];
-        const labelList pointPoints = mesh.pointPoints()[pointI];
+        const labelList& pointPoints = mesh.pointPoints()[pointI];
         const label nPoints = pointPoints.size();
         List<scalar> edgeLengths(nPoints, 0.0);
 
@@ -335,9 +325,13 @@ int findClosestPoints
             edgeLengths[neighPointI] = edgeLength;
         }
 
-        // Get labels of sorted length list
-        SortableList<scalar> sortedEdgeLengths(edgeLengths);
-        const labelList sLabels = sortedEdgeLengths.indices();
+        // Get order of sorted edgeLength
+        // openfoam.com :
+        // const labelList sLabels(Foam::sortedOrder(edgeLengths));
+        //
+        // openfoam.com and openfoam.org :
+        labelList sLabels;
+        Foam::sortedOrder(edgeLengths, sLabels);
 
         // Save local values
         closestPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
@@ -355,6 +349,9 @@ int findClosestPoints
 
     // Position 1
     // ----------
+
+    // Storage for sharing relative point locations among processors
+    vectorField syncPoints(mesh.points().size(), Zero);
 
     forAll (mesh.points(), pointI)
     {
@@ -502,17 +499,16 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     // Storage for surrounding point locations (relative to current
     // point) of closest edge points
     const label nPoints = mesh.nPoints();
-    vectorList closestPoints1(nPoints, ZERO_VECTOR);
-    vectorList closestPoints2(nPoints, ZERO_VECTOR);
-    vectorList closestPoints3(nPoints, ZERO_VECTOR);
+    vectorList closestPoints1(nPoints, Zero);
+    vectorList closestPoints2(nPoints, Zero);
+    vectorList closestPoints3(nPoints, Zero);
 
     // Boolean to mark that the two shortest local edge points share a cell
-    tmp<Field<bool>> tHasCommonCell(new Field<bool>(nPoints, false));
-    Field<bool>& hasCommonCell = tHasCommonCell.ref();
+    List<bool> hasCommonCell(nPoints, false);
 
     // New point locations storage
     tmp<pointField> tNewPoints(new pointField(nPoints, Zero));
-    pointField& newPoints = tNewPoints.ref();
+    auto& newPoints = tNewPoints.ref();
 
     // Initialize with centroidal coordinates
     forAll(centroidalPoints, pointI)
@@ -638,7 +634,8 @@ int constrainMaxStepLength
 {
     // Copy original points for temporary working point field
     tmp<pointField> tNewPoints(new pointField(mesh.nPoints(), Zero));
-    pointField& newPoints = tNewPoints.ref();
+    auto& newPoints = tNewPoints.ref();
+
     forAll(newPoints, pointI)
         newPoints[pointI] = origPoints[pointI];
 
@@ -1800,7 +1797,7 @@ int main(int argc, char *argv[])
     labelList pointHopsToSmoothingBoundary(mesh.nPoints(), UNDEF_LABEL);
 
     // Storage for point normals (for boundary layer treatment)
-    tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), ZERO_VECTOR));
+    tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), Zero));
     pointField& pointNormals = tPointNormals.ref();
 
     // Storage for neighbour point locations (for boundary layer treatment)
