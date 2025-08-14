@@ -1,3 +1,5 @@
+FOAM_MODULE_APPBIN = $(FOAM_USER_APPBIN)
+
 EXE_INC = \
     $(VERSION_SPECIFIC_INC) \
     -I$(LIB_SRC)/finiteVolume/lnInclude \

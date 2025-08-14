@@ -1,6 +1,20 @@
 #!/bin/bash
+cd "${0%/*}" || exit                            # Run from this directory
+if [ -f "${WM_PROJECT_DIR}"/wmake/scripts/AllwmakeParseArguments ]
+then  . "${WM_PROJECT_DIR}"/wmake/scripts/AllwmakeParseArguments
+fi
 
-cd "${0%/*}" || exit  # Run from the file location
+#------------------------------------------------------------------------------
+# Build into FOAM_USER_{APPBIN,LIBBIN} unless otherwise specified with
+# -prefix or FOAM_MODULE_{APPBIN,LIBBIN} env varables
+
+moduleName="smoothMesh"
+
+if [ "$FOAM_MODULE_PREFIX" = false ]
+then
+    echo "Compilation of $moduleName is disabled (prefix=false)"
+    exit 0
+fi
 
 # Stop at errors
 set -e
@@ -18,21 +32,21 @@ if [[ "$WM_PROJECT" != "OpenFOAM" ]]; then
     exit 1
 fi
 
-# Deduce the OpenFOAM fork/variant in use and initialize accordingly
-if [[ "$WM_PROJECT_VERSION" == *"v"* ]]; then
-    echo "Compiling openfoam.com variant"
+# Deduce the OpenFOAM variant in use and initialize accordingly
+if [ -d "${WM_PROJECT_DIR}"/META-INFO ]; then
+    echo "Compiling openfoam.com variant : [$WM_PROJECT_VERSION]"
     export VERSION_SPECIFIC_INC="-DOPENFOAM_COM"
     cp -f src/Make/options.com src/Make/options
 else
-    echo "Compiling openfoam.org variant"
+    echo "Compiling openfoam.org variant : [$WM_PROJECT_VERSION]"
     export VERSION_SPECIFIC_INC="-DOPENFOAM_ORG"
     cp -f src/Make/options.org src/Make/options
 fi
 
 # Warn if version numbers are not any of the supported ones
-allowed_ver=("12" "v2412")
+allowed_ver=("12" "v2506" "v2412" "v2406" "v2312")
 if ! [[ " ${allowed_ver[*]} " == *" $WM_PROJECT_VERSION "* ]]; then
-    echo "Warning: Version $WM_PROJECT_VERSION is not supported. Continuing.."
+    echo "Warning: Version $WM_PROJECT_VERSION is untested. Continuing.."
 fi
 
 # Compile
@@ -53,3 +67,5 @@ then
 else
     echo "Looks like compilation of smoothMesh succeeded!"
 fi
+
+#------------------------------------------------------------------------------
