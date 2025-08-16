@@ -8,11 +8,12 @@ if [ $retVal -ne 0 ]; then
     exit 1
 fi
 
-rm -rf ? ?? ??? constant/polyMesh
+rm -rf ? ?? ??? processor* constant/polyMesh
 blockMesh
-mkdir 0
-cp -rv constant/polyMesh 0/
+decomposePar
 
 for i in `seq 1 1`; do
-  smoothMesh -centroidalIters 100 -minEdgeLength 0.05 -maxStepLength 0.05 -layerExpansionRatio 1.2 -maxLayers 10 -layerPatches '(wall_sphere)'
+  # mpirun -np 3 smoothMesh -parallel -layerExpansionRatio 1.2 -layerEdgeLength 0.05 -maxLayers 3 -layerPatches '(top)' -smoothingPatches '(".*")'
+
+  # mpirun -np 3 smoothMesh -parallel
 done

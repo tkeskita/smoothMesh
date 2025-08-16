@@ -110,6 +110,7 @@ int classifyBoundaryPoints
     const labelList& smoothingPatchIds,
     const boolList& isInternalPoint,
     boolList& isProcessorPoint,
+    boolList& isConnectedToInternalPoint,
     boolList& isFeatureEdgePoint,
     boolList& isCornerPoint,
     vectorList& cornerPoints,
@@ -151,6 +152,24 @@ int classifyBoundaryPoints
                     isProcessorPoint[pointI] = true;
                 }
 
+                // Skip rest of classifications if this is not a boundary point
+                if (isInternalPoint[pointI])
+                {
+                    continue;
+                }
+
+                // Check if boundary point has connections to internal mesh point
+                forAll (mesh.pointPoints()[pointI], pointPointI)
+                {
+                    const label i = mesh.pointPoints()[pointI][pointPointI];
+                    if (isInternalPoint[i])
+                    {
+                        isConnectedToInternalPoint[pointI] = true;
+                    }
+                }
+
+                // Classification of boundary smoothing points is done
+                // only if information is available
                 if ((initEdges.points().size() > 0) and (targetEdges.points().size() > 0))
                 {
                     const point pt = mesh.points()[pointI];
@@ -176,20 +195,24 @@ int classifyBoundaryPoints
                 }
 
                 // Layer treatment surface point
-                if (findIndex(layerPatchIds, patchI) >= 0)
+                const bool testIsLayerSurfacePoint = (findIndex(layerPatchIds, patchI) >= 0);
+                if (testIsLayerSurfacePoint)
                 {
                     isLayerSurfacePoint[pointI] = true;
                     nLayerSurfacePoints++;
                 }
 
                 // Smoothing surface points
-                if (findIndex(smoothingPatchIds, patchI) >= 0)
+                const bool testIsSmoothingSurfacePoint = (findIndex(smoothingPatchIds, patchI) >= 0);
+
+                if (testIsSmoothingSurfacePoint)
                 {
                     isSmoothingSurfacePoint[pointI] = true;
                     nSmoothingSurfacePoints++;
                     continue;
                 }
-                // Frozen surface points
+
+                // Frozen boundary points are all the non-smoothed points
                 else
                 {
                     isFrozenSurfacePoint[pointI] = true;
@@ -346,6 +369,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
     pointField& newPoints,
     const pointField& pointNormals,
     const boolList& isInternalPoint,
+    const boolList& isSmoothingSurfacePoint,
     const boolList& isFeatureEdgePoint,
     const boolList& isCornerPoint,
     const vectorList& cornerPoints,
@@ -380,10 +404,12 @@ int projectBoundaryPointsToEdgesAndSurfaces
 
         // Project to closest tri face in normal or opposite direction
         // -----------------------------------------------------------
-        const point pointNormal = pointNormals[pointI];
-        const double searchDistance = 10 * meshMaxEdgeLength;
-
-        newPoints[pointI] = findIntersection(tree, pointI, origPoint, pointNormal, searchDistance);
+        if (isSmoothingSurfacePoint[pointI])
+        {
+            const point pointNormal = pointNormals[pointI];
+            const double searchDistance = 10 * meshMaxEdgeLength;
+            newPoints[pointI] = findIntersection(tree, pointI, origPoint, pointNormal, searchDistance);
+        }
     }
 
     return 0;

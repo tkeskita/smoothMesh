@@ -57,6 +57,8 @@ int calculatePointHopsToBoundary
 (
     const fvMesh& mesh,
     const labelList& layerPatchIds,
+    const boolList& isInternalPoint,
+    const boolList& isConnectedToInternalPoint,
     labelList& pointHopsToBoundary,
     const label maxIter
 )
@@ -70,7 +72,11 @@ int calculatePointHopsToBoundary
 
         forAll (patchPointIs, pointI)
         {
-            pointHopsToBoundary[patchPointIs[pointI]] = 0;
+            const label patchPointI = patchPointIs[pointI];
+            if (isConnectedToInternalPoint[patchPointI])
+            {
+                pointHopsToBoundary[patchPointI] = 0;
+            }
         }
     }
 
@@ -84,6 +90,10 @@ int calculatePointHopsToBoundary
         {
             // Skip the point if a hop value exists already
             if (pointHopsToBoundary[pointI] >= 0)
+                continue;
+
+            // Skip the point if it's not internal point
+            if (! isInternalPoint[pointI])
                 continue;
 
             // Find the maximum count of neighbour hops
@@ -100,6 +110,7 @@ int calculatePointHopsToBoundary
 
             // If maximum hops is > 0, then assign maximum + 1 to
             // current point
+
             if (maxHops >= 0)
             {
                 newHopCounts[pointI] = maxHops + 1;
@@ -129,9 +140,7 @@ int calculatePointHopsToBoundary
 // Calculate point normals of boundary points starting from
 // polyMesh. Store point normals to pointNormals field. Point normals
 // are not calculated for processor and empty patch points nor for
-// internal mesh points. Calculate also isFlatPatchPoint, which marks
-// boundary points whose boundary surfaces all share approximately
-// same normal direction.
+// internal mesh points.
 
 int calculateBoundaryPointNormals
 (
@@ -403,6 +412,7 @@ int propagateInnerNeighInfo
 (
     const fvMesh& mesh,
     const boolList& isSmoothingSurfacePoint,
+    const boolList& isConnectedToInternalPoint,
     boolList& isNeighInProc,
     labelList& pointToInnerPointMap,
     const labelList& pointHopsToBoundary
@@ -420,7 +430,10 @@ int propagateInnerNeighInfo
         if (! isSmoothingSurfacePoint[pointI])
             continue;
 
-        // Process only boundary points
+        // Process only points connected to internal points
+        if (! isConnectedToInternalPoint[pointI])
+            continue;
+
         if (nHops != 0)
         {
             FatalError << pointI << " is not boundary point" << endl << abort(FatalError);
@@ -568,8 +581,8 @@ int blendWithOrthogonalPoints
     return 0;
 }
 
-// Projection of free boundary points (points not part of orthogonal
-// smoothing) to surfaces. Projection is done from the first layer
+// Projection of boundary points not part of orthogonal
+// smoothing to surfaces. Projection is done from the first layer
 // prismatic points orthogonally towards boundary.
 
 int projectFreeBoundaryPointsToSurfaces
@@ -578,9 +591,8 @@ int projectFreeBoundaryPointsToSurfaces
     pointField& newPoints,
     const labelList& pointHopsToBoundary,
     const pointField& pointNormals,
-    const boolList& isInternalPoint,
-    const boolList& isFeatureEdgePoint,
-    const boolList& isCornerPoint,
+    const boolList& isSmoothingSurfacePoint,
+    const boolList& isConnectedToInternalPoint,
     const pointField& innerNeighCoords
 )
 {
@@ -593,18 +605,16 @@ int projectFreeBoundaryPointsToSurfaces
         // Info << "pointI " << pointI << " isFlat " << isFlatPatchPoint[pointI] << " nHops " << nHops << " pointNormal " << pointNormal << " innerNeighCoord " << innerNeighCoord << endl;
 
         // Skip points without required information
-        if (isInternalPoint[pointI])
+        if (! isSmoothingSurfacePoint[pointI])
             continue;
-        if (isFeatureEdgePoint[pointI])
+        if (! isConnectedToInternalPoint[pointI])
             continue;
-        if (isCornerPoint[pointI])
-            continue;
-        if (nHops != UNDEF_LABEL)
-            continue;
+        if (nHops != 0)
+            FatalError << "Point " << pointI << " at " << mesh.points()[pointI] << " has non-zero hops" << endl << abort(FatalError);
         if (pointNormal == ZERO_VECTOR)
-            FatalError << "Point " << pointI << " has zero point normal" << endl << abort(FatalError);
+            FatalError << "Point " << pointI << " at " << mesh.points()[pointI] << " has zero point normal" << endl << abort(FatalError);
         if (innerNeighCoord == UNDEF_VECTOR)
-            FatalError << "Point " << pointI << " has no inner neigh coord" << endl << abort(FatalError);
+            FatalError << "Point " << pointI << " at " << mesh.points()[pointI] << " has no inner neigh coord" << endl << abort(FatalError);
 
         // Info << "Boundary smoothing for pointI " << pointI << endl;
 

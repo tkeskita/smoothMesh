@@ -522,6 +522,10 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     // Calculate closest middle point coordinates and blend with centroidal coordinates
     forAll(mesh.points(), pointI)
     {
+        // Process only internal points
+        if (! isInternalPoint[pointI])
+            continue;
+
         const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI]);
 
         if (blendFrac > 0.0)
@@ -595,7 +599,7 @@ int restrictEdgeShortening
 }
 
 
-// Calculate and return the maximum edge length of the proposed new points
+// Calculate and return the maximum step length of the proposed new points
 
 double getProposedMaxStepLength
 (
@@ -629,7 +633,8 @@ int constrainMaxStepLength
     const fvMesh& mesh,
     pointField& origPoints,
     const double maxStepLength,
-    const double relStepFrac
+    const double relStepFrac,
+    const bool doGlobalScaling
 )
 {
     // Copy original points for temporary working point field
@@ -639,10 +644,22 @@ int constrainMaxStepLength
     forAll(newPoints, pointI)
         newPoints[pointI] = origPoints[pointI];
 
-    // Calculate global scaling factor from maximum step size and
-    // maximum allowed step size
+    // Global scaling factor is a means to scale down all point
+    // movements with a common factor. It is meant to allow centroidal
+    // smoothing to accelerate movement of points which need larger
+    // step sizes than surrounding points for stable smoothing. If
+    // global scaling factor is 1.0, then movement is scaled down by
+    // the relative step fraction only.
+
+    // Calculate global scaling factor from maximum proposed step size
+    // and maximum allowed step size.
     const double proposedMaxLength = getProposedMaxStepLength(mesh, origPoints);
-    const double globalScale = min(1.0, maxStepLength / (proposedMaxLength * relStepFrac));
+
+    double globalScale = 1.0;
+    if (doGlobalScaling)
+    {
+        globalScale = min(1.0, maxStepLength / (proposedMaxLength * relStepFrac));
+    }
 
     // Info << "Proposed maximum step length = " << proposedMaxLength << endl
     //      << "Maximum allowed step length = " << maxStepLength << endl
@@ -1871,6 +1888,7 @@ int main(int argc, char *argv[])
     autoPtr<edgeMesh> targetEdges(nullptr);
 
     // Point classification lists and corner target locations
+    boolList isConnectedToInternalPoint(mesh.nPoints(), false);
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
     boolList isLayerSurfacePoint(mesh.nPoints(), false);
     boolList isSmoothingSurfacePoint(mesh.nPoints(), false);
@@ -1936,6 +1954,7 @@ int main(int argc, char *argv[])
         smoothingPatchIds,
         isInternalPoint,
         isProcessorPoint,
+        isConnectedToInternalPoint,
         isFeatureEdgePoint,
         isCornerPoint,
         cornerPoints,
@@ -1947,11 +1966,11 @@ int main(int argc, char *argv[])
     // Preparations for optional smoothing and treatment
     if ((doBoundarySmoothing) or (doLayerTreatment))
     {
-        calculatePointHopsToBoundary(mesh, layerPatchIds, pointHopsToLayerBoundary, maxLayers + 1);
-        calculatePointHopsToBoundary(mesh, smoothingPatchIds, pointHopsToSmoothingBoundary, 2);
+        calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
+        calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);
         calculateBoundaryPointNormals(mesh, pointNormals);
         propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
-        propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
+        propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
     }
 
     // Carry out smoothing iterations
@@ -1969,6 +1988,9 @@ int main(int argc, char *argv[])
         // Calculate new point locations using centroidal smoothing
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundarySmoothing);
         pointField& centroidalPoints = tCentroidalPoints.ref();
+
+        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+        constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
 
         // Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
@@ -1994,35 +2016,23 @@ int main(int argc, char *argv[])
                  minLayers,
                  maxLayers + 1  // +1 for correct number of layers
             );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
 
         if (doBoundarySmoothing)
         {
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
-            // Apply first layer inner points for projecting points to
-            // boundary surfaces
-            projectFreeBoundaryPointsToSurfaces
-            (
-                mesh,
-                newPoints,
-                pointHopsToSmoothingBoundary,
-                pointNormals,
-                isInternalPoint,
-                isFeatureEdgePoint,
-                isCornerPoint,
-                innerNeighCoords
-            );
-
-            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
-
+            // Project boundary points
             projectBoundaryPointsToEdgesAndSurfaces
             (
                 mesh,
                 newPoints,
                 pointNormals,
                 isInternalPoint,
+                isSmoothingSurfacePoint,
                 isFeatureEdgePoint,
                 isCornerPoint,
                 cornerPoints,
@@ -2030,11 +2040,27 @@ int main(int argc, char *argv[])
                 surf,
                 tree,
                 meshMaxEdgeLength
-             );
-        }
+            );
 
-        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-        constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+
+            // Use the locations of first cell layer points for
+            // projecting points to boundary surfaces
+            projectFreeBoundaryPointsToSurfaces
+            (
+                mesh,
+                newPoints,
+                pointHopsToSmoothingBoundary,
+                pointNormals,
+                isSmoothingSurfacePoint,
+                isConnectedToInternalPoint,
+                innerNeighCoords
+            );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+        }
 
         // Avoid shortening of short edge length
         restrictEdgeShortening(mesh, newPoints, minEdgeLength, totalMinFreeze, isFrozenPoint);
@@ -2061,15 +2087,19 @@ int main(int argc, char *argv[])
         );
 
         // Restore original coordinates for frozen points
+        label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
             if (isFrozenPoint[pointI])
+            {
                 newPoints[pointI] = mesh.points()[pointI];
+                ++nFrozenPoints;
+            }
         }
 
         // Calculate and print residual
         const double res = calculateResidual(mesh, newPoints, isInternalPoint, maxStepLength);
-        Info << "Smoothing iteration=" << (i + 1) << " residual=" << res << endl;
+        Info << "Smoothing iteration=" << (i + 1) << " nFrozenPoints=" << returnReduce(nFrozenPoints, sumOp<label>()) << " residual=" << res << endl;
 
         // Push coordinates to mesh
         mesh.movePoints(tNewPoints);

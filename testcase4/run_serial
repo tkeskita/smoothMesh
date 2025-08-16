@@ -4,7 +4,7 @@
 which surfaceFeatureExtract &> /dev/null
 retVal=$?
 if [ $retVal -ne 0 ]; then
-    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM v2312 is probably not sourced correctly?"
+    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM is probably not sourced correctly?"
     exit 1
 fi
 

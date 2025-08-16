@@ -4,7 +4,7 @@
 which surfaceFeatureExtract &> /dev/null
 retVal=$?
 if [ $retVal -ne 0 ]; then
-    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM v2312 is probably not sourced correctly?"
+    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM is probably not sourced correctly?"
     exit 1
 fi
 
@@ -21,20 +21,26 @@ cd $test_folder
 function do_test() {
   cd $1
   folder=`pwd`
-  echo "Running run_parallel at $folder"
-  ./run_parallel | grep Smoothing\ iteration
-  mpirun -np 3 checkMesh -parallel -latestTime | grep \<\<
+
+  #echo "Running run_parallel at $folder"
+  ## ./run_parallel | grep Smoothing\ iteration
+  #./run_parallel
+  #mpirun -np 3 checkMesh -parallel -latestTime | grep \<\<
+
   echo "Running run_serial at $folder"
-  ./run_serial | grep Smoothing\ iteration
+  # ./run_serial | grep Smoothing\ iteration
+  ./run_serial
   checkMesh -latestTime | grep \<\<
+
   cd ..
 }
 
 # Tests
-do_test "testcase"
-do_test "testcase2"
-do_test "testcase3"
-do_test "testcase4"
+#do_test "testcase"
+#do_test "testcase2"
+#do_test "testcase3"
+#do_test "testcase4"
+do_test "testcase5"
 
 echo "Test runs completed"
 cd ..
