@@ -2055,6 +2055,8 @@ int main(int argc, char *argv[])
                 pointNormals,
                 isSmoothingSurfacePoint,
                 isConnectedToInternalPoint,
+                isFeatureEdgePoint,
+                isCornerPoint,
                 innerNeighCoords
             );
 

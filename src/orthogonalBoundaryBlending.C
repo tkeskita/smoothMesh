@@ -593,6 +593,8 @@ int projectFreeBoundaryPointsToSurfaces
     const pointField& pointNormals,
     const boolList& isSmoothingSurfacePoint,
     const boolList& isConnectedToInternalPoint,
+    const boolList& isFeatureEdgePoint,
+    const boolList& isCornerPoint,
     const pointField& innerNeighCoords
 )
 {
@@ -609,6 +611,12 @@ int projectFreeBoundaryPointsToSurfaces
             continue;
         if (! isConnectedToInternalPoint[pointI])
             continue;
+        if (isFeatureEdgePoint[pointI])
+            continue;
+        if (isCornerPoint[pointI])
+            continue;
+
+        // Sanity checks
         if (nHops != 0)
             FatalError << "Point " << pointI << " at " << mesh.points()[pointI] << " has non-zero hops" << endl << abort(FatalError);
         if (pointNormal == ZERO_VECTOR)
