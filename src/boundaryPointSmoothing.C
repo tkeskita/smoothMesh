@@ -240,28 +240,57 @@ int classifyBoundaryPoints
     return 0;
 }
 
+// Help function to find indices of non-corner and non-feature-edge
+// boundary points next to given boundary point
 
-// Project point to closest edge in edge mesh
+labelList findNeighborSurfacePoints
+(
+    const fvMesh& mesh,
+    const label pointI,
+    const boolList& isInternalPoint,
+    const boolList& isFeatureEdgePoint,
+    const boolList& isCornerPoint
+)
+{
+    labelList neighIs;
+
+    forAll (mesh.pointPoints()[pointI], pointPointI)
+    {
+        const label neighI = mesh.pointPoints()[pointI][pointPointI];
+        if (isInternalPoint[neighI])
+            continue;
+        if (isFeatureEdgePoint[neighI])
+            continue;
+        if (isCornerPoint[neighI])
+            continue;
+        neighIs.append(neighI);
+    }
+
+    return neighIs;
+}
+
+// Help function to project point coordinates to closest of the two
+// edges connected to the closest point index in the edge mesh
 
 point projectPointToClosestEdge
 (
     const point pt,
     const edgeMesh& em,
-    const label meshPointI
+    const label closestEdgePointI
 )
 {
-    const label pointI = findClosestEdgeMeshPointIndex(pt, em, false, false);
-    const point closestPoint = em.points()[pointI];
+    const point closestPoint = em.points()[closestEdgePointI];
     const point c2pt = pt - closestPoint;
 
     scalar minDistance = GREAT;
     vector deltaVec(ZERO_VECTOR);
+    scalar finalDotProd(Zero);
 
-    forAll(em.pointEdges()[pointI], i)
+    forAll(em.pointEdges()[closestEdgePointI], pointEdgeI)
     {
-        const label edgeI = em.pointEdges()[pointI][i];
+        const label edgeI = em.pointEdges()[closestEdgePointI][pointEdgeI];
         label endPointI = em.edges()[edgeI][0];
-        if (endPointI == pointI)
+        if (endPointI == closestEdgePointI)
         {
             endPointI = em.edges()[edgeI][1];
         }
@@ -276,6 +305,17 @@ point projectPointToClosestEdge
         {
             minDistance = distance;
             deltaVec = projPoint;
+            finalDotProd = dotProd;
+        }
+
+        if (finalDotProd > 1.0)
+        {
+            Info << "Warning, beware unstability: Detected extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << endl;
+        }
+
+        if (finalDotProd > 10.0)
+        {
+            FatalError << "Error, unstability is too serious: Detected extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << ". One reason might be that the target feature edges are too far away from initial feature edges, so that the mapping from intial to target (by edge point proximity) fails. Second reason might be that the smoothing step length is too large, and some feature edges get jumped over in smoothing." << endl << abort(FatalError);
         }
     }
 
@@ -289,6 +329,65 @@ point projectPointToClosestEdge
 
     return closestPoint;
 }
+
+// Calculate point on to closests edge in edge mesh based on
+// neighbouring surface points in mesh
+
+point projectNeighborPointsToClosestEdge
+(
+    const fvMesh& mesh,
+    const label pointI,
+    const edgeMesh& em,
+    const label closestEdgePointI,
+    const boolList& isInternalPoint,
+    const boolList& isFeatureEdgePoint,
+    const boolList& isCornerPoint
+)
+{
+    const labelList neighIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
+
+    // New point is calculated as average of each projected neighbour point
+    point newPoint(Zero);
+    forAll (neighIs, neighI)
+    {
+        const point projPoint = projectPointToClosestEdge(mesh.points()[neighIs[neighI]], em, closestEdgePointI);
+        newPoint += projPoint;
+    }
+    newPoint /= neighIs.size();
+
+    return newPoint;
+}
+
+// Help function to check if given edge mesh point indices are
+// neighbors
+
+bool isEdgePointNeighbor
+(
+    const edgeMesh& em,
+    const label pointI1,
+    const label pointI2
+)
+{
+    forAll(em.pointEdges()[pointI1], pointEdgeI)
+    {
+        const label edgeI = em.pointEdges()[pointI1][pointEdgeI];
+        const label endPointI1 = em.edges()[edgeI][0];
+        const label endPointI2 = em.edges()[edgeI][1];
+
+        if ((endPointI1 == pointI1) and (endPointI2 == pointI2))
+        {
+            return true;
+        }
+
+        if ((endPointI1 == pointI2) and (endPointI2 == pointI1))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 
 // Find intersection with triSurface faces in point normal direction
 
@@ -374,6 +473,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const boolList& isCornerPoint,
     const vectorList& cornerPoints,
     const edgeMesh& targetEdges,
+    labelList& closestEdgePointIs,
     const triSurface& surf,
     const indexedOctree<treeDataTriSurface>& tree,
     const double meshMaxEdgeLength
@@ -398,7 +498,19 @@ int projectBoundaryPointsToEdgesAndSurfaces
         // --------------------------------
         if (isFeatureEdgePoint[pointI])
         {
-            newPoints[pointI] = projectPointToClosestEdge(origPoint, targetEdges, pointI);
+            // Project neighboring surface mesh points to closest
+            // edges and use the median as a new feature edge point
+            const label closestEdgePointI = closestEdgePointIs[pointI];
+            const point newPoint = projectNeighborPointsToClosestEdge(mesh, pointI, targetEdges, closestEdgePointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
+            newPoints[pointI] = newPoint;
+
+            // Update closest edge mesh point index if needed, but
+            // allow only one neighbor jump
+            const label newClosestEdgePointI = findClosestEdgeMeshPointIndex(newPoint, targetEdges, false, true);
+            if ((newClosestEdgePointI != closestEdgePointI) and (isEdgePointNeighbor(targetEdges, closestEdgePointI, newClosestEdgePointI)))
+            {
+                closestEdgePointIs[pointI] = newClosestEdgePointI;
+            }
             continue;
         }
 

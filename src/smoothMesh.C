@@ -1897,6 +1897,9 @@ int main(int argc, char *argv[])
     boolList isCornerPoint(mesh.nPoints(), false);
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
 
+    // Closest edge mesh point indices (for feature edge points)
+    labelList closestEdgePointIs(mesh.nPoints(), UNDEF_LABEL);
+
     // Preparations for boundary point smoothing
     if (doBoundarySmoothing)
     {
@@ -1973,6 +1976,19 @@ int main(int argc, char *argv[])
         propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
     }
 
+    // Find initial closest edge points (for feature edge snapping)
+    if (doBoundarySmoothing)
+    {
+        forAll(mesh.points(), pointI)
+        {
+            if (isFeatureEdgePoint[pointI])
+            {
+                const label newClosestEdgePointI = findClosestEdgeMeshPointIndex(mesh.points()[pointI], targetEdges, false, true);
+                closestEdgePointIs[pointI] = newClosestEdgePointI;
+            }
+        }
+    }
+
     // Carry out smoothing iterations
     // ------------------------------
 
@@ -2037,6 +2053,7 @@ int main(int argc, char *argv[])
                 isCornerPoint,
                 cornerPoints,
                 targetEdges,
+                closestEdgePointIs,
                 surf,
                 tree,
                 meshMaxEdgeLength
