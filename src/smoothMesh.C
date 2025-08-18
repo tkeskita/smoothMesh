@@ -1941,9 +1941,10 @@ int main(int argc, char *argv[])
         targetEdges.reset(new edgeMesh());
     }
 
-    Info << "Mesh includes a total of " << mesh.nPoints() << " points:" << endl
+    const label nPoints = returnReduce(mesh.nPoints(), sumOp<label>());
+    Info << "Mesh includes a total of " << nPoints << " points:" << endl
          << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
-         << "  - " << mesh.nPoints() - nInternalPoints << " boundary points" << endl
+         << "  - " << nPoints - nInternalPoints << " boundary points" << endl
          << "Mesh minimum edge length = " << meshMinEdgeLength << endl
          << "Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
 
@@ -1994,6 +1995,8 @@ int main(int argc, char *argv[])
 
     for (label i = 0; i < centroidalIters; ++i)
     {
+        Info << "Starting iteration " << i << endl;
+
         // Reset frozen points
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;

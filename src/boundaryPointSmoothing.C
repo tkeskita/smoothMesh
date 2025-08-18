@@ -310,12 +310,12 @@ point projectPointToClosestEdge
 
         if (finalDotProd > 1.0)
         {
-            Info << "Warning, beware unstability: Detected extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << endl;
+            Info << "Warning: Detected extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << endl;
         }
 
         if (finalDotProd > 10.0)
         {
-            FatalError << "Error, unstability is too serious: Detected extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << ". One reason might be that the target feature edges are too far away from initial feature edges, so that the mapping from intial to target (by edge point proximity) fails. Second reason might be that the smoothing step length is too large, and some feature edges get jumped over in smoothing." << endl << abort(FatalError);
+            FatalError << "Error: Detected too large extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << ". One reason might be that the target feature edges are too far away from initial feature edges, so that the mapping from intial to target (by edge point proximity) fails. Second reason might be that the smoothing step length is too large, and some feature edges get jumped over in smoothing." << endl << abort(FatalError);
         }
     }
 
@@ -347,13 +347,45 @@ point projectNeighborPointsToClosestEdge
     const labelList neighIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
 
     // New point is calculated as average of each projected neighbour point
-    point newPoint(Zero);
+    //pointVectorField newPoints(mesh, ZERO_VECTOR);
+    //pointLabelField nPoints(mesh, 0);
+    vectorList newLocations(mesh.nPoints(), ZERO_VECTOR);
+    labelList nNewPoints(mesh.nPoints(), 0);
+
     forAll (neighIs, neighI)
     {
-        const point projPoint = projectPointToClosestEdge(mesh.points()[neighIs[neighI]], em, closestEdgePointI);
-        newPoint += projPoint;
+        const point neighPoint = mesh.points()[neighIs[neighI]];
+        const point projPoint = projectPointToClosestEdge(neighPoint, em, closestEdgePointI);
+        newLocations[pointI] += projPoint;
+        ++nNewPoints[pointI];
     }
-    newPoint /= neighIs.size();
+
+    //if (mag(mesh.points()[pointI] - vector(0.136, -0.68, -2)) < 1e-4)
+    if ((pointI == 393) or (pointI == 63))
+        Pout << "pointI " << pointI << " newLocation " << newLocations[pointI] << endl;
+
+    // Synchronize among processors (using sum combination)
+    syncTools::syncPointList
+    (
+        mesh,
+        newLocations,
+        plusEqOp<vector>(),
+        UNDEF_VECTOR               // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        nNewPoints,
+        plusEqOp<label>(),
+        UNDEF_LABEL               // null value
+    );
+
+    const vector newPoint = newLocations[pointI] / double(nNewPoints[pointI]);
+
+    //if (mag(mesh.points()[pointI] - vector(0.136, -0.68, -2)) < 1e-4)
+    if ((pointI == 393) or (pointI == 63))
+        Pout << "after pointI " << pointI << " newPoint " << newPoint << endl;
 
     return newPoint;
 }
@@ -499,7 +531,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
         if (isFeatureEdgePoint[pointI])
         {
             // Project neighboring surface mesh points to closest
-            // edges and use the median as a new feature edge point
+            // feature edges and use the median as a new feature edge point
             const label closestEdgePointI = closestEdgePointIs[pointI];
             const point newPoint = projectNeighborPointsToClosestEdge(mesh, pointI, targetEdges, closestEdgePointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
             newPoints[pointI] = newPoint;
@@ -511,6 +543,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
             {
                 closestEdgePointIs[pointI] = newClosestEdgePointI;
             }
+
             continue;
         }
 
