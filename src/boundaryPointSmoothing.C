@@ -330,6 +330,62 @@ point projectPointToClosestEdge
     return closestPoint;
 }
 
+// Calculate new feature edge point positions and synchronize.
+// Projects neighboring surface mesh points to closest
+// feature edges and use the median as a new feature edge point.
+
+int calculateFeatureEdgeProjections
+(
+    const fvMesh& mesh,
+    const edgeMesh& em,
+    const labelList& closestEdgePointIs,
+    const boolList& isInternalPoint,
+    const boolList& isFeatureEdgePoint,
+    const boolList& isCornerPoint,
+    vectorList& featureEdgeProjections,
+    labelList& nFeatureEdgeProjections
+)
+{
+    forAll(mesh.points(), pointI)
+    {
+        // This is done only for feature edge points
+        if (! isFeatureEdgePoint[pointI])
+            continue;
+
+        // Find the valid surface neighbor points
+        const labelList neighIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
+
+        // Project and accumulate data
+        forAll (neighIs, neighI)
+        {
+            const label closestEdgePointI = closestEdgePointIs[pointI];
+            const point neighPoint = mesh.points()[neighIs[neighI]];
+            const point projPoint = projectPointToClosestEdge(neighPoint, em, closestEdgePointI);
+            featureEdgeProjections[pointI] += projPoint;
+            ++nFeatureEdgeProjections[pointI];
+        }
+    }
+
+    // Synchronize among processors (using sum combination)
+    syncTools::syncPointList
+    (
+        mesh,
+        featureEdgeProjections,
+        plusEqOp<vector>(),
+        ZERO_VECTOR               // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        nFeatureEdgeProjections,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    return 0;
+}
+
 // Calculate point on to closests edge in edge mesh based on
 // neighbouring surface points in mesh
 
@@ -511,6 +567,11 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const double meshMaxEdgeLength
 )
 {
+    // Calculate new feature edge point positions a priori
+    vectorList featureEdgeProjections(mesh.nPoints(), ZERO_VECTOR);
+    labelList nFeatureEdgeProjections(mesh.nPoints(), 0);
+    calculateFeatureEdgeProjections(mesh, targetEdges, closestEdgePointIs, isInternalPoint, isFeatureEdgePoint, isCornerPoint, featureEdgeProjections, nFeatureEdgeProjections);
+
     forAll(mesh.points(), pointI)
     {
         if (isInternalPoint[pointI])
@@ -532,12 +593,13 @@ int projectBoundaryPointsToEdgesAndSurfaces
         {
             // Project neighboring surface mesh points to closest
             // feature edges and use the median as a new feature edge point
-            const label closestEdgePointI = closestEdgePointIs[pointI];
-            const point newPoint = projectNeighborPointsToClosestEdge(mesh, pointI, targetEdges, closestEdgePointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
+
+            const vector newPoint = featureEdgeProjections[pointI] / double(nFeatureEdgeProjections[pointI]);
             newPoints[pointI] = newPoint;
 
             // Update closest edge mesh point index if needed, but
             // allow only one neighbor jump
+            const label closestEdgePointI = closestEdgePointIs[pointI];
             const label newClosestEdgePointI = findClosestEdgeMeshPointIndex(newPoint, targetEdges, false, true);
             if ((newClosestEdgePointI != closestEdgePointI) and (isEdgePointNeighbor(targetEdges, closestEdgePointI, newClosestEdgePointI)))
             {
