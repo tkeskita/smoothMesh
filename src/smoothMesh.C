@@ -1535,6 +1535,13 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "relStepFrac",
+        "double",
+        "Relative step scaling factor, which scales the local step length (default 0.5)"
+    );
+
+    argList::addOption
+    (
         "edgeAngleConstraint",
         "bool",
         "Option to apply the minimum edge angle control constraint (default: true)"
