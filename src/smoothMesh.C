@@ -672,9 +672,22 @@ int constrainMaxStepLength
         // towards new coordinates if jump would be too long
         const vector cCoords = mesh.points()[pointI];
         const vector stepDir = origPoints[pointI] - cCoords;
-        const vector nCoords = cCoords + relStepFrac * globalScale * stepDir;
+
+        // Max step length constraining if global scaling is disabled
+        if (! doGlobalScaling)
+        {
+            if (mag(stepDir) > maxStepLength)
+            {
+                globalScale = maxStepLength / (mag(stepDir) * relStepFrac);
+            }
+            else
+            {
+                globalScale = 1.0;
+            }
+        }
 
         // Save the constrained point
+        const vector nCoords = cCoords + relStepFrac * globalScale * stepDir;
         newPoints[pointI] = nCoords;
     }
 
@@ -2137,15 +2150,14 @@ int main(int argc, char *argv[])
             Info << "Maximum centroidalIters reached, stopping." << endl;
         }
 
+        // Increase time
+        runTime++;
+
         if ((writeInterval > 0) and ((i % writeInterval) == 0))
         {
 
             // Save mesh
-            if (!overwrite)
-            {
-                runTime++;
-            }
-            else
+            if (overwrite)
             {
                 mesh.setInstance(oldInstance);
             }
@@ -2162,12 +2174,7 @@ int main(int argc, char *argv[])
 
     // Save mesh
     {
-        if (!overwrite)
-        {
-            runTime++;
-            // mesh.setInstance(runTime.timeName());
-        }
-        else
+        if (overwrite)
         {
             mesh.setInstance(oldInstance);
         }
