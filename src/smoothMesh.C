@@ -1579,7 +1579,7 @@ int main(int argc, char *argv[])
     (
         "layerMaxBlendingFraction",
         "double",
-        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0)"
+        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0.5)"
     );
 
     argList::addOption
@@ -1639,7 +1639,7 @@ int main(int argc, char *argv[])
     (
         "writeInterval",
         "label",
-        "Interval to write mesh during iterations (default value 0)"
+        "Interval to write mesh during iterations (default value: Same as centroidalIters)"
     );
 
     #include "setRootCase.H"
@@ -1760,7 +1760,7 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("centroidalIters", 1000);
 
     label writeInterval =
-        args.optionLookupOrDefault("writeInterval", 0);
+        args.optionLookupOrDefault("writeInterval", centroidalIters);
 
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
@@ -2153,9 +2153,8 @@ int main(int argc, char *argv[])
         // Increase time
         runTime++;
 
-        if ((writeInterval > 0) and ((i % writeInterval) == 0))
+        if (((i % writeInterval) == 0) and (i > 0))
         {
-
             // Save mesh
             if (overwrite)
             {
