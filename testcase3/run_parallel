@@ -13,5 +13,5 @@ blockMesh
 decomposePar
 
 for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -relTol 1e-8 -centroidalIters 100 -minAngle 15 -maxLayers 3 -layerPatches '("wall.*")' -layerEdgeLength 0.005
+  mpirun -np 3 smoothMesh -parallel -relTol 1e-8 -centroidalIters 500 -minAngle 15 -maxLayers 3 -layerPatches '("wall.*")' -layerEdgeLength 0.005
 done

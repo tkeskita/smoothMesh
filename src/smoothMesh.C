@@ -1630,6 +1630,13 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "internalSmoothingBlendingFraction",
+        "double",
+        "Blending fraction for the projection of internal mesh point to boundary surface (default: 0.05)"
+    );
+
+    argList::addOption
+    (
         "relTol",
         "double",
         "Relative tolerance for stopping the smoothing iterations (default: 0.02)"
@@ -1753,6 +1760,9 @@ int main(int argc, char *argv[])
     label maxLayers =
         args.optionLookupOrDefault("maxLayers", 4);
 
+    double internalSmoothingBlendingFraction =
+        args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.05);
+
     double relTol =
         args.optionLookupOrDefault("relTol", 0.02);
 
@@ -1760,7 +1770,8 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("centroidalIters", 1000);
 
     label writeInterval =
-        args.optionLookupOrDefault("writeInterval", centroidalIters);
+        args.optionLookupOrDefault("writeInterval", 5);
+        // args.optionLookupOrDefault("writeInterval", centroidalIters);
 
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
@@ -2090,7 +2101,8 @@ int main(int argc, char *argv[])
                 isConnectedToInternalPoint,
                 isFeatureEdgePoint,
                 isCornerPoint,
-                innerNeighCoords
+                innerNeighCoords,
+                internalSmoothingBlendingFraction
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
@@ -2153,7 +2165,7 @@ int main(int argc, char *argv[])
         // Increase time
         runTime++;
 
-        if (((i % writeInterval) == 0) and (i > 0))
+        if ((((i + 1) % writeInterval) == 0) and (i > 0))
         {
             // Save mesh
             if (overwrite)
@@ -2169,22 +2181,6 @@ int main(int argc, char *argv[])
 
             mesh.write();
         }
-    }
-
-    // Save mesh
-    {
-        if (overwrite)
-        {
-            mesh.setInstance(oldInstance);
-        }
-
-        // Set the precision of the points data to 10
-        IOstream::defaultPrecision(max(10u, IOstream::defaultPrecision()));
-
-        Info << "Writing new mesh to time " << runTime.name()
-             << endl << endl;
-
-        mesh.write();
     }
 
     Info<< "ClockTime = "

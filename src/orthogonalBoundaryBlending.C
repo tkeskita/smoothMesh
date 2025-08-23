@@ -595,7 +595,8 @@ int projectFreeBoundaryPointsToSurfaces
     const boolList& isConnectedToInternalPoint,
     const boolList& isFeatureEdgePoint,
     const boolList& isCornerPoint,
-    const pointField& innerNeighCoords
+    const pointField& innerNeighCoords,
+    const double internalSmoothingBlendingFraction
 )
 {
     forAll(mesh.points(), pointI)
@@ -606,7 +607,7 @@ int projectFreeBoundaryPointsToSurfaces
 
         // Info << "pointI " << pointI << " isFlat " << isFlatPatchPoint[pointI] << " nHops " << nHops << " pointNormal " << pointNormal << " innerNeighCoord " << innerNeighCoord << endl;
 
-        // Skip points without required information
+        // Skip other than smoothingsurface points
         if (! isSmoothingSurfacePoint[pointI])
             continue;
         if (! isConnectedToInternalPoint[pointI])
@@ -634,7 +635,7 @@ int projectFreeBoundaryPointsToSurfaces
         const vector newCoords = cCoords - pVec;
 
         // Update point coordinates
-        newPoints[pointI] = newCoords;
+        newPoints[pointI] = internalSmoothingBlendingFraction * newCoords + (1 - internalSmoothingBlendingFraction) * newPoints[pointI];
     }
 
     return 0;

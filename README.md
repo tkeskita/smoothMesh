@@ -114,9 +114,11 @@ SmoothMesh now has a possibility to move and smooth also boundary points. The us
 
 - `constant/geometry/targetSurfaces.obj` (**required**). This surface mesh file must contain the target surface mesh for all boundary surfaces. The boundary points (besides feature edge points) are projected to closest triangulated surface mesh face provided in this file. The surface mesh can be generated e.g. by `Extract Surface Filter` in Paraview, or `surfaceMeshTriangulate` command in OpenFOAM.
 
-There is only one option for smoothMesh related to boundary point smoothing:
+Options for smoothMesh related to boundary point smoothing:
 
 - `-smoothingPatches` option is used to limit the boundary point movement to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-smoothingPatches 'walls'` or `-smoothingPatches '( stator "rotor.*" )'`. All patches are included in smoothing by default.
+
+- `-internalSmoothingBlendingFraction` is related to how the location of the surface points on free boundaries (but not feature edges nor corners!) are calculated. Two methods are applied: Projection of coordinates from centroidal smoothing to closest boundary surface, and projection of inner mesh prismatic point to closest boundary surface. This fraction value specifies the blending (value between 0 and 1) for the inner mesh prismatic point. Value close to 0 means that centroidal smoothing dominates, which results in good boundary surface smoothing. Value close to 1 means that inner mesh point projection dominates, which results in highly orthogonal prismatic boundary edges. The default value of 0.05 favors centroidal smoothing, but also improves orthogonality as smoothing progresses. Note: More work is needed to study the effect of this value on the results.
 
 **Note:** Always view the initial mesh and all OBJ files visually in Paraview for correctness before use!
 
