@@ -1770,8 +1770,8 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("centroidalIters", 1000);
 
     label writeInterval =
-        args.optionLookupOrDefault("writeInterval", 5);
-        // args.optionLookupOrDefault("writeInterval", centroidalIters);
+        // args.optionLookupOrDefault("writeInterval", 5); // for debugging test cases
+        args.optionLookupOrDefault("writeInterval", centroidalIters);
 
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
