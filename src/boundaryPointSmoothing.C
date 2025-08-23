@@ -386,66 +386,6 @@ int calculateFeatureEdgeProjections
     return 0;
 }
 
-// Calculate point on to closests edge in edge mesh based on
-// neighbouring surface points in mesh
-
-point projectNeighborPointsToClosestEdge
-(
-    const fvMesh& mesh,
-    const label pointI,
-    const edgeMesh& em,
-    const label closestEdgePointI,
-    const boolList& isInternalPoint,
-    const boolList& isFeatureEdgePoint,
-    const boolList& isCornerPoint
-)
-{
-    const labelList neighIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
-
-    // New point is calculated as average of each projected neighbour point
-    //pointVectorField newPoints(mesh, ZERO_VECTOR);
-    //pointLabelField nPoints(mesh, 0);
-    vectorList newLocations(mesh.nPoints(), ZERO_VECTOR);
-    labelList nNewPoints(mesh.nPoints(), 0);
-
-    forAll (neighIs, neighI)
-    {
-        const point neighPoint = mesh.points()[neighIs[neighI]];
-        const point projPoint = projectPointToClosestEdge(neighPoint, em, closestEdgePointI);
-        newLocations[pointI] += projPoint;
-        ++nNewPoints[pointI];
-    }
-
-    //if (mag(mesh.points()[pointI] - vector(0.136, -0.68, -2)) < 1e-4)
-    if ((pointI == 393) or (pointI == 63))
-        Pout << "pointI " << pointI << " newLocation " << newLocations[pointI] << endl;
-
-    // Synchronize among processors (using sum combination)
-    syncTools::syncPointList
-    (
-        mesh,
-        newLocations,
-        plusEqOp<vector>(),
-        UNDEF_VECTOR               // null value
-    );
-
-    syncTools::syncPointList
-    (
-        mesh,
-        nNewPoints,
-        plusEqOp<label>(),
-        UNDEF_LABEL               // null value
-    );
-
-    const vector newPoint = newLocations[pointI] / double(nNewPoints[pointI]);
-
-    //if (mag(mesh.points()[pointI] - vector(0.136, -0.68, -2)) < 1e-4)
-    if ((pointI == 393) or (pointI == 63))
-        Pout << "after pointI " << pointI << " newPoint " << newPoint << endl;
-
-    return newPoint;
-}
-
 // Help function to check if given edge mesh point indices are
 // neighbors
 
