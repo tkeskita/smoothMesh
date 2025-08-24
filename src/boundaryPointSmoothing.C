@@ -57,20 +57,28 @@ double edgeEdgeAngle2
 
 
 // Find index of closest point in an edge mesh. Search may be limited
-// to corner points only.
+// to corner points only and/or to required string index number. Saves
+// the closest edge mesh index to closestI and the edge string index
+// of that point to closestStringI.
 
-label findClosestEdgeMeshPointIndex
+int findClosestEdgeMeshPointIndex
 (
     const point pt,
     const edgeMesh& em,
     const bool mustBeCorner,
-    const bool mustNotBeCorner
+    const bool mustNotBeCorner,
+    const bool matchTargetEdgeStrings,
+    const label requiredStringI,
+    const labelList& targetEdgeStrings,
+    label& closestI,
+    label& closestStringI
 )
 {
     // TODO: Replace linear search with an octree search for efficiency
 
     scalar distance = GREAT;
-    label closestI = UNDEF_LABEL;
+    closestI = UNDEF_LABEL;
+    closestStringI = UNDEF_LABEL;
 
     forAll(em.points(), pointI)
     {
@@ -86,16 +94,34 @@ label findClosestEdgeMeshPointIndex
             continue;
         }
 
+        // Disregard other edge strings if matching string index is
+        // required
+        if ((matchTargetEdgeStrings) and (targetEdgeStrings[pointI] != requiredStringI))
+        {
+            continue;
+        }
+
         const point p = em.points()[pointI];
         const scalar testDistance = mag(pt - p);
         if (testDistance < distance)
         {
             distance = testDistance;
             closestI = pointI;
+            closestStringI = targetEdgeStrings[pointI];
         }
     }
 
-    return closestI;
+    if (closestI == UNDEF_LABEL)
+    {
+        FatalError << "Internal sanity check failed: Did not find any closest edge mesh points near " << pt << endl << abort(FatalError);
+    }
+
+    if (closestStringI == UNDEF_LABEL)
+    {
+        FatalError << "Internal sanity check failed: Did not find string index for edge mesh points near " << pt << endl << abort(FatalError);
+    }
+
+    return 0;
 }
 
 // Classify boundary points, find corner points and target locations
@@ -116,7 +142,8 @@ int classifyBoundaryPoints
     vectorList& cornerPoints,
     boolList& isLayerSurfacePoint,
     boolList& isSmoothingSurfacePoint,
-    boolList& isFrozenSurfacePoint
+    boolList& isFrozenSurfacePoint,
+    const labelList& targetEdgeStrings
 )
 {
     label nFeatureEdgePoints = 0;
@@ -173,7 +200,9 @@ int classifyBoundaryPoints
                 if ((initEdges.points().size() > 0) and (targetEdges.points().size() > 0))
                 {
                     const point pt = mesh.points()[pointI];
-                    const label closestInitPointI = findClosestEdgeMeshPointIndex(pt, initEdges, false, false);
+                    label closestInitPointI = UNDEF_LABEL;
+                    label dummy;
+                    findClosestEdgeMeshPointIndex(pt, initEdges, false, false, false, UNDEF_LABEL, targetEdgeStrings, closestInitPointI, dummy);
                     const point closestInitPoint = initEdges.points()[closestInitPointI];
 
                     // Corner points
@@ -181,7 +210,8 @@ int classifyBoundaryPoints
                         and (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE))
                     {
                         isCornerPoint[pointI] = true;
-                        const label closestCornerPointI = findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false);
+                        label closestCornerPointI = UNDEF_LABEL;
+                        findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false, false, UNDEF_LABEL, targetEdgeStrings, closestCornerPointI, dummy);
                         cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
                         nCornerPoints++;
                     }
@@ -238,6 +268,154 @@ int classifyBoundaryPoints
     Info << endl;
 
     return 0;
+}
+
+// Help function to find unique (no corner points) neighbour points of
+// an edge mesh point
+
+int findNeighborEdgeMeshPoints
+(
+    const edgeMesh& em,
+    const label pointI,
+    label& neighI1,
+    label& neighI2
+)
+{
+    neighI1 = UNDEF_LABEL;
+    neighI2 = UNDEF_LABEL;
+
+    const label nEdges = em.pointEdges()[pointI].size();
+
+    // Do nothing if this point has more than two connected
+    // edges (e.g. corner point)
+    if (nEdges > 2)
+    {
+        return 0;
+    }
+
+    // Traverse first edge
+    if (nEdges > 0)
+    {
+        const label edgeI1 = em.pointEdges()[pointI][0];
+        label endPointI1 = em.edges()[edgeI1][0];
+        if (endPointI1 == pointI)
+        {
+            endPointI1 = em.edges()[edgeI1][1];
+        }
+        neighI1 = endPointI1;
+    }
+
+    // Traverse second edge
+    if (nEdges > 1)
+    {
+        const label edgeI2 = em.pointEdges()[pointI][1];
+        label endPointI2 = em.edges()[edgeI2][0];
+        if (endPointI2 == pointI)
+        {
+            endPointI2 = em.edges()[edgeI2][1];
+        }
+        neighI2 = endPointI2;
+    }
+
+    return 0;
+}
+
+// Help function to assign a string index number to current edge mesh
+// point and recurse over all neighbor points in the string
+
+int stringifyEdgeMeshPoints
+(
+    const edgeMesh& em,
+    labelList& targetEdgeStrings,
+    const label pointI,
+    const label neighI1,
+    const label neighI2,
+    label& nStrings
+)
+{
+    // Find string indices of this point and neighbour points
+    const label stringI0 = targetEdgeStrings[pointI];
+
+    label stringI1 = UNDEF_LABEL;
+    if (neighI1 != UNDEF_LABEL)
+    {
+        stringI1 = targetEdgeStrings[neighI1];
+    }
+
+    label stringI2 = UNDEF_LABEL;
+    if (neighI2 != UNDEF_LABEL)
+    {
+        stringI2 = targetEdgeStrings[neighI2];
+    }
+
+    const label maxStringI = max(max(stringI0, stringI1), stringI2);
+
+    // New string, get new string index value
+    if (maxStringI == UNDEF_LABEL)
+    {
+        nStrings++;
+        targetEdgeStrings[pointI] = nStrings;
+    }
+    // Neighbor or self already has a string value assigned
+    else if (stringI0 == UNDEF_LABEL)
+    {
+        targetEdgeStrings[pointI] = maxStringI;
+    }
+
+    // Recurse into neighbour points if they don't already have a string index
+    if ((neighI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL))
+    {
+        label neighNeighI1(UNDEF_LABEL);
+        label neighNeighI2(UNDEF_LABEL);
+        findNeighborEdgeMeshPoints(em, neighI1, neighNeighI1, neighNeighI2);
+        stringifyEdgeMeshPoints(em, targetEdgeStrings, neighI1, neighNeighI1, neighNeighI2, nStrings);
+    }
+
+    if ((neighI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL))
+    {
+        label neighNeighI1(UNDEF_LABEL);
+        label neighNeighI2(UNDEF_LABEL);
+        findNeighborEdgeMeshPoints(em, neighI2, neighNeighI1, neighNeighI2);
+        stringifyEdgeMeshPoints(em, targetEdgeStrings, neighI2, neighNeighI1, neighNeighI2, nStrings);
+    }
+
+    return 0;
+}
+
+
+// Primary help function to start identification and labeling of
+// continuous edge strings in an edge mesh
+
+int findEdgeMeshStrings
+(
+    labelList& targetEdgeStrings,
+    const edgeMesh& em
+)
+{
+    // Unique storage for next available string index number
+    label nStrings(UNDEF_LABEL);
+
+    // Initialize string list
+    targetEdgeStrings.resize(em.points().size());
+    forAll (em.points(), pointI)
+    {
+        targetEdgeStrings[pointI] = UNDEF_LABEL;
+    }
+
+    // Process all edge mesh points
+    forAll (em.points(), pointI)
+    {
+        // Skip point if string index is already assigned
+        if (targetEdgeStrings[pointI] >= 0)
+            continue;
+
+        label neighI1(UNDEF_LABEL);
+        label neighI2(UNDEF_LABEL);
+        findNeighborEdgeMeshPoints(em, pointI, neighI1, neighI2);
+        stringifyEdgeMeshPoints(em, targetEdgeStrings, pointI, neighI1, neighI2, nStrings);
+    }
+
+    return nStrings;
 }
 
 // Help function to find indices of non-corner and non-feature-edge
@@ -504,7 +682,9 @@ int projectBoundaryPointsToEdgesAndSurfaces
     labelList& closestEdgePointIs,
     const triSurface& surf,
     const indexedOctree<treeDataTriSurface>& tree,
-    const double meshMaxEdgeLength
+    const double meshMaxEdgeLength,
+    const labelList& targetEdgeStrings,
+    const labelList& pointStrings
 )
 {
     // Calculate new feature edge point positions a priori
@@ -537,13 +717,21 @@ int projectBoundaryPointsToEdgesAndSurfaces
             const vector newPoint = featureEdgeProjections[pointI] / double(nFeatureEdgeProjections[pointI]);
             newPoints[pointI] = newPoint;
 
-            // Update closest edge mesh point index if needed, but
-            // allow only one neighbor jump
+            // Update closest edge mesh point index if needed
             const label closestEdgePointI = closestEdgePointIs[pointI];
-            const label newClosestEdgePointI = findClosestEdgeMeshPointIndex(newPoint, targetEdges, false, true);
-            if ((newClosestEdgePointI != closestEdgePointI) and (isEdgePointNeighbor(targetEdges, closestEdgePointI, newClosestEdgePointI)))
+            label newClosestEdgePointI;
+            label newStringI = UNDEF_LABEL;
+            findClosestEdgeMeshPointIndex(newPoint, targetEdges, false, true, true, pointStrings[pointI], targetEdgeStrings, newClosestEdgePointI, newStringI);
+
+            if (newClosestEdgePointI != closestEdgePointI)
             {
                 closestEdgePointIs[pointI] = newClosestEdgePointI;
+                // Info << "newClosestEdgePoint for " << pointI << " is " << newClosestEdgePointI << endl;
+            }
+
+            if (pointStrings[pointI] != newStringI)
+            {
+                FatalError << "Internal sanity check failed: String number changed for pointI " << pointI << " from " << pointStrings[pointI] << " to " << newStringI << endl << abort(FatalError);
             }
 
             continue;

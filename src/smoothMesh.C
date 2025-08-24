@@ -1918,7 +1918,7 @@ int main(int argc, char *argv[])
     autoPtr<edgeMesh> initEdges(nullptr);
     autoPtr<edgeMesh> targetEdges(nullptr);
 
-    // Point classification lists and corner target locations
+    // Point classification lists
     boolList isConnectedToInternalPoint(mesh.nPoints(), false);
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
     boolList isLayerSurfacePoint(mesh.nPoints(), false);
@@ -1926,7 +1926,13 @@ int main(int argc, char *argv[])
     boolList isFrozenSurfacePoint(mesh.nPoints(), false);
     boolList isProcessorPoint(mesh.nPoints(), false);
     boolList isCornerPoint(mesh.nPoints(), false);
+
+    // Storage for target corner point coordinates
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
+
+    // Storage for saving feature edge unique string indices
+    labelList targetEdgeStrings;
+    labelList pointStrings(mesh.nPoints(), UNDEF_LABEL);
 
     // Closest edge mesh point indices (for feature edge points)
     labelList closestEdgePointIs(mesh.nPoints(), UNDEF_LABEL);
@@ -1960,9 +1966,13 @@ int main(int argc, char *argv[])
             targetEdges.reset(new edgeMesh(initEdgesFileName));
             Info << "Warning: Initial feature edges will be used also as target edges, because" << endl
 
-            << "did not find file " << targetEdgesFileString << "." << endl;
+            << "did not find file " << targetEdgesFileString << "." << endl << endl;
         }
-        Info << endl;
+
+        // Generate indices for target edge mesh strings
+        Info << "Starting to build targetEdgeStrings" << endl;
+        findEdgeMeshStrings(targetEdgeStrings, targetEdges);
+        Info << "Done building targetEdgeStrings" << endl << endl;
     }
     else
     {
@@ -1995,7 +2005,8 @@ int main(int argc, char *argv[])
         cornerPoints,
         isLayerSurfacePoint,
         isSmoothingSurfacePoint,
-        isFrozenSurfacePoint
+        isFrozenSurfacePoint,
+        targetEdgeStrings
     );
 
     // Preparations for optional smoothing and treatment
@@ -2008,25 +2019,12 @@ int main(int argc, char *argv[])
         propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
     }
 
-    // Find initial closest edge points (for feature edge snapping)
-    if (doBoundarySmoothing)
-    {
-        forAll(mesh.points(), pointI)
-        {
-            if (isFeatureEdgePoint[pointI])
-            {
-                const label newClosestEdgePointI = findClosestEdgeMeshPointIndex(mesh.points()[pointI], targetEdges, false, true);
-                closestEdgePointIs[pointI] = newClosestEdgePointI;
-            }
-        }
-    }
-
     // Carry out smoothing iterations
     // ------------------------------
 
     for (label i = 0; i < centroidalIters; ++i)
     {
-        Info << "Starting iteration " << i << endl;
+        // Info << "Starting iteration " << i << endl;
 
         // Reset frozen points
         forAll(isFrozenPoint, pointI)
@@ -2040,11 +2038,14 @@ int main(int argc, char *argv[])
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-        constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
+        // constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
 
         // Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
+
+        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+        constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
 
         // Optional boundary layer treatment
         if (doLayerTreatment)
@@ -2073,6 +2074,22 @@ int main(int argc, char *argv[])
 
         if (doBoundarySmoothing)
         {
+            // Find initial closest edge points (for feature edge snapping)
+            if (i == 0)
+            {
+                forAll(mesh.points(), pointI)
+                {
+                    if (isFeatureEdgePoint[pointI])
+                    {
+                        label newClosestEdgePointI = UNDEF_LABEL;
+                        label pointStringI = UNDEF_LABEL;
+                        findClosestEdgeMeshPointIndex(mesh.points()[pointI], targetEdges, false, true, false, UNDEF_LABEL, targetEdgeStrings, newClosestEdgePointI, pointStringI);
+                        closestEdgePointIs[pointI] = newClosestEdgePointI;
+                        pointStrings[pointI] = pointStringI;
+                    }
+                }
+            }
+
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
             // Project boundary points
@@ -2090,7 +2107,9 @@ int main(int argc, char *argv[])
                 closestEdgePointIs,
                 surf,
                 tree,
-                meshMaxEdgeLength
+                meshMaxEdgeLength,
+                targetEdgeStrings,
+                pointStrings
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing

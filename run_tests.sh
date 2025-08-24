@@ -23,11 +23,13 @@ function do_test() {
   folder=`pwd`
 
   echo "Running run_parallel at $folder"
-  ./run_parallel | grep Smoothing\ iteration
+  ./run_parallel
+  echo "grepped checkMesh errors (if any):"
   mpirun -np 3 checkMesh -parallel -latestTime | grep \<\<
 
   echo "Running run_serial at $folder"
-  ./run_serial | grep Smoothing\ iteration
+  ./run_serial
+  echo "grepped checkMesh errors (if any):"
   checkMesh -latestTime | grep \<\<
 
   cd ..
