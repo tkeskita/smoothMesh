@@ -1971,8 +1971,8 @@ int main(int argc, char *argv[])
 
         // Generate indices for target edge mesh strings
         Info << "Starting to build targetEdgeStrings" << endl;
-        findEdgeMeshStrings(targetEdgeStrings, targetEdges);
-        Info << "Done building targetEdgeStrings" << endl << endl;
+        const label nStrings = findEdgeMeshStrings(targetEdgeStrings, targetEdges);
+        Info << "Detected number of edge mesh strings: " << nStrings + 1 << endl << endl;
     }
     else
     {

@@ -116,7 +116,7 @@ int findClosestEdgeMeshPointIndex
         FatalError << "Internal sanity check failed: Did not find any closest edge mesh points near " << pt << endl << abort(FatalError);
     }
 
-    if (closestStringI == UNDEF_LABEL)
+    if ((mustNotBeCorner) and (closestStringI == UNDEF_LABEL))
     {
         FatalError << "Internal sanity check failed: Did not find string index for edge mesh points near " << pt << endl << abort(FatalError);
     }
@@ -260,11 +260,12 @@ int classifyBoundaryPoints
     const label nSumSmoothingSurfacePoints  = returnReduce(nSmoothingSurfacePoints, sumOp<label>());
     const label nSumFrozenSurfacePoints  = returnReduce(nFrozenSurfacePoints, sumOp<label>());
 
-    Info << "Detected number of corner points: " << nSumCornerPoints << endl;
-    Info << "Detected number of feature edge points: " << nSumFeatureEdgePoints << endl;
-    Info << "Detected number of layer surface points: " << nSumLayerSurfacePoints << endl;
-    Info << "Detected number of smoothing surface points: " << nSumSmoothingSurfacePoints << endl;
-    Info << "Detected number of frozen surface points: " << nSumFrozenSurfacePoints << endl;
+    Info << "Boundary point classification summary:" << endl;
+    Info << "- Detected number of corner points: " << nSumCornerPoints << endl;
+    Info << "- Detected number of feature edge points: " << nSumFeatureEdgePoints << endl;
+    Info << "- Detected number of layer surface points: " << nSumLayerSurfacePoints << endl;
+    Info << "- Detected number of smoothing surface points: " << nSumSmoothingSurfacePoints << endl;
+    Info << "- Detected number of frozen surface points: " << nSumFrozenSurfacePoints << endl;
     Info << endl;
 
     return 0;
@@ -353,7 +354,7 @@ int stringifyEdgeMeshPoints
     // New string, get new string index value
     if (maxStringI == UNDEF_LABEL)
     {
-        nStrings++;
+        ++nStrings;
         targetEdgeStrings[pointI] = nStrings;
     }
     // Neighbor or self already has a string value assigned
@@ -362,8 +363,9 @@ int stringifyEdgeMeshPoints
         targetEdgeStrings[pointI] = maxStringI;
     }
 
-    // Recurse into neighbour points if they don't already have a string index
-    if ((neighI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL))
+    // Recurse into neighbour points if they don't already have a
+    // string index and if the neighbor is not a corner
+    if ((neighI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL) and (em.pointEdges()[neighI1].size() == 2))
     {
         label neighNeighI1(UNDEF_LABEL);
         label neighNeighI2(UNDEF_LABEL);
@@ -371,7 +373,7 @@ int stringifyEdgeMeshPoints
         stringifyEdgeMeshPoints(em, targetEdgeStrings, neighI1, neighNeighI1, neighNeighI2, nStrings);
     }
 
-    if ((neighI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL))
+    if ((neighI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL) and (em.pointEdges()[neighI2].size() == 2))
     {
         label neighNeighI1(UNDEF_LABEL);
         label neighNeighI2(UNDEF_LABEL);
@@ -407,6 +409,10 @@ int findEdgeMeshStrings
     {
         // Skip point if string index is already assigned
         if (targetEdgeStrings[pointI] >= 0)
+            continue;
+
+        // Skip corner points
+        if (em.pointEdges()[pointI].size() != 2)
             continue;
 
         label neighI1(UNDEF_LABEL);
