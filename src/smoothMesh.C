@@ -1639,7 +1639,7 @@ int main(int argc, char *argv[])
     (
         "internalSmoothingBlendingFraction",
         "double",
-        "Blending fraction for the projection of internal mesh point to boundary surface (default: 0.05)"
+        "Blending fraction for the projection of internal mesh point to boundary surface (default: 0)"
     );
 
     argList::addOption
@@ -1768,7 +1768,7 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("maxLayers", 4);
 
     double internalSmoothingBlendingFraction =
-        args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.05);
+        args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.0);
 
     double relTol =
         args.optionLookupOrDefault("relTol", 0.02);

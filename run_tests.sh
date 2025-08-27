@@ -8,6 +8,9 @@ if [ $retVal -ne 0 ]; then
     exit 1
 fi
 
+# Stop at errors
+set -e
+
 # Clean up test folder and initialize
 test_folder="./run_tests"
 echo "Removing $test_folder"
@@ -25,12 +28,12 @@ function do_test() {
   echo "Running run_parallel at $folder"
   ./run_parallel
   echo "grepped checkMesh errors (if any):"
-  mpirun -np 3 checkMesh -parallel -latestTime | grep \<\<
+  mpirun -np 3 checkMesh -parallel -latestTime
 
   echo "Running run_serial at $folder"
   ./run_serial
   echo "grepped checkMesh errors (if any):"
-  checkMesh -latestTime | grep \<\<
+  checkMesh -latestTime
 
   cd ..
 }
