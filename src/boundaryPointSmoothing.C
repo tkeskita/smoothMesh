@@ -672,6 +672,69 @@ point findIntersection
     return UNDEF_VECTOR;
 }
 
+// Help function to calculate centroid of boundary point boundary face
+// centers
+
+int calculateSurfaceCentroids
+(
+    const fvMesh& mesh,
+    const boolList& isInternalPoint,
+    vectorList& faceCentroids,
+    labelList& nFaceCentroids
+)
+{
+    forAll(faceCentroids, i)
+    {
+        faceCentroids[i] = Zero;
+        nFaceCentroids[i] = 0;
+    }
+
+    const label firstBoundaryFaceI = mesh.boundary()[0].start();
+
+    forAll(mesh.points(), pointI)
+    {
+        // Only consider boundary points
+        if (isInternalPoint[pointI])
+            continue;
+
+        forAll(mesh.pointFaces()[pointI], pointFaceI)
+        {
+            const label faceI = mesh.pointFaces()[pointI][pointFaceI];
+
+            // Ignore other than boundary faces
+            if (faceI < firstBoundaryFaceI)
+                continue;
+
+            faceCentroids[pointI] += mesh.Cf()[faceI];
+            ++nFaceCentroids[pointI];
+        }
+
+        if (nFaceCentroids[pointI] == 0)
+        {
+            FatalError << "did not find faceNeighbour for point " << pointI << endl << abort(FatalError);
+        }
+    }
+
+    // Synchronize among processors (using sum combination)
+    syncTools::syncPointList
+    (
+        mesh,
+        faceCentroids,
+        plusEqOp<vector>(),
+        ZERO_VECTOR               // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        nFaceCentroids,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    return 0;
+}
+
 // Projection of boundary points to feature edges and boundary surfaces
 
 int projectBoundaryPointsToEdgesAndSurfaces
@@ -698,12 +761,15 @@ int projectBoundaryPointsToEdgesAndSurfaces
     labelList nFeatureEdgeProjections(mesh.nPoints(), 0);
     calculateFeatureEdgeProjections(mesh, targetEdges, closestEdgePointIs, isInternalPoint, isFeatureEdgePoint, isCornerPoint, featureEdgeProjections, nFeatureEdgeProjections);
 
+    // Calculate boundary surface face centroids a priori
+    vectorList faceCentroids(mesh.nPoints(), ZERO_VECTOR);
+    labelList nFaceCentroids(mesh.nPoints(), 0);
+    calculateSurfaceCentroids(mesh, isInternalPoint, faceCentroids, nFaceCentroids);
+
     forAll(mesh.points(), pointI)
     {
         if (isInternalPoint[pointI])
             continue;
-
-        const vector origPoint = newPoints[pointI];
 
         // Project to closest corner points
         // --------------------------------
@@ -748,8 +814,9 @@ int projectBoundaryPointsToEdgesAndSurfaces
         if (isSmoothingSurfacePoint[pointI])
         {
             const point pointNormal = pointNormals[pointI];
-            const double searchDistance = 10 * meshMaxEdgeLength;
-            newPoints[pointI] = findIntersection(tree, pointI, origPoint, pointNormal, searchDistance);
+            const double searchDistance = 20 * meshMaxEdgeLength;
+            const vector newPoint = faceCentroids[pointI] / double(nFaceCentroids[pointI]);
+            newPoints[pointI] = findIntersection(tree, pointI, newPoint, pointNormal, searchDistance);
         }
     }
 
