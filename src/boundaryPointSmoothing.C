@@ -24,38 +24,6 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Calculate and return the edge-edge angle (in radians,
-// 0 < angle < pi) of two edges which share a common point
-// at coordinate cCoords. The two edge end point coordinates are
-// p1Coords and p2Coords.
-
-// TODO: Find out how to import edgeEdgeAngle from helpFunctions.H and
-// get rid of this copy
-
-double edgeEdgeAngle2
-(
-    const vector cCoords,
-    const vector p1Coords,
-    const vector p2Coords
-)
-{
-    vector vec1 = (p1Coords - cCoords);
-    vector vec2 = (p2Coords - cCoords);
-    vec1 /= mag(vec1);
-    vec2 /= mag(vec2);
-
-    const double cosA = vec1 & vec2;
-
-    // Ensure cos angle is in sane range before calling arc cos
-    const double MAX = 0.99999;
-    const double cosAlpha = std::max(-MAX, std::min(MAX, cosA));
-    const double angle = std::acos(cosAlpha);
-
-    return angle;
-}
-
-
-
 // Find index of closest point in an edge mesh. Search may be limited
 // to corner points only and/or to required string index number. Saves
 // the closest edge mesh index to closestI and the edge string index
