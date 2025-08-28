@@ -664,11 +664,6 @@ point findIntersection
         }
     }
 
-    FatalError
-        << "Did not find surface intersection for pointI " << pointI
-        << " at " << origPoint << endl
-        << abort(FatalError);
-
     return UNDEF_VECTOR;
 }
 
@@ -751,7 +746,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
     labelList& closestEdgePointIs,
     const triSurface& surf,
     const indexedOctree<treeDataTriSurface>& tree,
-    const double meshMaxEdgeLength,
+    const double meshMinEdgeLength,
     const labelList& targetEdgeStrings,
     const labelList& pointStrings
 )
@@ -814,9 +809,30 @@ int projectBoundaryPointsToEdgesAndSurfaces
         if (isSmoothingSurfacePoint[pointI])
         {
             const point pointNormal = pointNormals[pointI];
-            const double searchDistance = 20 * meshMaxEdgeLength;
-            const vector newPoint = faceCentroids[pointI] / double(nFaceCentroids[pointI]);
-            newPoints[pointI] = findIntersection(tree, pointI, newPoint, pointNormal, searchDistance);
+            double searchDistance = 1e-2 * meshMinEdgeLength;
+            const point newPoint = faceCentroids[pointI] / double(nFaceCentroids[pointI]);
+
+            // Intersection search with increasing search distance for accuracy
+            point surfPoint = UNDEF_VECTOR;
+            for (label i = 0; i < 4; ++i)
+            {
+                searchDistance *= 1e2;
+                surfPoint = findIntersection(tree, pointI, newPoint, pointNormal, searchDistance);
+                if (surfPoint != UNDEF_VECTOR)
+                {
+                    newPoints[pointI] = surfPoint;
+                    break;
+                }
+            }
+
+            if (surfPoint == UNDEF_VECTOR)
+            {
+                FatalError
+                    << "Did not find surface intersection for pointI " << pointI
+                    << " at " << newPoint << " pointNormal " << pointNormal
+                    << " searchDistance " << searchDistance << endl
+                    << abort(FatalError);
+            }
         }
     }
 

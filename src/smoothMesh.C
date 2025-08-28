@@ -2107,7 +2107,7 @@ int main(int argc, char *argv[])
                 closestEdgePointIs,
                 surf,
                 tree,
-                meshMaxEdgeLength,
+                meshMinEdgeLength,
                 targetEdgeStrings,
                 pointStrings
             );
