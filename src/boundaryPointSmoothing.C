@@ -729,6 +729,10 @@ int projectBoundaryPointsToEdgesAndSurfaces
     labelList nFaceCentroids(mesh.nPoints(), 0);
     calculateSurfaceCentroids(mesh, isInternalPoint, faceCentroids, nFaceCentroids);
 
+    // Blending fraction of face centroidal
+    // TODO: Needs more testing to understand how to make this stable.
+    const double faceCentroidBlendingFraction = 0.0;
+
     forAll(mesh.points(), pointI)
     {
         if (isInternalPoint[pointI])
@@ -778,9 +782,12 @@ int projectBoundaryPointsToEdgesAndSurfaces
         {
             const point pointNormal = pointNormals[pointI];
             double searchDistance = 1e-2 * meshMinEdgeLength;
-            const point newPoint = faceCentroids[pointI] / double(nFaceCentroids[pointI]);
 
-            // Intersection search with increasing search distance for accuracy
+            // Blend face centroid with cell centroid
+            const point newPoint = faceCentroidBlendingFraction * (faceCentroids[pointI] / double(nFaceCentroids[pointI])) + (1 - faceCentroidBlendingFraction) * newPoints[pointI];
+
+            // Project new point to surface. Intersection search is
+            // done with increasing search distance for accuracy.
             point surfPoint = UNDEF_VECTOR;
             for (label i = 0; i < 4; ++i)
             {
