@@ -434,49 +434,48 @@ point projectPointToClosestEdge
     const point closestPoint = em.points()[closestEdgePointI];
     const point c2pt = pt - closestPoint;
 
-    scalar minDistance = GREAT;
     vector deltaVec(ZERO_VECTOR);
-    scalar finalDotProd(Zero);
 
-    forAll(em.pointEdges()[closestEdgePointI], pointEdgeI)
+    const label edgeI1 = em.pointEdges()[closestEdgePointI][0];
+    label endPointI1 = em.edges()[edgeI1][0];
+    if (endPointI1 == closestEdgePointI)
     {
-        const label edgeI = em.pointEdges()[closestEdgePointI][pointEdgeI];
-        label endPointI = em.edges()[edgeI][0];
-        if (endPointI == closestEdgePointI)
-        {
-            endPointI = em.edges()[edgeI][1];
-        }
-
-        const point endPoint = em.points()[endPointI];
-        const point edgeVec = (endPoint - closestPoint) / mag(endPoint - closestPoint);
-        const double dotProd = c2pt & edgeVec;
-        const point projPoint = dotProd * edgeVec;
-        const double distance = mag(projPoint - c2pt);
-
-        if ((dotProd > 0) and (distance < minDistance))
-        {
-            minDistance = distance;
-            deltaVec = projPoint;
-            finalDotProd = dotProd;
-        }
-
-        if (finalDotProd > 1.0)
-        {
-            Info << "Warning: Detected extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << endl;
-        }
-
-        if (finalDotProd > 10.0)
-        {
-            FatalError << "Error: Detected too large extrapolation in feature edge projection of point " << pt << " by factor " << finalDotProd << ". One reason might be that the target feature edges are too far away from initial feature edges, so that the mapping from intial to target (by edge point proximity) fails. Second reason might be that the smoothing step length is too large, and some feature edges get jumped over in smoothing." << endl << abort(FatalError);
-        }
+        endPointI1 = em.edges()[edgeI1][1];
     }
 
-    // Return the projection with a smallest positive vector scaling
-    // factor (the point projection hits the edge), or the closest
-    // point if neither edge results in a good projection
-    if (minDistance < GREAT)
+    const label edgeI2 = em.pointEdges()[closestEdgePointI][1];
+    label endPointI2 = em.edges()[edgeI2][0];
+    if (endPointI2 == closestEdgePointI)
     {
-        return closestPoint + deltaVec;
+        endPointI2 = em.edges()[edgeI2][1];
+    }
+
+    const point endPoint1 = em.points()[endPointI1];
+    const point edgeVec1 = (endPoint1 - closestPoint) / mag(endPoint1 - closestPoint);
+    const double dotProd1 = c2pt & edgeVec1;
+    const point projPoint1 = dotProd1 * edgeVec1;
+
+    const point endPoint2 = em.points()[endPointI2];
+    const point edgeVec2 = (endPoint2 - closestPoint) / mag(endPoint2 - closestPoint);
+    const double dotProd2 = c2pt & edgeVec2;
+    const point projPoint2 = dotProd2 * edgeVec2;
+
+    if ((dotProd1 > 1.0) or (dotProd2 > 1.0))
+    {
+        FatalError << "Error: Detected extrapolation in feature edge projection of point " << pt << " at closestEdgePointI " << closestEdgePointI << ". One reason might be that the target feature edges are too far away from initial feature edges, so that the mapping from intial to target (by edge point proximity) fails." << endl << abort(FatalError);
+    }
+
+    if (dotProd1 >= 0.0 and dotProd2 >= 0.0)
+    {
+        return closestPoint;
+    }
+    else if (dotProd1 >= 0.0 and dotProd2 < 0.0)
+    {
+        return closestPoint + projPoint1;
+    }
+    else if (dotProd1 < 0.0 and dotProd2 >= 0.0)
+    {
+        return closestPoint + projPoint2;
     }
 
     return closestPoint;
@@ -753,11 +752,12 @@ int projectBoundaryPointsToEdgesAndSurfaces
             // Project neighboring surface mesh points to closest
             // feature edges and use the median as a new feature edge point
 
-            const vector newPoint = featureEdgeProjections[pointI] / double(nFeatureEdgeProjections[pointI]);
+            const vector targetPoint = featureEdgeProjections[pointI] / double(nFeatureEdgeProjections[pointI]);
+            const label closestEdgePointI = closestEdgePointIs[pointI];
+            const point newPoint = projectPointToClosestEdge(targetPoint, targetEdges, closestEdgePointI);
             newPoints[pointI] = newPoint;
 
             // Update closest edge mesh point index if needed
-            const label closestEdgePointI = closestEdgePointIs[pointI];
             label newClosestEdgePointI;
             label newStringI = UNDEF_LABEL;
             findClosestEdgeMeshPointIndex(newPoint, targetEdges, false, true, true, pointStrings[pointI], targetEdgeStrings, newClosestEdgePointI, newStringI);
