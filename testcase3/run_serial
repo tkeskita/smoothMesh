@@ -14,5 +14,8 @@ mkdir 0
 cp -rv constant/polyMesh 0/
 
 for i in `seq 1 1`; do
-  smoothMesh -relTol 1e-8 -centroidalIters 200 -minAngle 15 -maxLayers 3 -layerPatches '("wall.*")' -layerEdgeLength 0.005
+  # Start without boundary layer treatment and without orthogonal treatment
+  smoothMesh -relTol 1e-8 -centroidalIters 200 -minAngle 15
+
+  # smoothMesh -relTol 1e-8 -centroidalIters 200 -minAngle 15 -maxLayers 3 -layerPatches '("wall.*")' -layerEdgeLength 0.005
 done
