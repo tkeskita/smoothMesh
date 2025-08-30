@@ -505,7 +505,8 @@ double calcARSmoothingRatio
     const vector& closestPoint1,
     const vector& closestPoint2,
     const vector& closestPoint3,
-    const bool hasCommonCell
+    const bool hasCommonCell,
+    const bool isInternalPoint
 )
 {
     // Do nothing if the points are part of a common cell
@@ -519,20 +520,35 @@ double calcARSmoothingRatio
         return 0.0;
     }
 
-    // Minimum and maximum edge length ratios for detecting and
-    // blending high aspect ratio.
-    // TODO: Optimize values and test further?
-    const double minRatio = 1.5;
-    const double maxRatio = 3.0;
-
-    // Blending fraction is applied if two closest points have similar
-    // length, and if the third closest point is clearly farther away.
     const double lengthRatio1 = mag(closestPoint2) / mag(closestPoint1);
     const double lengthRatio2 = mag(closestPoint3) / mag(closestPoint2);
 
-    if ((lengthRatio1 < minRatio) and (lengthRatio2 > minRatio))
+    // Aspect ratio treatment for internal points
+    if (isInternalPoint)
     {
-        const double frac = (lengthRatio2 - minRatio) / (maxRatio - minRatio);
+        // Minimum and maximum edge length ratios for detecting and
+        // blending high aspect ratio.
+        const double minRatio = 1.5;
+        const double maxRatio = 3.0;
+
+        // Blending fraction is applied if two closest points have similar
+        // length, and if the third closest point is clearly farther away.
+        if ((lengthRatio1 < minRatio) and (lengthRatio2 > minRatio))
+        {
+            const double frac = (lengthRatio2 - minRatio) / (maxRatio - minRatio);
+            const double blendFrac = min(1.0, max(0.0, frac));
+            return blendFrac;
+        }
+    }
+
+    // Aspect ratio treatment for boundary points, to help
+    // with edge folding when mesh is contracting against feature
+    // edges
+    else
+    {
+        const double minRatio = 1.0;
+        const double maxRatio = 2.0;
+        const double frac = (lengthRatio1 - minRatio) / (maxRatio - minRatio);
         const double blendFrac = min(1.0, max(0.0, frac));
         return blendFrac;
     }
@@ -577,7 +593,7 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     // Calculate closest middle point coordinates and blend with centroidal coordinates
     forAll(mesh.points(), pointI)
     {
-        const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI]);
+        const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI], isInternalPoint[pointI]);
 
         if (blendFrac > 0.0)
         {
@@ -2057,7 +2073,8 @@ int main(int argc, char *argv[])
         isLayerSurfacePoint,
         isSmoothingSurfacePoint,
         isFrozenSurfacePoint,
-        targetEdgeStrings
+        targetEdgeStrings,
+        doBoundarySmoothing
     );
 
     // Preparations for optional smoothing and treatment
@@ -2210,11 +2227,12 @@ int main(int argc, char *argv[])
             false               // null value
         );
 
-        // Restore original coordinates for frozen points
+        // Restore original coordinates for frozen points and boundary
+        // points which are not to be smoothened
         label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
-            if (isFrozenPoint[pointI])
+            if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
             {
                 newPoints[pointI] = mesh.points()[pointI];
                 ++nFrozenPoints;

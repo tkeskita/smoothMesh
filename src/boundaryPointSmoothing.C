@@ -111,7 +111,8 @@ int classifyBoundaryPoints
     boolList& isLayerSurfacePoint,
     boolList& isSmoothingSurfacePoint,
     boolList& isFrozenSurfacePoint,
-    const labelList& targetEdgeStrings
+    const labelList& targetEdgeStrings,
+    const bool doBoundarySmoothing
 )
 {
     label nFeatureEdgePoints = 0;
@@ -203,7 +204,7 @@ int classifyBoundaryPoints
                 // Smoothing surface points
                 const bool testIsSmoothingSurfacePoint = (findIndex(smoothingPatchIds, patchI) >= 0);
 
-                if (testIsSmoothingSurfacePoint)
+                if ((doBoundarySmoothing) and (testIsSmoothingSurfacePoint))
                 {
                     isSmoothingSurfacePoint[pointI] = true;
                     nSmoothingSurfacePoints++;

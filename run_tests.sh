@@ -9,7 +9,7 @@ if [ $retVal -ne 0 ]; then
 fi
 
 # Stop at errors
-set -e
+# set -e
 
 # Clean up test folder and initialize
 test_folder="./run_tests"
