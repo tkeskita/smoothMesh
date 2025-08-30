@@ -2,8 +2,7 @@
 
 <img src="images/smooth_mesh.png"/>
 
-OpenFOAM mesh smoothing tool to improve mesh quality. Moves internal
-mesh points (and now also optionally boundary mesh points)
+OpenFOAM mesh smoothing tool to improve mesh quality. Moves mesh points
 by using primarily the Centroidal smoothing algorithm (a
 version of the [Laplacian smoothing
 algorithm](https://en.wikipedia.org/wiki/Laplacian_smoothing), which
@@ -29,7 +28,7 @@ vertices.
 
 - Works on 3D polyhedron meshes (2D meshes are not supported)
 - Tested on both OpenFOAM.org v12 and OpenFOAM.com v2412 (likely works
-  also on older and newer versions)
+  on older and possibly also on newer versions)
 - Can be run in parallel or in serial
 - Requires a consistent (not self-intersecting or tangled) initial
   mesh with "good enough" quality
@@ -37,6 +36,7 @@ vertices.
 - Optionally controls the thickness and orthogonality of prismatic
   boundary layers to preserve / create boundary layers using existing
   mesh cells
+- Does not (yet) support meshes with baffles or periodic boundaries.
 
 ## Compilation instructions
 
@@ -108,15 +108,15 @@ Warning: This is a new and experimental feature!
 
 SmoothMesh now has a possibility to move and smooth also boundary points. The usage of this feature requires that the user provides following files in the `constant/geometry` folder in the case directory in Wavefront OBJ format:
 
-- `constant/geometry/initEdges.obj` (**required**). This edge mesh must contain the initial feature edges (sharp edges) of the whole initial mesh. This edge mesh is used to identify which points in the initial mesh are feature edge points. Identification of points is currently based on point locations. Feature edge mesh can be generated e.g. by `Feature Edges` Filter in Paraview, or by `surfaceFeatures` or `surfaceFeatureExtract` commands in OpenFOAM.
+- `constant/geometry/initEdges.obj` (**required**). This edge mesh must contain the initial feature edges (sharp edges) of the whole initial mesh. This edge mesh is used to identify which points in the initial mesh are feature edge points. Identification of points is currently based on point locations. Feature edge mesh can be generated e.g. by `Extract Surface` Filter followed by `Feature Edges` Filter in Paraview, or by `surfaceFeatures` or `surfaceFeatureExtract` commands in OpenFOAM.
 
 - `constant/geometry/targetEdges.obj` (**optional**). This edge mesh file contains the edge mesh locations for the final target mesh. If `targetEdges.obj` is provided, the points on the initial feature edges are projected to these edges during smoothing. If `targetEdges.obj` is not provided, then target edge mesh is assumed to be identical to the initial feature edge mesh. In practice, the result of providing no `targetEdges.obj` is that feature edges stay in their initial locations, but edge points may still move along the feature edges. However, providing `targetEdges.obj `allows projection of e.g. linear block mesh edges to curves.
 
-- `constant/geometry/targetSurfaces.obj` (**required**). This surface mesh file must contain the target surface mesh for all boundary surfaces. The boundary points (besides feature edge points) are projected to closest triangulated surface mesh face provided in this file. The surface mesh can be generated e.g. by `Extract Surface Filter` in Paraview, or `surfaceMeshTriangulate` command in OpenFOAM.
+- `constant/geometry/targetSurfaces.obj` (**required**). This surface mesh file must contain the target surface mesh for all boundary surfaces. The boundary points (besides feature edge points) are projected to closest triangulated surface mesh face provided in this file. The surface mesh can be generated e.g. by `Extract Surface` Filter in Paraview, or `surfaceMeshTriangulate` command in OpenFOAM.
 
 Options for smoothMesh related to boundary point smoothing:
 
-- `-smoothingPatches` option is used to limit the boundary point movement to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-smoothingPatches 'walls'` or `-smoothingPatches '( stator "rotor.*" )'`. All patches are included in smoothing by default.
+- `-smoothingPatches` option is used to limit the boundary point movement to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-smoothingPatches 'walls'` or `-smoothingPatches '( stator "rotor.*" )'`. All patches are included in smoothing by default, so if you provide the above OBJ files in the constant/geometry directory, boundary point smoothing will be applied.
 
 - `-internalSmoothingBlendingFraction` is related to how the location of the surface points on free boundaries (but not feature edges nor corners!) are calculated. Two methods are applied: Projection of coordinates from centroidal smoothing to closest boundary surface, and projection of inner mesh prismatic point to closest boundary surface. This fraction value specifies the blending (value between 0 and 1) for the inner mesh prismatic point. Value close to 0 means that centroidal smoothing dominates, which results in good boundary surface smoothing. Value close to 1 means that inner mesh point projection dominates, which results in highly orthogonal prismatic boundary edges. The default value of 0 applies only centroidal smoothing. Note: More work is needed to study the effect of this value on the results.
 
