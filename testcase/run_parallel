@@ -16,7 +16,7 @@ cp -rv constant/polyMesh 0/
 decomposePar
 
 for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -writeInterval 1 -minEdgeLength 0.01 -maxStepLength 0.002 -minAngle 15 -maxAngle 160 -layerMaxBlendingFraction 0.3 -layerPatches '("def.*")'
+  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -minEdgeLength 0.01 -maxStepLength 0.002 -minAngle 15 -maxAngle 160 -layerPatches '("def.*")'
 done
 
 # Test cases for illustration of wrong usage
