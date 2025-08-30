@@ -36,7 +36,8 @@ vertices.
 - Optionally controls the thickness and orthogonality of prismatic
   boundary layers to preserve / create boundary layers using existing
   mesh cells
-- Does not (yet) support meshes with baffles or periodic boundaries.
+- Does not (yet) support meshes with baffles, periodic boundaries or
+  multiple regions in the mesh.
 
 ## Compilation instructions
 
@@ -131,11 +132,11 @@ Example from testcase4 is illustrated below.
 
 Currently, the best results I've encountered seem to result from carryin out smoothing in stages:
 
-1. Relaxation of initial mesh with `-layerMaxBlendingFraction 0 -internalSmoothingBlendingFraction 0`, so practically without any layer treatment, and without imposing orthogonality at boundary cells, but with boundary point smoothing enabled.
+1. Relaxation of initial mesh with `-layerMaxBlendingFraction 0 -internalSmoothingBlendingFraction 0`, so practically without any layer treatment, and without imposing orthogonality at boundary cells, but with boundary point smoothing enabled. In effect, this will bloat any boundary layer cells in the mesh into normal size.
 
-2. Continue smoothing with small values for the blending fractions.
+2. Continue smoothing with small values for the blending fractions, to bring back the boundary layers.
 
-3. Continue smoothing with increased values for the blending fractions.
+3. Continue smoothing with increased values for the blending fractions if required. Possibly apply `-smoothingPatches 'none'` to freeze boundary points.
 
 I don't yet have a more precise general recipe, it seems to depend on the case.
 
