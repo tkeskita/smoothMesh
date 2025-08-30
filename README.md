@@ -67,7 +67,7 @@ You can optionally run the test cases (they will be copied to folder
 
 - `-totalMinFreeze` option causes mesh points on all edges shorter than `-minEdgeLength` to freeze, even if edge length would increase in smoothing (default false). This option is useful to keep boundary layers in the mesh unmodified, and smooth the large cells only, if the special boundary layer related options below are not used.
 
-- `-writeInterval` option writes mesh at the interval of given number of iterations, e.g. value 10 causes write every tenth iteration (default value 0).
+- `-writeInterval` option writes mesh at the interval of given number of iterations, e.g. value 10 causes write every tenth iteration (default value is same as `centroidalIters`).
 
 
 ### Quality constraint options
@@ -92,7 +92,7 @@ Warning: This is an experimental feature!
 
 - `-layerPatches` option is used to limit the boundary layer treatment to cells next to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-layerPatches 'walls'` or `-layerPatches '( stator "rotor.*" )'`. No patches are included by default.
 
-- `-layerMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default value 0.5). Values between 0.3 and 0.8 seems to produce good results in practice.
+- `-layerMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default value 0.3). Values below 0.5 seems to produce good results in practice, but it depends on the case.
 
 - `-layerEdgeLength` specifies the target thickness for the first boundary layer cells (prismatic side edge length). If no value is provided, the value of `minEdgeLength` is applied.
 
@@ -102,7 +102,7 @@ Warning: This is an experimental feature!
 
 - `-maxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default value 4).
 
-## Boundary point smoothing options
+### Boundary point smoothing options
 
 Warning: This is a new and experimental feature!
 
@@ -125,6 +125,19 @@ Options for smoothMesh related to boundary point smoothing:
 Example from testcase4 is illustrated below.
 
 <img src="images/boundary_point_smoothing.png" width="600"/>
+
+
+## Smoothing best practice
+
+Currently, the best results I've encountered seem to result from carryin out smoothing in stages:
+
+1. Relaxation of initial mesh with `-layerMaxBlendingFraction 0 -internalSmoothingBlendingFraction 0`, so practically without any layer treatment, and without imposing orthogonality at boundary cells, but with boundary point smoothing enabled.
+
+2. Continue smoothing with small values for the blending fractions.
+
+3. Continue smoothing with increased values for the blending fractions.
+
+I don't yet have a more precise general recipe, it seems to depend on the case.
 
 
 ## Description of the algorithm

@@ -1653,7 +1653,7 @@ int main(int argc, char *argv[])
     (
         "layerMaxBlendingFraction",
         "double",
-        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0.5)"
+        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0.3)"
     );
 
     argList::addOption
@@ -1820,7 +1820,7 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("faceAngleConstraint", true);
 
     double layerMaxBlendingFraction =
-        args.optionLookupOrDefault("layerMaxBlendingFraction", 0.5);
+        args.optionLookupOrDefault("layerMaxBlendingFraction", 0.3);
 
     double layerEdgeLength =
         args.optionLookupOrDefault("layerEdgeLength", minEdgeLength);
