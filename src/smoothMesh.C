@@ -285,6 +285,41 @@ bool isCloserPoint
     return false;
 }
 
+// Help function for aspectRatioSmoothing to find out Nth closest
+// point index either among boundary points or all points
+
+label findAppropriateClosestPointLabel
+(
+    const labelList& pointPoints,
+    const labelList& sLabels,
+    const label pointI,
+    const boolList& isInternalPoint,
+    const label stride
+)
+{
+    const bool isThisInternalPoint = isInternalPoint[pointI];
+    label counter = 0;
+
+    forAll(sLabels, i)
+    {
+        const label labelI = sLabels[i];
+
+        // For boundary points, consider only other boundary points
+        if ((! isThisInternalPoint) and (isInternalPoint[pointPoints[labelI]]))
+        {
+            continue;
+        }
+
+        if (counter == stride)
+        {
+            return labelI;
+        }
+
+        ++counter;
+    }
+
+    return UNDEF_LABEL;
+}
 
 // Help function for aspectRatioSmoothing to find out closest
 // three points (connected by edges) to each point
@@ -303,15 +338,6 @@ int findClosestPoints
     // Initialize with local information
     forAll (mesh.points(), pointI)
     {
-        if (! isInternalPoint[pointI])
-        {
-            closestPoints1[pointI] = ZERO_VECTOR;
-            closestPoints2[pointI] = ZERO_VECTOR;
-            closestPoints3[pointI] = ZERO_VECTOR;
-            hasCommonCell[pointI] = false;
-            continue;
-        }
-
         const vector cCoords = mesh.points()[pointI];
         const labelList& pointPoints = mesh.pointPoints()[pointI];
         const label nPoints = pointPoints.size();
@@ -333,13 +359,42 @@ int findClosestPoints
         labelList sLabels;
         Foam::sortedOrder(edgeLengths, sLabels);
 
+        // Find correct closest point indices depending on whether
+        // this is a boundary point or an internal point
+        const label cLabel1 = findAppropriateClosestPointLabel(pointPoints, sLabels, pointI, isInternalPoint, 0);
+        const label cLabel2 = findAppropriateClosestPointLabel(pointPoints, sLabels, pointI, isInternalPoint, 1);
+        const label cLabel3 = findAppropriateClosestPointLabel(pointPoints, sLabels, pointI, isInternalPoint, 2);
+
+        if (cLabel1 == UNDEF_LABEL)
+        {
+            FatalError << "Failed to find cLabel1 for pointI " << pointI << " at " << cCoords << endl << abort(FatalError);
+        }
+
+        if (cLabel2 == UNDEF_LABEL)
+        {
+            FatalError << "Failed to find cLabel2 for pointI " << pointI << " at " << cCoords << endl << abort(FatalError);
+        }
+
+        // cLabel3 may be undefined for processor interface cells at boundary
+        //if (cLabel3 == UNDEF_LABEL)
+        //{
+        //    FatalError << "Failed to find cLabel3 for pointI " << pointI << " at " << cCoords << endl << abort(FatalError);
+        //}
+
         // Save local values
-        closestPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
-        closestPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
-        closestPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
+        closestPoints1[pointI] = mesh.points()[pointPoints[cLabel1]] - cCoords;
+        closestPoints2[pointI] = mesh.points()[pointPoints[cLabel2]] - cCoords;
+        if (cLabel3 == UNDEF_LABEL)
+        {
+            closestPoints3[pointI] = UNDEF_VECTOR;
+        }
+        else
+        {
+            closestPoints3[pointI] = mesh.points()[pointPoints[cLabel3]] - cCoords;
+        }
 
         // Check if closest two points share a cell
-        if (findIndex(pointNeighPoints[pointPoints[sLabels[0]]], pointPoints[sLabels[1]]) >= 0)
+        if (findIndex(pointNeighPoints[pointPoints[cLabel1]], pointPoints[cLabel2]) >= 0)
             hasCommonCell[pointI] = true;
         else
             hasCommonCell[pointI] = false;
@@ -450,7 +505,8 @@ double calcARSmoothingRatio
     const vector& closestPoint1,
     const vector& closestPoint2,
     const vector& closestPoint3,
-    const bool hasCommonCell
+    const bool hasCommonCell,
+    const bool isInternalPoint
 )
 {
     // Do nothing if the points are part of a common cell
@@ -464,20 +520,35 @@ double calcARSmoothingRatio
         return 0.0;
     }
 
-    // Minimum and maximum edge length ratios for detecting and
-    // blending high aspect ratio.
-    // TODO: Optimize values and test further?
-    const double minRatio = 1.5;
-    const double maxRatio = 3.0;
-
-    // Blending fraction is applied if two closest points have similar
-    // length, and if the third closest point is clearly farther away.
     const double lengthRatio1 = mag(closestPoint2) / mag(closestPoint1);
     const double lengthRatio2 = mag(closestPoint3) / mag(closestPoint2);
 
-    if ((lengthRatio1 < minRatio) and (lengthRatio2 > minRatio))
+    // Aspect ratio treatment for internal points
+    if (isInternalPoint)
     {
-        const double frac = (lengthRatio2 - minRatio) / (maxRatio - minRatio);
+        // Minimum and maximum edge length ratios for detecting and
+        // blending high aspect ratio.
+        const double minRatio = 1.5;
+        const double maxRatio = 3.0;
+
+        // Blending fraction is applied if two closest points have similar
+        // length, and if the third closest point is clearly farther away.
+        if ((lengthRatio1 < minRatio) and (lengthRatio2 > minRatio))
+        {
+            const double frac = (lengthRatio2 - minRatio) / (maxRatio - minRatio);
+            const double blendFrac = min(1.0, max(0.0, frac));
+            return blendFrac;
+        }
+    }
+
+    // Aspect ratio treatment for boundary points, to help
+    // with edge folding when mesh is contracting against feature
+    // edges
+    else
+    {
+        const double minRatio = 1.0;
+        const double maxRatio = 2.0;
+        const double frac = (lengthRatio1 - minRatio) / (maxRatio - minRatio);
         const double blendFrac = min(1.0, max(0.0, frac));
         return blendFrac;
     }
@@ -522,7 +593,7 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     // Calculate closest middle point coordinates and blend with centroidal coordinates
     forAll(mesh.points(), pointI)
     {
-        const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI]);
+        const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI], isInternalPoint[pointI]);
 
         if (blendFrac > 0.0)
         {
@@ -595,7 +666,7 @@ int restrictEdgeShortening
 }
 
 
-// Calculate and return the maximum edge length of the proposed new points
+// Calculate and return the maximum step length of the proposed new points
 
 double getProposedMaxStepLength
 (
@@ -629,7 +700,8 @@ int constrainMaxStepLength
     const fvMesh& mesh,
     pointField& origPoints,
     const double maxStepLength,
-    const double relStepFrac
+    const double relStepFrac,
+    const bool doGlobalScaling
 )
 {
     // Copy original points for temporary working point field
@@ -639,10 +711,22 @@ int constrainMaxStepLength
     forAll(newPoints, pointI)
         newPoints[pointI] = origPoints[pointI];
 
-    // Calculate global scaling factor from maximum step size and
-    // maximum allowed step size
+    // Global scaling factor is a means to scale down all point
+    // movements with a common factor. It is meant to allow centroidal
+    // smoothing to accelerate movement of points which need larger
+    // step sizes than surrounding points for stable smoothing. If
+    // global scaling factor is 1.0, then movement is scaled down by
+    // the relative step fraction only.
+
+    // Calculate global scaling factor from maximum proposed step size
+    // and maximum allowed step size.
     const double proposedMaxLength = getProposedMaxStepLength(mesh, origPoints);
-    const double globalScale = min(1.0, maxStepLength / (proposedMaxLength * relStepFrac));
+
+    double globalScale = 1.0;
+    if (doGlobalScaling)
+    {
+        globalScale = min(1.0, maxStepLength / (proposedMaxLength * relStepFrac));
+    }
 
     // Info << "Proposed maximum step length = " << proposedMaxLength << endl
     //      << "Maximum allowed step length = " << maxStepLength << endl
@@ -655,9 +739,22 @@ int constrainMaxStepLength
         // towards new coordinates if jump would be too long
         const vector cCoords = mesh.points()[pointI];
         const vector stepDir = origPoints[pointI] - cCoords;
-        const vector nCoords = cCoords + relStepFrac * globalScale * stepDir;
+
+        // Max step length constraining if global scaling is disabled
+        if (! doGlobalScaling)
+        {
+            if (mag(stepDir) > maxStepLength)
+            {
+                globalScale = maxStepLength / (mag(stepDir) * relStepFrac);
+            }
+            else
+            {
+                globalScale = 1.0;
+            }
+        }
 
         // Save the constrained point
+        const vector nCoords = cCoords + relStepFrac * globalScale * stepDir;
         newPoints[pointI] = nCoords;
     }
 
@@ -1505,6 +1602,13 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "relStepFrac",
+        "double",
+        "Relative step scaling factor, which scales the local step length (default 0.5)"
+    );
+
+    argList::addOption
+    (
         "edgeAngleConstraint",
         "bool",
         "Option to apply the minimum edge angle control constraint (default: true)"
@@ -1549,7 +1653,7 @@ int main(int argc, char *argv[])
     (
         "layerMaxBlendingFraction",
         "double",
-        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0)"
+        "Maximum blending fraction to force prismatic boundary layer treatment on edges (default: 0.3)"
     );
 
     argList::addOption
@@ -1600,6 +1704,13 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "internalSmoothingBlendingFraction",
+        "double",
+        "Blending fraction for the projection of internal mesh point to boundary surface (default: 0)"
+    );
+
+    argList::addOption
+    (
         "relTol",
         "double",
         "Relative tolerance for stopping the smoothing iterations (default: 0.02)"
@@ -1609,7 +1720,7 @@ int main(int argc, char *argv[])
     (
         "writeInterval",
         "label",
-        "Interval to write mesh during iterations (default value 0)"
+        "Interval to write mesh during iterations (default value: Same as centroidalIters)"
     );
 
     #include "setRootCase.H"
@@ -1709,7 +1820,7 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("faceAngleConstraint", true);
 
     double layerMaxBlendingFraction =
-        args.optionLookupOrDefault("layerMaxBlendingFraction", 0.5);
+        args.optionLookupOrDefault("layerMaxBlendingFraction", 0.3);
 
     double layerEdgeLength =
         args.optionLookupOrDefault("layerEdgeLength", minEdgeLength);
@@ -1723,6 +1834,9 @@ int main(int argc, char *argv[])
     label maxLayers =
         args.optionLookupOrDefault("maxLayers", 4);
 
+    double internalSmoothingBlendingFraction =
+        args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.0);
+
     double relTol =
         args.optionLookupOrDefault("relTol", 0.02);
 
@@ -1730,7 +1844,8 @@ int main(int argc, char *argv[])
         args.optionLookupOrDefault("centroidalIters", 1000);
 
     label writeInterval =
-        args.optionLookupOrDefault("writeInterval", 0);
+        // args.optionLookupOrDefault("writeInterval", 5); // for debugging test cases
+        args.optionLookupOrDefault("writeInterval", centroidalIters);
 
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
@@ -1870,14 +1985,24 @@ int main(int argc, char *argv[])
     autoPtr<edgeMesh> initEdges(nullptr);
     autoPtr<edgeMesh> targetEdges(nullptr);
 
-    // Point classification lists and corner target locations
+    // Point classification lists
+    boolList isConnectedToInternalPoint(mesh.nPoints(), false);
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
     boolList isLayerSurfacePoint(mesh.nPoints(), false);
     boolList isSmoothingSurfacePoint(mesh.nPoints(), false);
     boolList isFrozenSurfacePoint(mesh.nPoints(), false);
     boolList isProcessorPoint(mesh.nPoints(), false);
     boolList isCornerPoint(mesh.nPoints(), false);
+
+    // Storage for target corner point coordinates
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
+
+    // Storage for saving feature edge unique string indices
+    labelList targetEdgeStrings;
+    labelList pointStrings(mesh.nPoints(), UNDEF_LABEL);
+
+    // Closest edge mesh point indices (for feature edge points)
+    labelList closestEdgePointIs(mesh.nPoints(), UNDEF_LABEL);
 
     // Preparations for boundary point smoothing
     if (doBoundarySmoothing)
@@ -1908,9 +2033,13 @@ int main(int argc, char *argv[])
             targetEdges.reset(new edgeMesh(initEdgesFileName));
             Info << "Warning: Initial feature edges will be used also as target edges, because" << endl
 
-            << "did not find file " << targetEdgesFileString << "." << endl;
+            << "did not find file " << targetEdgesFileString << "." << endl << endl;
         }
-        Info << endl;
+
+        // Generate indices for target edge mesh strings
+        Info << "Starting to build targetEdgeStrings" << endl;
+        const label nStrings = findEdgeMeshStrings(targetEdgeStrings, targetEdges);
+        Info << "Detected number of edge mesh strings: " << nStrings + 1 << endl << endl;
     }
     else
     {
@@ -1920,9 +2049,10 @@ int main(int argc, char *argv[])
         targetEdges.reset(new edgeMesh());
     }
 
-    Info << "Mesh includes a total of " << mesh.nPoints() << " points:" << endl
+    const label nPoints = returnReduce(mesh.nPoints(), sumOp<label>());
+    Info << "Mesh includes a total of " << nPoints << " points:" << endl
          << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
-         << "  - " << mesh.nPoints() - nInternalPoints << " boundary points" << endl
+         << "  - " << nPoints - nInternalPoints << " boundary points" << endl
          << "Mesh minimum edge length = " << meshMinEdgeLength << endl
          << "Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
 
@@ -1936,22 +2066,25 @@ int main(int argc, char *argv[])
         smoothingPatchIds,
         isInternalPoint,
         isProcessorPoint,
+        isConnectedToInternalPoint,
         isFeatureEdgePoint,
         isCornerPoint,
         cornerPoints,
         isLayerSurfacePoint,
         isSmoothingSurfacePoint,
-        isFrozenSurfacePoint
+        isFrozenSurfacePoint,
+        targetEdgeStrings,
+        doBoundarySmoothing
     );
 
     // Preparations for optional smoothing and treatment
     if ((doBoundarySmoothing) or (doLayerTreatment))
     {
-        calculatePointHopsToBoundary(mesh, layerPatchIds, pointHopsToLayerBoundary, maxLayers + 1);
-        calculatePointHopsToBoundary(mesh, smoothingPatchIds, pointHopsToSmoothingBoundary, 2);
+        calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
+        calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);
         calculateBoundaryPointNormals(mesh, pointNormals);
         propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
-        propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
+        propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
     }
 
     // Carry out smoothing iterations
@@ -1959,6 +2092,8 @@ int main(int argc, char *argv[])
 
     for (label i = 0; i < centroidalIters; ++i)
     {
+        // Info << "Starting iteration " << i << endl;
+
         // Reset frozen points
         forAll(isFrozenPoint, pointI)
             isFrozenPoint[pointI] = false;
@@ -1970,9 +2105,15 @@ int main(int argc, char *argv[])
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundarySmoothing);
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
+        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+        // constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
+
         // Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
+
+        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+        constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
 
         // Optional boundary layer treatment
         if (doLayerTreatment)
@@ -1994,47 +2135,73 @@ int main(int argc, char *argv[])
                  minLayers,
                  maxLayers + 1  // +1 for correct number of layers
             );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
 
         if (doBoundarySmoothing)
         {
+            // Find initial closest edge points (for feature edge snapping)
+            if (i == 0)
+            {
+                forAll(mesh.points(), pointI)
+                {
+                    if (isFeatureEdgePoint[pointI])
+                    {
+                        label newClosestEdgePointI = UNDEF_LABEL;
+                        label pointStringI = UNDEF_LABEL;
+                        findClosestEdgeMeshPointIndex(mesh.points()[pointI], targetEdges, false, true, false, UNDEF_LABEL, targetEdgeStrings, newClosestEdgePointI, pointStringI);
+                        closestEdgePointIs[pointI] = newClosestEdgePointI;
+                        pointStrings[pointI] = pointStringI;
+                    }
+                }
+            }
+
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
-            // Apply first layer inner points for projecting points to
-            // boundary surfaces
-            projectFreeBoundaryPointsToSurfaces
-            (
-                mesh,
-                newPoints,
-                pointHopsToSmoothingBoundary,
-                pointNormals,
-                isInternalPoint,
-                isFeatureEdgePoint,
-                isCornerPoint,
-                innerNeighCoords
-            );
-
-            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
-
+            // Project boundary points
             projectBoundaryPointsToEdgesAndSurfaces
             (
                 mesh,
                 newPoints,
                 pointNormals,
                 isInternalPoint,
+                isSmoothingSurfacePoint,
                 isFeatureEdgePoint,
                 isCornerPoint,
                 cornerPoints,
                 targetEdges,
+                closestEdgePointIs,
                 surf,
                 tree,
-                meshMaxEdgeLength
-             );
-        }
+                meshMinEdgeLength,
+                targetEdgeStrings,
+                pointStrings
+            );
 
-        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-        constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac);
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+
+            // Use the locations of first cell layer points for
+            // projecting points to boundary surfaces
+            projectFreeBoundaryPointsToSurfaces
+            (
+                mesh,
+                newPoints,
+                pointHopsToSmoothingBoundary,
+                pointNormals,
+                isSmoothingSurfacePoint,
+                isConnectedToInternalPoint,
+                isFeatureEdgePoint,
+                isCornerPoint,
+                innerNeighCoords,
+                internalSmoothingBlendingFraction
+            );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+        }
 
         // Avoid shortening of short edge length
         restrictEdgeShortening(mesh, newPoints, minEdgeLength, totalMinFreeze, isFrozenPoint);
@@ -2060,16 +2227,21 @@ int main(int argc, char *argv[])
             false               // null value
         );
 
-        // Restore original coordinates for frozen points
+        // Restore original coordinates for frozen points and boundary
+        // points which are not to be smoothened
+        label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
-            if (isFrozenPoint[pointI])
+            if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
+            {
                 newPoints[pointI] = mesh.points()[pointI];
+                ++nFrozenPoints;
+            }
         }
 
         // Calculate and print residual
         const double res = calculateResidual(mesh, newPoints, isInternalPoint, maxStepLength);
-        Info << "Smoothing iteration=" << (i + 1) << " residual=" << res << endl;
+        Info << "Smoothing iteration=" << (i + 1) << " nFrozenPoints=" << returnReduce(nFrozenPoints, sumOp<label>()) << " residual=" << res << endl;
 
         // Push coordinates to mesh
         mesh.movePoints(tNewPoints);
@@ -2085,15 +2257,13 @@ int main(int argc, char *argv[])
             Info << "Maximum centroidalIters reached, stopping." << endl;
         }
 
-        if ((writeInterval > 0) and ((i % writeInterval) == 0))
-        {
+        // Increase time
+        runTime++;
 
+        if ((((i + 1) % writeInterval) == 0) and (i > 0))
+        {
             // Save mesh
-            if (!overwrite)
-            {
-                runTime++;
-            }
-            else
+            if (overwrite)
             {
                 mesh.setInstance(oldInstance);
             }
@@ -2106,27 +2276,6 @@ int main(int argc, char *argv[])
 
             mesh.write();
         }
-    }
-
-    // Save mesh
-    {
-        if (!overwrite)
-        {
-            runTime++;
-            // mesh.setInstance(runTime.timeName());
-        }
-        else
-        {
-            mesh.setInstance(oldInstance);
-        }
-
-        // Set the precision of the points data to 10
-        IOstream::defaultPrecision(max(10u, IOstream::defaultPrecision()));
-
-        Info << "Writing new mesh to time " << runTime.name()
-             << endl << endl;
-
-        mesh.write();
     }
 
     Info<< "ClockTime = "

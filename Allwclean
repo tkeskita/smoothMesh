@@ -9,10 +9,10 @@ if [[ -z "${WM_PROJECT}" ]]; then
 fi
 
 # Clear the test directory
-if [[ -d run_tests ]]; then
-    echo "Removing run_tests"
-    rm -rf run_tests
-fi
+#if [[ -d run_tests ]]; then
+#    echo "Removing run_tests"
+#    rm -rf run_tests
+#fi
 
 # Clear all build logs
 echo "Removing all log.Allwmake build logs"

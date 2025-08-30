@@ -4,7 +4,7 @@
 which surfaceFeatureExtract &> /dev/null
 retVal=$?
 if [ $retVal -ne 0 ]; then
-    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM v2312 is probably not sourced correctly?"
+    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM is probably not sourced correctly?"
     exit 1
 fi
 
@@ -14,7 +14,7 @@ mkdir 0
 cp -rv constant/polyMesh 0/
 
 for i in `seq 1 1`; do
-  smoothMesh -layerExpansionRatio 1.2 -layerEdgeLength 0.05 -maxLayers 3 -layerPatches '(walls)' -smoothingPatches '(".*")'
+  smoothMesh -centroidalIters 200 -layerExpansionRatio 1.2 -layerEdgeLength 0.05 -maxLayers 3 -layerPatches '(walls)' -smoothingPatches '(".*")'
 
   # smoothMesh
 done
