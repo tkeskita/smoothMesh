@@ -285,6 +285,41 @@ bool isCloserPoint
     return false;
 }
 
+// Help function for aspectRatioSmoothing to find out Nth closest
+// point index either among boundary points or all points
+
+label findAppropriateClosestPointLabel
+(
+    const labelList& pointPoints,
+    const labelList& sLabels,
+    const label pointI,
+    const boolList& isInternalPoint,
+    const label stride
+)
+{
+    const bool isThisInternalPoint = isInternalPoint[pointI];
+    label counter = 0;
+
+    forAll(sLabels, i)
+    {
+        const label labelI = sLabels[i];
+
+        // For boundary points, consider only other boundary points
+        if ((! isThisInternalPoint) and (isInternalPoint[pointPoints[labelI]]))
+        {
+            continue;
+        }
+
+        if (counter == stride)
+        {
+            return labelI;
+        }
+
+        ++counter;
+    }
+
+    return UNDEF_LABEL;
+}
 
 // Help function for aspectRatioSmoothing to find out closest
 // three points (connected by edges) to each point
@@ -303,15 +338,6 @@ int findClosestPoints
     // Initialize with local information
     forAll (mesh.points(), pointI)
     {
-        if (! isInternalPoint[pointI])
-        {
-            closestPoints1[pointI] = ZERO_VECTOR;
-            closestPoints2[pointI] = ZERO_VECTOR;
-            closestPoints3[pointI] = ZERO_VECTOR;
-            hasCommonCell[pointI] = false;
-            continue;
-        }
-
         const vector cCoords = mesh.points()[pointI];
         const labelList& pointPoints = mesh.pointPoints()[pointI];
         const label nPoints = pointPoints.size();
@@ -333,13 +359,42 @@ int findClosestPoints
         labelList sLabels;
         Foam::sortedOrder(edgeLengths, sLabels);
 
+        // Find correct closest point indices depending on whether
+        // this is a boundary point or an internal point
+        const label cLabel1 = findAppropriateClosestPointLabel(pointPoints, sLabels, pointI, isInternalPoint, 0);
+        const label cLabel2 = findAppropriateClosestPointLabel(pointPoints, sLabels, pointI, isInternalPoint, 1);
+        const label cLabel3 = findAppropriateClosestPointLabel(pointPoints, sLabels, pointI, isInternalPoint, 2);
+
+        if (cLabel1 == UNDEF_LABEL)
+        {
+            FatalError << "Failed to find cLabel1 for pointI " << pointI << " at " << cCoords << endl << abort(FatalError);
+        }
+
+        if (cLabel2 == UNDEF_LABEL)
+        {
+            FatalError << "Failed to find cLabel2 for pointI " << pointI << " at " << cCoords << endl << abort(FatalError);
+        }
+
+        // cLabel3 may be undefined for processor interface cells at boundary
+        //if (cLabel3 == UNDEF_LABEL)
+        //{
+        //    FatalError << "Failed to find cLabel3 for pointI " << pointI << " at " << cCoords << endl << abort(FatalError);
+        //}
+
         // Save local values
-        closestPoints1[pointI] = mesh.points()[pointPoints[sLabels[0]]] - cCoords;
-        closestPoints2[pointI] = mesh.points()[pointPoints[sLabels[1]]] - cCoords;
-        closestPoints3[pointI] = mesh.points()[pointPoints[sLabels[2]]] - cCoords;
+        closestPoints1[pointI] = mesh.points()[pointPoints[cLabel1]] - cCoords;
+        closestPoints2[pointI] = mesh.points()[pointPoints[cLabel2]] - cCoords;
+        if (cLabel3 == UNDEF_LABEL)
+        {
+            closestPoints3[pointI] = UNDEF_VECTOR;
+        }
+        else
+        {
+            closestPoints3[pointI] = mesh.points()[pointPoints[cLabel3]] - cCoords;
+        }
 
         // Check if closest two points share a cell
-        if (findIndex(pointNeighPoints[pointPoints[sLabels[0]]], pointPoints[sLabels[1]]) >= 0)
+        if (findIndex(pointNeighPoints[pointPoints[cLabel1]], pointPoints[cLabel2]) >= 0)
             hasCommonCell[pointI] = true;
         else
             hasCommonCell[pointI] = false;
@@ -522,10 +577,6 @@ Foam::tmp<Foam::pointField> aspectRatioSmoothing
     // Calculate closest middle point coordinates and blend with centroidal coordinates
     forAll(mesh.points(), pointI)
     {
-        // Process only internal points
-        if (! isInternalPoint[pointI])
-            continue;
-
         const double blendFrac = calcARSmoothingRatio(closestPoints1[pointI], closestPoints2[pointI], closestPoints3[pointI], hasCommonCell[pointI]);
 
         if (blendFrac > 0.0)
