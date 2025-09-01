@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# First test that OpenFOAM commands are available
+which surfaceFeatureExtract &> /dev/null
+retVal=$?
+if [ $retVal -ne 0 ]; then
+    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM is probably not sourced correctly?"
+    exit 1
+fi
+
+rm -rf ? ?? ??? constant/polyMesh
+blockMesh
+extrudeMesh
+ln -s geometry constant/triSurface # OF.com
+topoSet
+createBaffles -overwrite
+splitBaffles -overwrite # OF.org
+mergeOrSplitBaffles -split -overwrite # OF.com
+
+mkdir 0
+cp -rv constant/polyMesh 0/
+
+for i in `seq 1 1`; do
+  smoothMesh -centroidalIters 300 -layerExpansionRatio 1.2 -layerEdgeLength 0.05 -maxLayers 3 -layerPatches '(walls "baffle.*")' -smoothingPatches '(".*")'
+done

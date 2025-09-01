@@ -1,0 +1,25 @@
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+actions
+(
+    {
+        action  new;
+        type    faceZoneSet;
+        name    baffleZone;
+        source  searchableSurfaceToFaceZone;
+        surface triSurfaceMesh;
+        file    "baffles.stl";
+
+        // searchableCylinder includes also top and bottom faces
+        // surface searchableCylinder;
+        // point1  (0 0 1.5);
+        // point2  (0 0 -1.5);
+        // radius  3.0;
+    }
+);
