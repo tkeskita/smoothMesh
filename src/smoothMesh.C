@@ -1993,6 +1993,7 @@ int main(int argc, char *argv[])
     boolList isFrozenSurfacePoint(mesh.nPoints(), false);
     boolList isProcessorPoint(mesh.nPoints(), false);
     boolList isCornerPoint(mesh.nPoints(), false);
+    boolList isSharpEdgePoint(mesh.nPoints(), false);
 
     // Storage for target corner point coordinates
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
@@ -2031,7 +2032,7 @@ int main(int argc, char *argv[])
         else
         {
             targetEdges.reset(new edgeMesh(initEdgesFileName));
-            Info << "Warning: Initial feature edges will be used also as target edges, because" << endl
+            Info << "WARNING: Initial feature edges will be used also as target edges, because" << endl
 
             << "did not find file " << targetEdgesFileString << "." << endl << endl;
         }
@@ -2082,9 +2083,17 @@ int main(int argc, char *argv[])
     {
         calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
         calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);
-        calculateBoundaryPointNormals(mesh, pointNormals);
+        calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
         propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
         propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
+
+        forAll (mesh.points(), pointI)
+        {
+            if (isSharpEdgePoint[pointI] == true)
+            {
+                Pout << "WARNING: Froze a sharp boundary edge point which is not on a feature edge: pointI " << pointI << " at " << mesh.points()[pointI] << endl;
+            }
+        }
     }
 
     // Carry out smoothing iterations
@@ -2099,7 +2108,7 @@ int main(int argc, char *argv[])
             isFrozenPoint[pointI] = false;
 
         // Recalculate point normals
-        calculateBoundaryPointNormals(mesh, pointNormals);
+        calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
         // Calculate new point locations using centroidal smoothing
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundarySmoothing);
@@ -2177,7 +2186,9 @@ int main(int argc, char *argv[])
                 tree,
                 meshMinEdgeLength,
                 targetEdgeStrings,
-                pointStrings
+                pointStrings,
+                isSharpEdgePoint,
+                isFrozenPoint
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
@@ -2196,7 +2207,8 @@ int main(int argc, char *argv[])
                 isFeatureEdgePoint,
                 isCornerPoint,
                 innerNeighCoords,
-                internalSmoothingBlendingFraction
+                internalSmoothingBlendingFraction,
+                isSharpEdgePoint
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing

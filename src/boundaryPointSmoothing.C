@@ -716,7 +716,9 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const indexedOctree<treeDataTriSurface>& tree,
     const double meshMinEdgeLength,
     const labelList& targetEdgeStrings,
-    const labelList& pointStrings
+    const labelList& pointStrings,
+    const boolList& isSharpEdgePoint,
+    boolList& isFrozenPoint
 )
 {
     // Calculate new feature edge point positions a priori
@@ -777,9 +779,15 @@ int projectBoundaryPointsToEdgesAndSurfaces
             continue;
         }
 
+        // Freeze very sharp edge points which are not feature edge points
+        if (isSharpEdgePoint[pointI])
+        {
+            isFrozenPoint[pointI] = true;
+        }
+
         // Project to closest tri face in normal or opposite direction
         // -----------------------------------------------------------
-        if (isSmoothingSurfacePoint[pointI])
+        else if (isSmoothingSurfacePoint[pointI])
         {
             const point pointNormal = pointNormals[pointI];
             double searchDistance = 1e-2 * meshMinEdgeLength;

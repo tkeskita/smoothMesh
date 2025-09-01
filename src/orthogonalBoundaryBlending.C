@@ -145,7 +145,8 @@ int calculatePointHopsToBoundary
 int calculateBoundaryPointNormals
 (
     const fvMesh& mesh,
-    pointField& pointNormals
+    pointField& pointNormals,
+    boolList& isSharpEdgePoint
 )
 {
     // Storage for number of boundary faces for points
@@ -200,11 +201,8 @@ int calculateBoundaryPointNormals
         UNDEF_LABEL               // null value
     );
 
-    // Calculate flatness of faces from the length of the accumulated
-    // point normals. Note: This is lightweight to calculate, but
-    // might not be good enough for star points where an unusual
-    // amount of faces meet.
 
+    // Classify and mark very sharp edge points
     forAll(pointNormals, pointI)
     {
         if (nFaces[pointI] < 1)
@@ -212,10 +210,15 @@ int calculateBoundaryPointNormals
 
         const double magNorm = mag(pointNormals[pointI]);
 
-        // Zero the normal vector for baffle edge points
+        // Zero the point normal for very sharp edge points
         if (magNorm < 0.1)
         {
             pointNormals[pointI] = ZERO_VECTOR;
+            isSharpEdgePoint[pointI] = true;
+        }
+        else
+        {
+            isSharpEdgePoint[pointI] = false;
         }
     }
 
@@ -596,18 +599,13 @@ int projectFreeBoundaryPointsToSurfaces
     const boolList& isFeatureEdgePoint,
     const boolList& isCornerPoint,
     const pointField& innerNeighCoords,
-    const double internalSmoothingBlendingFraction
+    const double internalSmoothingBlendingFraction,
+    const boolList& isSharpEdgePoint
 )
 {
     forAll(mesh.points(), pointI)
     {
-        const label nHops = pointHopsToBoundary[pointI];
-        const vector pointNormal = pointNormals[pointI];
-        const vector innerNeighCoord = innerNeighCoords[pointI];
-
-        // Info << "pointI " << pointI << " isFlat " << isFlatPatchPoint[pointI] << " nHops " << nHops << " pointNormal " << pointNormal << " innerNeighCoord " << innerNeighCoord << endl;
-
-        // Skip other than smoothingsurface points
+        // Skip other than appropriate smoothable surface points
         if (! isSmoothingSurfacePoint[pointI])
             continue;
         if (! isConnectedToInternalPoint[pointI])
@@ -616,6 +614,14 @@ int projectFreeBoundaryPointsToSurfaces
             continue;
         if (isCornerPoint[pointI])
             continue;
+        if (isSharpEdgePoint[pointI])
+            continue;
+
+        const label nHops = pointHopsToBoundary[pointI];
+        const vector pointNormal = pointNormals[pointI];
+        const vector innerNeighCoord = innerNeighCoords[pointI];
+
+        // Info << "pointI " << pointI << " isFlat " << isFlatPatchPoint[pointI] << " nHops " << nHops << " pointNormal " << pointNormal << " innerNeighCoord " << innerNeighCoord << endl;
 
         // Sanity checks
         if (nHops != 0)
