@@ -2099,6 +2099,8 @@ int main(int argc, char *argv[])
     // Carry out smoothing iterations
     // ------------------------------
 
+    bool stopIteration = false;
+
     for (label i = 0; i < centroidalIters; ++i)
     {
         // Info << "Starting iteration " << i << endl;
@@ -2261,18 +2263,19 @@ int main(int argc, char *argv[])
         if (res < relTol)
         {
             Info << "Residual reached relTol, stopping." << endl;
-            break;
+            stopIteration = true;
         }
 
         if (i == (centroidalIters - 1))
         {
             Info << "Maximum centroidalIters reached, stopping." << endl;
+            stopIteration = true;
         }
 
         // Increase time
         runTime++;
 
-        if ((((i + 1) % writeInterval) == 0) and (i > 0))
+        if ((stopIteration) or ((((i + 1) % writeInterval) == 0) and (i > 0)))
         {
             // Save mesh
             if (overwrite)
@@ -2287,6 +2290,11 @@ int main(int argc, char *argv[])
                  << endl << endl;
 
             mesh.write();
+        }
+
+        if (stopIteration)
+        {
+            break;
         }
     }
 

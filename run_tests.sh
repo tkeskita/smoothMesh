@@ -40,6 +40,7 @@ function do_test() {
 
 # Tests
 do_test "testcase"
+set -e
 do_test "testcase2"
 do_test "testcase3"
 do_test "testcase4"
