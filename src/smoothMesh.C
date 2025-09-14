@@ -1742,6 +1742,15 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Stop if deltaT is zero
+    if (runTime.deltaTValue() < VSMALL)
+    {
+        FatalError
+            << "Time step (deltaT) value " << runTime.deltaTValue()
+            << " specified in controlDict is too small" << endl
+            << abort(FatalError);
+    }
+
     #ifdef OPENFOAM_ORG
         #include "createMesh.H"
     #else
