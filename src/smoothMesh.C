@@ -2217,6 +2217,7 @@ int main(int argc, char *argv[])
                 isConnectedToInternalPoint,
                 isFeatureEdgePoint,
                 isCornerPoint,
+                pointToInnerPointMap,
                 innerNeighCoords,
                 internalSmoothingBlendingFraction,
                 isSharpEdgePoint

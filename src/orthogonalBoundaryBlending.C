@@ -598,6 +598,7 @@ int projectFreeBoundaryPointsToSurfaces
     const boolList& isConnectedToInternalPoint,
     const boolList& isFeatureEdgePoint,
     const boolList& isCornerPoint,
+    const labelList& pointToInnerPointMap,
     const pointField& innerNeighCoords,
     const double internalSmoothingBlendingFraction,
     const boolList& isSharpEdgePoint
@@ -609,6 +610,8 @@ int projectFreeBoundaryPointsToSurfaces
         if (! isSmoothingSurfacePoint[pointI])
             continue;
         if (! isConnectedToInternalPoint[pointI])
+            continue;
+        if (pointToInnerPointMap[pointI] < 0)
             continue;
         if (isFeatureEdgePoint[pointI])
             continue;
