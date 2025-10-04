@@ -1050,62 +1050,54 @@ int calcMinMaxFinalProjectedAngle
     return 0;
 }
 
-// Find the pair of faces which are part of the cell cellI, and store
-// the face label pair.
+// Find the pair of faces in face index list faceIs which are part of
+// the cell cellI, and store the face label pair.
 
 int findCellFacePair
 (
     const fvMesh& mesh,
     const label cellI,
     const labelList& faceIs,
-    const label nFaces,
+    const labelListList& cellFaces,
     label& f0I,
     label& f1I
 )
 {
-    label face0I = -1;
-    label face1I = -1;
+    label face0I = UNDEF_LABEL;
+    label face1I = UNDEF_LABEL;
     static const int nInternalFaces = mesh.owner().size();
 
-    for (label i = 0; i < nFaces; ++i)
+    forAll (cellFaces[cellI], cellFaceI)
     {
-        const label faceI = faceIs[i];
-        const label ownerI = mesh.owner()[faceI];
+        const label faceI = cellFaces[cellI][cellFaceI];
+        const label faceIsI = findIndex(faceIs, faceI);
 
-        // Guard that neighbour index search to below nInternalFaces
-        // to avoid "Invalid read of size 4" error from valgrind
-
-        label neighI = -1;
-        if (faceI < nInternalFaces)
-            neighI = mesh.neighbour()[faceI];
-
-        if (ownerI == cellI)
+        if (faceIsI >= 0)
         {
-            if (face0I == -1)
-                face0I = i;
+            if (face0I == UNDEF_LABEL)
+            {
+                face0I = faceIsI;
+            }
+            else if (face1I == UNDEF_LABEL)
+            {
+                face1I = faceIsI;
+            }
             else
-                face1I = i;
-        }
-
-        // neighI is not defined for boundary faces, therefore it
-        // needs an extra check
-
-        if ((faceI < nInternalFaces) and (neighI == cellI))
-        {
-            if (face0I == -1)
-                face0I = i;
-            else
-                face1I = i;
+            {
+                FatalError << "Sanity broken, more than two edge faces belong to same cell" << endl << abort(FatalError);
+            }
         }
     }
 
     // Sanity check
-    if ((face0I == -1) or (face1I == -1) or (face0I == face1I))
+    if ((face0I == UNDEF_LABEL) or (face1I == UNDEF_LABEL) or (face0I == face1I) or (cellI == UNDEF_LABEL))
     {
         Info << "faceIs";
-        for (int i = 0; i < nFaces; ++i)
+        for (int i = 0; i < faceIs.size(); ++i)
             Info << " " << faceIs[i];
-        Info << " nInternalFaces " << nInternalFaces << endl;
+        Info << " nInternalFaces " << nInternalFaces;
+        Info << " cellI " << cellI << endl;
+        Info << " cellFaces[cellI] " << cellFaces[cellI] << endl;
         FatalError << "Sanity broken, didn't find face pairs for cell "
                    << cellI << ". Face indices: " << face0I << " " << face1I << endl
                    << abort(FatalError);
@@ -1157,6 +1149,7 @@ vector calcFaceCenter
 int calcMinMaxFaceAngleForEdge
 (
     const fvMesh& mesh,
+    const labelListList& cellFaces,
     const label edgeI,
     double& minFaceAngle,
     double& maxFaceAngle,
@@ -1234,7 +1227,7 @@ int calcMinMaxFaceAngleForEdge
     // Calculate, project and save projected cell center coordinates
     forAll(edgeCells, i)
     {
-        findCellFacePair(mesh, edgeCells[i], faceIs, nFaces, f0Is[i], f1Is[i]);
+        findCellFacePair(mesh, edgeCells[i], faceIs, cellFaces, f0Is[i], f1Is[i]);
         const label cellI = edgeCells[i];
         const vector cellCenter = mesh.C()[cellI];
         const vector cf = cCoords - cellCenter;
@@ -1256,13 +1249,14 @@ int calcMinMaxFaceAngleForEdge
 int calcMinMaxFaceAngleForCurrentMeshEdge
 (
     const fvMesh& mesh,
+    const labelListList& cellFaces,
     const label edgeI,
     double& minFaceAngle,
     double& maxFaceAngle
 )
 {
     static const vector dummy = vector(0, 0, 0);
-    calcMinMaxFaceAngleForEdge(mesh, edgeI, minFaceAngle, maxFaceAngle, -1, dummy, -1, dummy);
+    calcMinMaxFaceAngleForEdge(mesh, cellFaces, edgeI, minFaceAngle, maxFaceAngle, -1, dummy, -1, dummy);
     return 0;
 }
 
@@ -1272,6 +1266,7 @@ int calcMinMaxFaceAngleForCurrentMeshEdge
 int calcCurrentMinMaxFaceAnglesForEdges
 (
     const fvMesh& mesh,
+    const labelListList& cellFaces,
     List<double>& minFaceAnglesForEdges,
     List<double>& maxFaceAnglesForEdges
 )
@@ -1280,7 +1275,7 @@ int calcCurrentMinMaxFaceAnglesForEdges
     {
         double minAngle;
         double maxAngle;
-        calcMinMaxFaceAngleForCurrentMeshEdge(mesh, edgeI, minAngle, maxAngle);
+        calcMinMaxFaceAngleForCurrentMeshEdge(mesh, cellFaces, edgeI, minAngle, maxAngle);
         minFaceAnglesForEdges[edgeI] = minAngle;
         maxFaceAnglesForEdges[edgeI] = maxAngle;
     }
@@ -1295,6 +1290,7 @@ int calcCurrentMinMaxFaceAnglesForEdges
 int calcMinMaxFaceAngleForPoint
 (
     const fvMesh& mesh,
+    const labelListList& cellFaces,
     const int pointI1,
     const vector coords1,
     const int pointI2,
@@ -1314,7 +1310,7 @@ int calcMinMaxFaceAngleForPoint
         double minAngle;
         double maxAngle;
         const label edgeI = mesh.pointEdges()[pointI1][pointEdgeI];
-        calcMinMaxFaceAngleForEdge(mesh, edgeI, minAngle, maxAngle, pointI1, coords1, pointI2, coords2);
+        calcMinMaxFaceAngleForEdge(mesh, cellFaces, edgeI, minAngle, maxAngle, pointI1, coords1, pointI2, coords2);
 
         if (minFaceAngle > minAngle)
             minFaceAngle = minAngle;
@@ -1338,6 +1334,7 @@ int calcMinMaxFaceAngleForPoint
 int restrictFaceAngleDeterioration
 (
     const fvMesh& mesh,
+    const labelListList& cellFaces,
     pointField& origPoints,
     const double minFaceAngleInDegrees,
     const double maxFaceAngleInDegrees,
@@ -1349,7 +1346,7 @@ int restrictFaceAngleDeterioration
     static const size_t nEdges = size_t(mesh.nEdges());
     List<double> currentMinAnglesForEdges(nEdges, GREAT);
     List<double> currentMaxAnglesForEdges(nEdges, GREAT);
-    calcCurrentMinMaxFaceAnglesForEdges(mesh, currentMinAnglesForEdges, currentMaxAnglesForEdges);
+    calcCurrentMinMaxFaceAnglesForEdges(mesh, cellFaces, currentMinAnglesForEdges, currentMaxAnglesForEdges);
 
     // Map face angle information from edges to points
     static const size_t nPoints = size_t(mesh.nPoints());
@@ -1403,7 +1400,7 @@ int restrictFaceAngleDeterioration
         {
             double newMinFaceAngle;
             double newMaxFaceAngle;
-            calcMinMaxFaceAngleForPoint(mesh, pointI, nCoords, -1, nCoords, newMinFaceAngle, newMaxFaceAngle);
+            calcMinMaxFaceAngleForPoint(mesh, cellFaces, pointI, nCoords, -1, nCoords, newMinFaceAngle, newMaxFaceAngle);
 
             if (((newMinFaceAngle < smallAngle) and
                 (newMinFaceAngle < currentMinAnglesForPoints[pointI])) or
@@ -1433,7 +1430,7 @@ int restrictFaceAngleDeterioration
 
             double newMinFaceAngle;
             double newMaxFaceAngle;
-            calcMinMaxFaceAngleForPoint(mesh, pointI, nCoords, neighPointI, neighCoords, newMinFaceAngle, newMaxFaceAngle);
+            calcMinMaxFaceAngleForPoint(mesh, cellFaces, pointI, nCoords, neighPointI, neighCoords, newMinFaceAngle, newMaxFaceAngle);
 
             if (((newMinFaceAngle < smallAngle) and
                 (newMinFaceAngle < currentMinAnglesForPoints[pointI])) or
@@ -1554,6 +1551,55 @@ double calculateResidual
     return maxMaxStep;
 }
 
+
+// Help function to generate lists of cell faces for all cells
+
+int generateCellFaces
+(
+    const fvMesh& mesh,
+    labelListList& cellFaces
+)
+{
+    // Traverse internal faces
+    forAll (mesh.owner(), faceI)
+    {
+        const label cellI = mesh.owner()[faceI];
+        cellFaces[cellI].append(faceI);
+    }
+
+    forAll (mesh.neighbour(), faceI)
+    {
+        const label cellI = mesh.neighbour()[faceI];
+        cellFaces[cellI].append(faceI);
+
+        // Sanity check, can be removed after confirming this never triggers
+        if (cellI < 0)
+        {
+            FatalError << "Found undefined neighbour cellI for faceI " << faceI << endl << abort(FatalError);
+        }
+    }
+
+    // Traverse boundary faces
+    forAll (mesh.boundary(), patchI)
+    {
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+
+        const label startI = mesh.boundary()[patchI].start();
+        // const label endI = startI + mesh.boundary()[patchI].Cf().size();
+
+        forAll (mesh.boundary()[patchI].Cf(), patchFaceI)
+        {
+            const label faceI = startI + patchFaceI;
+            const label& cellI = pp.faceCells()[patchFaceI];
+            if (cellI >= 0)
+            {
+                cellFaces[cellI].append(faceI);
+            }
+        }
+    }
+
+    return 0;
+}
 
 // Help function to check does a file exists on the system
 
@@ -1952,6 +1998,11 @@ int main(int argc, char *argv[])
     generatePointNeighPoints(mesh, pointNeighPoints);
     Info << "Done building pointNeighPoints" << endl << endl;
 
+    // Lists of all cell faces (includes both internal and boundary
+    // faces) for all cells
+    labelListList cellFaces(mesh.nCells());
+    generateCellFaces(mesh, cellFaces);
+
     // Check prerequisites for carrying out boundary layer treatment
     bool doLayerTreatment = false;
     if ((layerPatchIds.size() > 0) and (layerMaxBlendingFraction > SMALL))
@@ -2239,7 +2290,7 @@ int main(int argc, char *argv[])
         if (faceAngleConstraint)
         {
             // Restrict deterioration of face-face angles
-            restrictFaceAngleDeterioration(mesh, newPoints, minAngle, maxAngle, isFrozenPoint);
+            restrictFaceAngleDeterioration(mesh, cellFaces, newPoints, minAngle, maxAngle, isFrozenPoint);
         }
 
         // Synchronize and combine the list of frozen points

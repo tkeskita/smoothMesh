@@ -162,19 +162,20 @@ int calculateBoundaryPointNormals
         if (isA<emptyPolyPatch>(pp))
             continue;
 
-        const label startI = mesh.boundary()[patchI].start();
-        const label endI = startI + mesh.boundary()[patchI].Cf().size();
+        const fvPatch& patch = mesh.boundary()[patchI];
+        const label startI = patch.start();
+        const label endI = patch.size();
 
         // Add inversed unit normal vectors of patch faces to all
         // pointNormals of the face points
-        for (label faceI = startI; faceI < endI; faceI++)
+        for (label faceI = 0; faceI < endI; faceI++)
         {
             // Sf is unit normal vector multiplied by surface area, so
             // need to normalise it before use
-            const vector cSf = mesh.Sf()[faceI];
-            vector Sf = cSf / mag(cSf);
+            const vector cSf = patch.Sf()[faceI];
+            vector Sf = cSf / patch.magSf()[faceI];
 
-            const face& f = mesh.faces()[faceI];
+            const face& f = mesh.faces()[startI + faceI];
             forAll (f, facePointI)
             {
                 const label pointI = f[facePointI];

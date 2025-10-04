@@ -635,6 +635,38 @@ point findIntersection
     return UNDEF_VECTOR;
 }
 
+// Help function to retrieve boundary face center for a given face
+// index. Use of mesh.Cf()[X] for X larger than number of internal
+// faces raises "index out of range" error in Debug build of OpenFOAM
+// (although it does seem to work for Opt build of OpenFOAM).
+// Access to boundary faces is done via patches.
+
+const vector getBoundaryFaceCf
+(
+    const fvMesh& mesh,
+    const label faceI
+)
+{
+    forAll(mesh.boundaryMesh(), patchI)
+    {
+        const fvPatch& patch = mesh.boundary()[patchI];
+        const label startI = patch.start();
+        const label endI = startI + patch.size();
+
+        if (faceI < endI)
+        {
+            const label patchFaceI = faceI - startI;
+            const vector Cf = patch.Cf()[patchFaceI];
+            return Cf;
+        }
+    }
+
+    // Sanity check
+    FatalError << "Could not find Cf for face index " << faceI << endl << abort(FatalError);
+
+    return UNDEF_VECTOR;
+}
+
 // Help function to calculate centroid of boundary point boundary face
 // centers
 
@@ -668,7 +700,7 @@ int calculateSurfaceCentroids
             if (faceI < firstBoundaryFaceI)
                 continue;
 
-            faceCentroids[pointI] += mesh.Cf()[faceI];
+            faceCentroids[pointI] += getBoundaryFaceCf(mesh, faceI);
             ++nFaceCentroids[pointI];
         }
 
