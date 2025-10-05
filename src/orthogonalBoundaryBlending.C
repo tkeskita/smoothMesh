@@ -302,9 +302,12 @@ int propagateOuterNeighInfo
     const label maxIter
 )
 {
+    // Storage of prismatic boundary point labels
+    labelList boundaryPointLabels(mesh.nPoints(), UNDEF_LABEL);
+
     // Debug option to set true for printing edges as a STL file
     // Best visualized as wireframe in Paraview
-    bool exportEdgesAsStl = false;
+    const bool exportEdgesAsStl = false;
     std::ofstream myfile;
     if (exportEdgesAsStl)
     {
@@ -353,6 +356,18 @@ int propagateOuterNeighInfo
                 if ((! isInternalPoint[neighPointI]) and (! isLayerSurfacePoint[neighPointI]))
                     continue;
 
+                // If neighbour boundary point is already connected,
+                // then the boundary point is multiply connected and
+                // is not to be used for layer treatment. Set normal
+                // to UNDEF_VECTOR to mark this.
+                const label prevPointI = findIndex(boundaryPointLabels, neighPointI);
+                if (prevPointI >= 0)
+                {
+                    pointNormals[pointI] = UNDEF_VECTOR;
+                    pointNormals[prevPointI] = UNDEF_VECTOR;
+                    continue;
+                }
+
                 // Mark that the neighbour point is inside this
                 // processor domain
                 isNeighInProc[pointI] = true;
@@ -362,6 +377,9 @@ int propagateOuterNeighInfo
 
                 // Copy the point normal from neighbour to this point
                 pointNormals[pointI] = pointNormals[neighPointI];
+
+                // Mark the boundary point label
+                boundaryPointLabels[pointI] = neighPointI;
 
                 // Debugging: print edges as triangles in STL ascii format,
                 // with fake normal direction
@@ -398,6 +416,18 @@ int propagateOuterNeighInfo
              maxMagSqrEqOp<vector>(),
              UNDEF_VECTOR               // null value
         );
+    }
+
+    // Undo for multiply connected boundary points, since in this case
+    // layer treatment should not be applied (produces skewed results)
+    forAll(mesh.points(), pointI)
+    {
+        if (pointNormals[pointI] == UNDEF_VECTOR)
+        {
+            pointNormals[pointI] = ZERO_VECTOR;
+            isNeighInProc[pointI] = false;
+            pointToOuterPointMap[pointI] = UNDEF_LABEL;
+        }
     }
 
     if (exportEdgesAsStl)
