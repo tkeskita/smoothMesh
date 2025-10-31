@@ -2058,12 +2058,13 @@ int main(int argc, char *argv[])
     // Storage for target corner point coordinates
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
 
-    // Storage for saving feature edge unique string indices
+    // Storage for saving unique edge string indices of feature edges
+    // for edges
     labelList targetEdgeStrings;
-    labelList pointStrings(mesh.nPoints(), UNDEF_LABEL);
 
-    // Closest edge mesh point indices (for feature edge points)
-    labelList closestEdgePointIs(mesh.nPoints(), UNDEF_LABEL);
+    // Storage for saving unique edge string indices of feature edges
+    // for points
+    labelList pointStrings(mesh.nPoints(), UNDEF_LABEL);
 
     // Preparations for boundary point smoothing
     if (doBoundarySmoothing)
@@ -2097,10 +2098,10 @@ int main(int argc, char *argv[])
             << "did not find file " << targetEdgesFileString << "." << endl << endl;
         }
 
-        // Generate indices for target edge mesh strings
-        Info << "Starting to build targetEdgeStrings" << endl;
+        // Generate indices for target edge mesh edge strings
+        Info << endl << "Starting to build targetEdgeStrings" << endl;
         const label nStrings = findEdgeMeshStrings(targetEdgeStrings, targetEdges);
-        Info << "Detected number of edge mesh strings: " << nStrings + 1 << endl << endl;
+        Info << "Detected number of target edge mesh strings: " << nStrings + 1 << endl << endl;
     }
     else
     {
@@ -2213,19 +2214,23 @@ int main(int argc, char *argv[])
 
         if (doBoundarySmoothing)
         {
-            // Find initial closest edge points (for feature edge snapping)
+            // Find edge string indices for points (used in feature edge
+            // snapping)
+            // TODO: Move outside main loop
             if (i == 0)
             {
                 forAll(mesh.points(), pointI)
                 {
-                    if (isFeatureEdgePoint[pointI])
+                    if (! isFeatureEdgePoint[pointI])
                     {
-                        label newClosestEdgePointI = UNDEF_LABEL;
-                        label pointStringI = UNDEF_LABEL;
-                        findClosestEdgeMeshPointIndex(mesh.points()[pointI], targetEdges, false, true, false, UNDEF_LABEL, targetEdgeStrings, newClosestEdgePointI, pointStringI);
-                        closestEdgePointIs[pointI] = newClosestEdgePointI;
-                        pointStrings[pointI] = pointStringI;
+                        continue;
                     }
+
+                    point dummyPoint;
+                    label dummy, dummy2;
+                    label pointStringI = UNDEF_LABEL;
+                    findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, dummyPoint, dummy, pointStringI, dummy2);
+                    pointStrings[pointI] = pointStringI;
                 }
             }
 
@@ -2243,7 +2248,6 @@ int main(int argc, char *argv[])
                 isCornerPoint,
                 cornerPoints,
                 targetEdges,
-                closestEdgePointIs,
                 surf,
                 tree,
                 meshMinEdgeLength,

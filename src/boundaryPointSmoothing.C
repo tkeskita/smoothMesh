@@ -24,69 +24,186 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Find index of closest point in an edge mesh. Search may be limited
-// to corner points only and/or to required string index number. Saves
-// the closest edge mesh index to closestI and the edge string index
-// of that point to closestStringI.
+// Help function to project point coordinates to a given edge in an
+// edge mesh. Does not allow extrapolation over the edge end points
+// (clips projection at edge end points). Additionally saves edge mesh
+// point index to edgePointI, but only if the freely projected point
+// (without clipping at edge ends) coincides with the edge mesh point.
 
-int findClosestEdgeMeshPointIndex
+int projectPointToEdge
 (
-    const point pt,
+    const point& pt,
     const edgeMesh& em,
-    const bool mustBeCorner,
-    const bool mustNotBeCorner,
-    const bool matchTargetEdgeStrings,
-    const label requiredStringI,
-    const labelList& targetEdgeStrings,
-    label& closestI,
-    label& closestStringI
+    const label edgeI,
+    point& projPoint,
+    label& edgePointI
 )
 {
-    // TODO: Replace linear search with an octree search for efficiency
+    edgePointI = UNDEF_LABEL;
 
-    scalar distance = GREAT;
-    closestI = UNDEF_LABEL;
-    closestStringI = UNDEF_LABEL;
+    const label startPointI = em.edges()[edgeI][0];
+    const label endPointI = em.edges()[edgeI][1];
+
+    const point startPoint = em.points()[startPointI];
+    const point endPoint = em.points()[endPointI];
+
+    const double edgeLength = mag(endPoint - startPoint);
+    if (edgeLength < DISTANCE_TOLERANCE)
+    {
+        FatalError << "Too small edge length " << edgeLength << " in edge mesh between points " << startPoint << " and " << endPoint << endl << abort(FatalError);
+    }
+
+    // Project on the edge
+    const point c2pt = pt - startPoint;
+    const point edgeVec = endPoint - startPoint;
+    const double normalizedDotProd = (c2pt & edgeVec) / sqr(edgeLength);
+    const point testProjPoint = startPoint + normalizedDotProd * edgeVec;
+
+    //if (mag(pt - vector(1,1,1)) < 1e-6)
+    //    Info << " edgeI " << edgeI << " startPoint " << startPoint <<  " endPoint " << endPoint << " c2pt " << c2pt << " edgeVec " << edgeVec << " normalizedDotProd " << normalizedDotProd << " projPoint " << startPoint + normalizedDotProd * edgeVec << endl;
+
+    // Clip at start point
+    if (normalizedDotProd <= DISTANCE_TOLERANCE)
+    {
+        projPoint = startPoint;
+        if (mag(testProjPoint - startPoint) <= DISTANCE_TOLERANCE)
+        {
+            edgePointI = startPointI;
+        }
+    }
+
+    // Clip at end point
+    else if (normalizedDotProd >= (1.0 - DISTANCE_TOLERANCE))
+    {
+        projPoint = endPoint;
+        if (mag(testProjPoint - endPoint) <= DISTANCE_TOLERANCE)
+        {
+            edgePointI = endPointI;
+        }
+    }
+
+    // Point is on the edge
+    else
+    {
+        projPoint = testProjPoint;
+    }
+
+    return 0;
+}
+
+
+// Help function to find the index of the closest corner point in an
+// edge mesh.
+
+label findClosestEdgeMeshCornerPointIndex
+(
+    const point pt,
+    const edgeMesh& em
+)
+{
+    scalar distance(GREAT);
+    label closestPointI = UNDEF_LABEL;
 
     forAll(em.points(), pointI)
     {
-        // Disregard non-corner points if it's required
-        if ((mustBeCorner) and (em.pointEdges()[pointI].size() == 2))
+        // Skip non-corner points
+        if (em.pointEdges()[pointI].size() == 2)
         {
             continue;
         }
 
-        // Disregard corner point if it's required
-        if ((mustNotBeCorner) and (em.pointEdges()[pointI].size() != 2))
-        {
-            continue;
-        }
+        const point c = em.points()[pointI];
+        const double testDistance = mag(pt - c);
 
-        // Disregard other edge strings if matching string index is
-        // required
-        if ((matchTargetEdgeStrings) and (targetEdgeStrings[pointI] != requiredStringI))
-        {
-            continue;
-        }
-
-        const point p = em.points()[pointI];
-        const scalar testDistance = mag(pt - p);
         if (testDistance < distance)
         {
             distance = testDistance;
-            closestI = pointI;
-            closestStringI = targetEdgeStrings[pointI];
+            closestPointI = pointI;
         }
     }
 
-    if (closestI == UNDEF_LABEL)
+    if (closestPointI == UNDEF_LABEL)
     {
-        FatalError << "Internal sanity check failed: Did not find any closest edge mesh points near " << pt << endl << abort(FatalError);
+        FatalError << "Did not find any eligible corner points in edge mesh" << endl << abort(FatalError);
     }
 
-    if ((mustNotBeCorner) and (closestStringI == UNDEF_LABEL))
+    return closestPointI;
+}
+
+// Help function to project an arbitrary point pt onto the closest
+// edge in an edge mesh. Returns projected point coordinates and
+// various information from the closest edge.
+//
+// Search of edges eligible for projection can be optionally limited
+// to a required edge string index number requiredStringI. Value -1
+// for requiredStringI means that all edges are included in the
+// search.
+//
+// Output variables are:
+//
+// - projPoint: the point location on the closest edge
+// - closestEdgeI: the closest edge mesh edge index
+// - closestEdgeStringI: the string index of the closest edge.
+//   If projected point is exactly on an edge end (e.g. at a
+//   corner point), then largest string index is returned.
+// - closestEdgePointI: index of edge mesh point index, if the
+//   freely projected point (not clipped at end) coincides with an
+//   edge mesh point
+
+int findClosestEdgeInfo
+(
+    const point& pt,
+    const edgeMesh& em,
+    const label requiredStringI,
+    const labelList& targetEdgeStrings,
+    point& projPoint,
+    label& closestEdgeI,
+    label& closestEdgeStringI,
+    label& closestEdgePointI
+)
+{
+    scalar distance(GREAT);
+    projPoint = UNDEF_VECTOR;
+    closestEdgeI = UNDEF_LABEL;
+    closestEdgeStringI = UNDEF_LABEL;
+    closestEdgePointI = UNDEF_LABEL;
+
+    forAll(em.edges(), edgeI)
     {
-        FatalError << "Internal sanity check failed: Did not find string index for edge mesh points near " << pt << endl << abort(FatalError);
+        // Skip edge if string index is wrong
+        if ((requiredStringI >= 0) and (targetEdgeStrings[edgeI] != requiredStringI))
+        {
+            continue;
+        }
+
+        // Project to edge
+        point testProjPoint;
+        label edgePointI;
+        projectPointToEdge(pt, em, edgeI, testProjPoint, edgePointI);
+        const scalar testDistance = mag(testProjPoint - pt);
+
+        // Save if projected point is closest 
+        if (testDistance < distance)
+        {
+            distance = testDistance;
+            projPoint = testProjPoint;
+            closestEdgeI = edgeI;
+            closestEdgePointI = edgePointI;
+
+            // Only set closest edge string index if the edge mesh size
+            // matches string list size. Assumption here is that edge
+            // mesh em is same (or at least very similar) to the
+            // target edge mesh, so indices are correct.
+            if (em.edges().size() == targetEdgeStrings.size())
+            {
+                closestEdgeStringI = targetEdgeStrings[edgeI];
+            }
+        }
+    }
+
+    if ((requiredStringI >= 0) and (closestEdgeStringI == UNDEF_LABEL))
+    {
+        FatalError << "Internal sanity check failed: Did not find any edges with string index " << requiredStringI << endl << abort(FatalError);
     }
 
     return 0;
@@ -169,24 +286,29 @@ int classifyBoundaryPoints
                 if ((initEdges.points().size() > 0) and (targetEdges.points().size() > 0))
                 {
                     const point pt = mesh.points()[pointI];
-                    label closestInitPointI = UNDEF_LABEL;
-                    label dummy;
-                    findClosestEdgeMeshPointIndex(pt, initEdges, false, false, false, UNDEF_LABEL, targetEdgeStrings, closestInitPointI, dummy);
-                    const point closestInitPoint = initEdges.points()[closestInitPointI];
+                    point projPoint;
+                    label dummy, dummy2;
+                    label closestEdgePointI = UNDEF_LABEL;
+                    findClosestEdgeInfo(pt, initEdges, -1, targetEdgeStrings, projPoint, dummy, dummy2, closestEdgePointI);
+
+                    //if (mag(pt - vector(1, 1, 1)) < 1e-6)
+                    //    Info << "pointI " << pointI << " at " << pt << " projPoint" << projPoint << " closestEdgePointI " << closestEdgePointI << endl;
 
                     // Corner points
-                    if ((initEdges.pointEdges()[closestInitPointI].size() != 2)
-                        and (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE))
+                    if ((closestEdgePointI >= 0) and
+                        (initEdges.pointEdges()[closestEdgePointI].size() != 2))
                     {
                         isCornerPoint[pointI] = true;
-                        label closestCornerPointI = UNDEF_LABEL;
-                        findClosestEdgeMeshPointIndex(closestInitPoint, targetEdges, true, false, false, UNDEF_LABEL, targetEdgeStrings, closestCornerPointI, dummy);
-                        cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
                         nCornerPoints++;
+
+                        // Find and save the target coordinate for this corner
+                        const label closestCornerPointI = findClosestEdgeMeshCornerPointIndex(pt, targetEdges);
+                        cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
+                        // Info << mesh.points()[pointI][0] << "," << mesh.points()[pointI][1] << "," << mesh.points()[pointI][2] << endl;
                     }
 
                     // Feature edges
-                    else if (mag(pt - closestInitPoint) < DISTANCE_TOLERANCE)
+                    else if (mag(pt - projPoint) < DISTANCE_TOLERANCE)
                     {
                         isFeatureEdgePoint[pointI] = true;
                         nFeatureEdgePoints++;
@@ -240,121 +362,118 @@ int classifyBoundaryPoints
     return 0;
 }
 
-// Help function to find unique (no corner points) neighbour points of
-// an edge mesh point
+// Help function to get indices of continous edge mesh edges connected
+// to a given edge.
 
-int findNeighborEdgeMeshPoints
+int findContinuousEdgeMeshEdges
 (
     const edgeMesh& em,
-    const label pointI,
-    label& neighI1,
-    label& neighI2
+    const label edgeI,
+    label& neighEdgeI1,
+    label& neighEdgeI2
 )
 {
-    neighI1 = UNDEF_LABEL;
-    neighI2 = UNDEF_LABEL;
+    neighEdgeI1 = UNDEF_LABEL;
+    neighEdgeI2 = UNDEF_LABEL;
 
-    const label nEdges = em.pointEdges()[pointI].size();
+    // Process first end point
+    const label pointI1 = em.edges()[edgeI][0];
+    const label nEdges1 = em.pointEdges()[pointI1].size();
 
-    // Do nothing if this point has more than two connected
-    // edges (e.g. corner point)
-    if (nEdges > 2)
+    if (nEdges1 == 2)
     {
-        return 0;
+        label edgeI1 = em.pointEdges()[pointI1][0];
+        if (edgeI1 == edgeI)
+        {
+            edgeI1 = em.pointEdges()[pointI1][1];
+        }
+        neighEdgeI1 = edgeI1;
     }
 
-    // Traverse first edge
-    if (nEdges > 0)
-    {
-        const label edgeI1 = em.pointEdges()[pointI][0];
-        label endPointI1 = em.edges()[edgeI1][0];
-        if (endPointI1 == pointI)
-        {
-            endPointI1 = em.edges()[edgeI1][1];
-        }
-        neighI1 = endPointI1;
-    }
+    // Process second end point
+    const label pointI2 = em.edges()[edgeI][1];
+    const label nEdges2 = em.pointEdges()[pointI2].size();
 
-    // Traverse second edge
-    if (nEdges > 1)
+    if (nEdges2 == 2)
     {
-        const label edgeI2 = em.pointEdges()[pointI][1];
-        label endPointI2 = em.edges()[edgeI2][0];
-        if (endPointI2 == pointI)
+        label edgeI2 = em.pointEdges()[pointI2][0];
+        if (edgeI2 == edgeI)
         {
-            endPointI2 = em.edges()[edgeI2][1];
+            edgeI2 = em.pointEdges()[pointI2][1];
         }
-        neighI2 = endPointI2;
+        neighEdgeI2 = edgeI2;
     }
 
     return 0;
 }
 
 // Help function to assign a string index number to current edge mesh
-// point and recurse over all neighbor points in the string
+// edge and recursively assing the same index to all neighbor edges in
+// the string
 
-int stringifyEdgeMeshPoints
+int stringifyEdgeMeshEdges
 (
     const edgeMesh& em,
     labelList& targetEdgeStrings,
-    const label pointI,
-    const label neighI1,
-    const label neighI2,
+    const label edgeI,
+    const label neighEdgeI1,
+    const label neighEdgeI2,
     label& nStrings
 )
 {
-    // Find string indices of this point and neighbour points
-    const label stringI0 = targetEdgeStrings[pointI];
+    // Find string indices of this edge and neighbor edges
+    const label stringI0 = targetEdgeStrings[edgeI];
 
     label stringI1 = UNDEF_LABEL;
-    if (neighI1 != UNDEF_LABEL)
+    if (neighEdgeI1 != UNDEF_LABEL)
     {
-        stringI1 = targetEdgeStrings[neighI1];
+        stringI1 = targetEdgeStrings[neighEdgeI1];
     }
 
     label stringI2 = UNDEF_LABEL;
-    if (neighI2 != UNDEF_LABEL)
+    if (neighEdgeI2 != UNDEF_LABEL)
     {
-        stringI2 = targetEdgeStrings[neighI2];
+        stringI2 = targetEdgeStrings[neighEdgeI2];
     }
 
     const label maxStringI = max(max(stringI0, stringI1), stringI2);
 
-    // New string, get new string index value
+    // Neighbors or self has no string index, generate a new value
     if (maxStringI == UNDEF_LABEL)
     {
         ++nStrings;
-        targetEdgeStrings[pointI] = nStrings;
+        targetEdgeStrings[edgeI] = nStrings;
     }
+
     // Neighbor or self already has a string value assigned
     else if (stringI0 == UNDEF_LABEL)
     {
-        targetEdgeStrings[pointI] = maxStringI;
+        targetEdgeStrings[edgeI] = maxStringI;
     }
 
-    // Recurse into neighbour points if they don't already have a
+    // Recurse into neighbour edges if they don't already have a
     // string index and if the neighbor is not a corner
-    if ((neighI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL) and (em.pointEdges()[neighI1].size() == 2))
+    if ((neighEdgeI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL) and (em.pointEdges()[neighEdgeI1].size() == 2))
     {
-        label neighNeighI1(UNDEF_LABEL);
-        label neighNeighI2(UNDEF_LABEL);
-        findNeighborEdgeMeshPoints(em, neighI1, neighNeighI1, neighNeighI2);
-        stringifyEdgeMeshPoints(em, targetEdgeStrings, neighI1, neighNeighI1, neighNeighI2, nStrings);
+        label neighNeighEdgeI1(UNDEF_LABEL);
+        label neighNeighEdgeI2(UNDEF_LABEL);
+        findContinuousEdgeMeshEdges(em, neighEdgeI1, neighNeighEdgeI1, neighNeighEdgeI2);
+        stringifyEdgeMeshEdges(em, targetEdgeStrings, neighEdgeI1, neighNeighEdgeI1, neighNeighEdgeI2, nStrings);
     }
 
-    if ((neighI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL) and (em.pointEdges()[neighI2].size() == 2))
+    if ((neighEdgeI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL) and (em.pointEdges()[neighEdgeI2].size() == 2))
     {
-        label neighNeighI1(UNDEF_LABEL);
-        label neighNeighI2(UNDEF_LABEL);
-        findNeighborEdgeMeshPoints(em, neighI2, neighNeighI1, neighNeighI2);
-        stringifyEdgeMeshPoints(em, targetEdgeStrings, neighI2, neighNeighI1, neighNeighI2, nStrings);
+        label neighNeighEdgeI1(UNDEF_LABEL);
+        label neighNeighEdgeI2(UNDEF_LABEL);
+        findContinuousEdgeMeshEdges(em, neighEdgeI2, neighNeighEdgeI1, neighNeighEdgeI2);
+        stringifyEdgeMeshEdges(em, targetEdgeStrings, neighEdgeI2, neighNeighEdgeI1, neighNeighEdgeI2, nStrings);
     }
 
     return 0;
 }
 
 
-// Primary help function to start identification and labeling of
+// Primary help function to start the identification and labeling of
 // continuous edge strings in an edge mesh
 
 int findEdgeMeshStrings
@@ -367,27 +486,23 @@ int findEdgeMeshStrings
     label nStrings(UNDEF_LABEL);
 
     // Initialize string list
-    targetEdgeStrings.resize(em.points().size());
-    forAll (em.points(), pointI)
+    targetEdgeStrings.resize(em.edges().size());
+    forAll (em.edges(), edgeI)
     {
-        targetEdgeStrings[pointI] = UNDEF_LABEL;
+        targetEdgeStrings[edgeI] = UNDEF_LABEL;
     }
 
-    // Process all edge mesh points
-    forAll (em.points(), pointI)
+    // Process all edge mesh edges
+    forAll (em.edges(), edgeI)
     {
-        // Skip point if string index is already assigned
-        if (targetEdgeStrings[pointI] >= 0)
+        // Skip edge if string index is already assigned
+        if (targetEdgeStrings[edgeI] >= 0)
             continue;
 
-        // Skip corner points
-        if (em.pointEdges()[pointI].size() != 2)
-            continue;
-
-        label neighI1(UNDEF_LABEL);
-        label neighI2(UNDEF_LABEL);
-        findNeighborEdgeMeshPoints(em, pointI, neighI1, neighI2);
-        stringifyEdgeMeshPoints(em, targetEdgeStrings, pointI, neighI1, neighI2, nStrings);
+        label neighEdgeI1(UNDEF_LABEL);
+        label neighEdgeI2(UNDEF_LABEL);
+        findContinuousEdgeMeshEdges(em, edgeI, neighEdgeI1, neighEdgeI2);
+        stringifyEdgeMeshEdges(em, targetEdgeStrings, edgeI, neighEdgeI1, neighEdgeI2, nStrings);
     }
 
     return nStrings;
@@ -422,78 +537,20 @@ labelList findNeighborSurfacePoints
     return neighIs;
 }
 
-// Help function to project point coordinates to closest of the two
-// edges connected to the closest point index in the edge mesh
 
-point projectPointToClosestEdge
-(
-    const point pt,
-    const edgeMesh& em,
-    const label closestEdgePointI
-)
-{
-    const point closestPoint = em.points()[closestEdgePointI];
-    const point c2pt = pt - closestPoint;
-
-    vector deltaVec(ZERO_VECTOR);
-
-    const label edgeI1 = em.pointEdges()[closestEdgePointI][0];
-    label endPointI1 = em.edges()[edgeI1][0];
-    if (endPointI1 == closestEdgePointI)
-    {
-        endPointI1 = em.edges()[edgeI1][1];
-    }
-
-    const label edgeI2 = em.pointEdges()[closestEdgePointI][1];
-    label endPointI2 = em.edges()[edgeI2][0];
-    if (endPointI2 == closestEdgePointI)
-    {
-        endPointI2 = em.edges()[edgeI2][1];
-    }
-
-    const point endPoint1 = em.points()[endPointI1];
-    const point edgeVec1 = (endPoint1 - closestPoint) / mag(endPoint1 - closestPoint);
-    const double dotProd1 = c2pt & edgeVec1;
-    const point projPoint1 = dotProd1 * edgeVec1;
-
-    const point endPoint2 = em.points()[endPointI2];
-    const point edgeVec2 = (endPoint2 - closestPoint) / mag(endPoint2 - closestPoint);
-    const double dotProd2 = c2pt & edgeVec2;
-    const point projPoint2 = dotProd2 * edgeVec2;
-
-    if ((dotProd1 > 1.0) or (dotProd2 > 1.0))
-    {
-        FatalError << "Error: Detected extrapolation in feature edge projection of point " << pt << " at closestEdgePointI " << closestEdgePointI << ". One reason might be that the target feature edges are too far away from initial feature edges, so that the mapping from intial to target (by edge point proximity) fails." << endl << abort(FatalError);
-    }
-
-    if (dotProd1 >= 0.0 and dotProd2 >= 0.0)
-    {
-        return closestPoint;
-    }
-    else if (dotProd1 >= 0.0 and dotProd2 < 0.0)
-    {
-        return closestPoint + projPoint1;
-    }
-    else if (dotProd1 < 0.0 and dotProd2 >= 0.0)
-    {
-        return closestPoint + projPoint2;
-    }
-
-    return closestPoint;
-}
-
-// Calculate new feature edge point positions and synchronize.
-// Projects neighboring surface mesh points to closest
-// feature edges and use the median as a new feature edge point.
+// Calculate new feature edge point positions and synchronizes among
+// processors. Projects neighboring surface mesh points to closest
+// feature edges and uses the median as a new feature edge point.
 
 int calculateFeatureEdgeProjections
 (
     const fvMesh& mesh,
     const edgeMesh& em,
-    const labelList& closestEdgePointIs,
     const boolList& isInternalPoint,
     const boolList& isFeatureEdgePoint,
     const boolList& isCornerPoint,
+    const labelList& targetEdgeStrings,
+    const labelList& pointStrings,
     vectorList& featureEdgeProjections,
     labelList& nFeatureEdgeProjections
 )
@@ -505,14 +562,16 @@ int calculateFeatureEdgeProjections
             continue;
 
         // Find the valid surface neighbor points
-        const labelList neighIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
+        const labelList neighPointIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
 
-        // Project and accumulate data
-        forAll (neighIs, neighI)
+        // Project neighbor points to target edges and add projected point
+        forAll (neighPointIs, neighPointI)
         {
-            const label closestEdgePointI = closestEdgePointIs[pointI];
-            const point neighPoint = mesh.points()[neighIs[neighI]];
-            const point projPoint = projectPointToClosestEdge(neighPoint, em, closestEdgePointI);
+            const label pointStringI = pointStrings[pointI];
+            const point neighPoint = mesh.points()[neighPointIs[neighPointI]];
+            point projPoint;
+            label dummy, dummy2, dummy3;
+            findClosestEdgeInfo(neighPoint, em, pointStringI, targetEdgeStrings, projPoint, dummy, dummy2, dummy3);
             featureEdgeProjections[pointI] += projPoint;
             ++nFeatureEdgeProjections[pointI];
         }
@@ -743,7 +802,6 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const boolList& isCornerPoint,
     const vectorList& cornerPoints,
     const edgeMesh& targetEdges,
-    labelList& closestEdgePointIs,
     const triSurface& surf,
     const indexedOctree<treeDataTriSurface>& tree,
     const double meshMinEdgeLength,
@@ -756,7 +814,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
     // Calculate new feature edge point positions a priori
     vectorList featureEdgeProjections(mesh.nPoints(), ZERO_VECTOR);
     labelList nFeatureEdgeProjections(mesh.nPoints(), 0);
-    calculateFeatureEdgeProjections(mesh, targetEdges, closestEdgePointIs, isInternalPoint, isFeatureEdgePoint, isCornerPoint, featureEdgeProjections, nFeatureEdgeProjections);
+    calculateFeatureEdgeProjections(mesh, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, targetEdgeStrings, pointStrings, featureEdgeProjections, nFeatureEdgeProjections);
 
     // Calculate boundary surface face centroids a priori
     vectorList faceCentroids(mesh.nPoints(), ZERO_VECTOR);
@@ -787,27 +845,8 @@ int projectBoundaryPointsToEdgesAndSurfaces
             // Project neighboring surface mesh points to closest
             // feature edges and use the median as a new feature edge point
 
-            const vector targetPoint = featureEdgeProjections[pointI] / double(nFeatureEdgeProjections[pointI]);
-            const label closestEdgePointI = closestEdgePointIs[pointI];
-            const point newPoint = projectPointToClosestEdge(targetPoint, targetEdges, closestEdgePointI);
+            const vector newPoint = featureEdgeProjections[pointI] / double(nFeatureEdgeProjections[pointI]);
             newPoints[pointI] = newPoint;
-
-            // Update closest edge mesh point index if needed
-            label newClosestEdgePointI;
-            label newStringI = UNDEF_LABEL;
-            findClosestEdgeMeshPointIndex(newPoint, targetEdges, false, true, true, pointStrings[pointI], targetEdgeStrings, newClosestEdgePointI, newStringI);
-
-            if (newClosestEdgePointI != closestEdgePointI)
-            {
-                closestEdgePointIs[pointI] = newClosestEdgePointI;
-                // Info << "newClosestEdgePoint for " << pointI << " is " << newClosestEdgePointI << endl;
-            }
-
-            if (pointStrings[pointI] != newStringI)
-            {
-                FatalError << "Internal sanity check failed: String number changed for pointI " << pointI << " from " << pointStrings[pointI] << " to " << newStringI << endl << abort(FatalError);
-            }
-
             continue;
         }
 
