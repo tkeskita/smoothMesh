@@ -2157,6 +2157,26 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Find edge string indices for points (used in feature edge
+    // snapping)
+    if (doBoundarySmoothing)
+    {
+        forAll(mesh.points(), pointI)
+        {
+            if (! isFeatureEdgePoint[pointI])
+            {
+                continue;
+            }
+
+            point dummyPoint;
+            label dummy, dummy2;
+            label pointStringI = UNDEF_LABEL;
+            findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, dummyPoint, dummy, pointStringI, dummy2);
+            pointStrings[pointI] = pointStringI;
+        }
+    }
+
+
     // Carry out smoothing iterations
     // ------------------------------
 
@@ -2214,26 +2234,6 @@ int main(int argc, char *argv[])
 
         if (doBoundarySmoothing)
         {
-            // Find edge string indices for points (used in feature edge
-            // snapping)
-            // TODO: Move outside main loop
-            if (i == 0)
-            {
-                forAll(mesh.points(), pointI)
-                {
-                    if (! isFeatureEdgePoint[pointI])
-                    {
-                        continue;
-                    }
-
-                    point dummyPoint;
-                    label dummy, dummy2;
-                    label pointStringI = UNDEF_LABEL;
-                    findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, dummyPoint, dummy, pointStringI, dummy2);
-                    pointStrings[pointI] = pointStringI;
-                }
-            }
-
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
             // Project boundary points
