@@ -1621,16 +1621,12 @@ int main(int argc, char *argv[])
         "Move internal mesh points to increase mesh quality"
     );
 
-    #include "addRegionOption.H"
-    #include "addOverwriteOption.H"
-
     argList::addOption
     (
         "time",
         "time",
         "Specify the time (default is latest)"
     );
-
 
     argList::addOption
     (
@@ -2157,8 +2153,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Find edge string indices for points (used in feature edge
-    // snapping)
+    // Find target edge string indices for points (used in feature
+    // edge snapping)
     if (doBoundarySmoothing)
     {
         forAll(mesh.points(), pointI)
@@ -2262,7 +2258,7 @@ int main(int argc, char *argv[])
 
             // Use the locations of first cell layer points for
             // projecting points to boundary surfaces
-            projectFreeBoundaryPointsToSurfaces
+            projectPrismaticInternalPointsToSurfaces
             (
                 mesh,
                 newPoints,

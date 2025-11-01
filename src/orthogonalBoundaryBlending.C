@@ -615,11 +615,11 @@ int blendWithOrthogonalPoints
     return 0;
 }
 
-// Projection of boundary points not part of orthogonal
-// smoothing to surfaces. Projection is done from the first layer
-// prismatic points orthogonally towards boundary.
+// Projection of prismatic internal points to surfaces. Projection is
+// done from the first layer prismatic points orthogonally towards
+// boundary.
 
-int projectFreeBoundaryPointsToSurfaces
+int projectPrismaticInternalPointsToSurfaces
 (
     const fvMesh& mesh,
     pointField& newPoints,

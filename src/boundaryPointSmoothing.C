@@ -597,36 +597,6 @@ int calculateFeatureEdgeProjections
     return 0;
 }
 
-// Help function to check if given edge mesh point indices are
-// neighbors
-
-bool isEdgePointNeighbor
-(
-    const edgeMesh& em,
-    const label pointI1,
-    const label pointI2
-)
-{
-    forAll(em.pointEdges()[pointI1], pointEdgeI)
-    {
-        const label edgeI = em.pointEdges()[pointI1][pointEdgeI];
-        const label endPointI1 = em.edges()[edgeI][0];
-        const label endPointI2 = em.edges()[edgeI][1];
-
-        if ((endPointI1 == pointI1) and (endPointI2 == pointI2))
-        {
-            return true;
-        }
-
-        if ((endPointI1 == pointI2) and (endPointI2 == pointI1))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 
 // Find intersection with triSurface faces in point normal direction
 
