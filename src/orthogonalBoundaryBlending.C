@@ -10,11 +10,7 @@ Description
 
 #include "fvMesh.H"
 #include <fstream> // for debug printing only (exportEdgesAsStl)
-
-// Macros for value definitions
-#define UNDEF_LABEL -1
-#define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
-#define ZERO_VECTOR vector(0, 0, 0)
+#include "smoothMeshCommon.H"
 
 using namespace Foam;
 

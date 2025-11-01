@@ -7,17 +7,7 @@ Description
 \*---------------------------------------------------------------------------*/
 
 #include "fvMesh.H"
-
-// Macros for value definitions
-#define UNDEF_LABEL -1
-#define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
-#define ZERO_VECTOR vector(0, 0, 0)
-#define ZERO 0.0
-
-// Minimum distance for detection of points by coordinates.
-// The value is fairly large to allow single precision point data from
-// third party applications.
-#define DISTANCE_TOLERANCE 1e-6
+#include "smoothMeshCommon.H"
 
 using namespace Foam;
 

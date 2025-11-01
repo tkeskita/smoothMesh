@@ -25,21 +25,7 @@ Description
 #include "edgeMesh.H"
 #include <fstream> // for fileExists
 
-// Macros for value definitions
-#define UNDEF_LABEL -1
-#define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
-#define ZERO_VECTOR vector(0, 0, 0)
-
-// Boolean for developer mode. Set to false to use bleeding edge
-// work in progress features.
-// #define USE_STABLE_FEATURES_ONLY true
-
-// #include <typeinfo>
-// Typeinfo is needed only for getting types while debugging, for example:
-// Info << "Type is " << typeid(x).name() << endl;
-// Use terminal command like this to demangle the mangled name:
-// c++filt -t N4Foam4faceE
-
+#include "smoothMeshCommon.H"
 #include "orthogonalBoundaryBlending.C"
 #include "boundaryPointSmoothing.C"
 
