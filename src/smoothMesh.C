@@ -25,21 +25,7 @@ Description
 #include "edgeMesh.H"
 #include <fstream> // for fileExists
 
-// Macros for value definitions
-#define UNDEF_LABEL -1
-#define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
-#define ZERO_VECTOR vector(0, 0, 0)
-
-// Boolean for developer mode. Set to false to use bleeding edge
-// work in progress features.
-// #define USE_STABLE_FEATURES_ONLY true
-
-// #include <typeinfo>
-// Typeinfo is needed only for getting types while debugging, for example:
-// Info << "Type is " << typeid(x).name() << endl;
-// Use terminal command like this to demangle the mangled name:
-// c++filt -t N4Foam4faceE
-
+#include "smoothMeshCommon.H"
 #include "orthogonalBoundaryBlending.C"
 #include "boundaryPointSmoothing.C"
 
@@ -1485,17 +1471,26 @@ labelList getPatchIdsForOption
 }
 
 
-// Calculate and return the minimum edge length of the current mesh
+// Calculate and return mesh statistics: the minimum and maximum edge
+// length of the current mesh, and the total perimeter of the mesh,
+// calculated as a sum of bounding box side lengths
 
-int getMeshMinMaxEdgeLength
+int getMeshStats
 (
     const fvMesh& mesh,
     double& minEdgeLength,
-    double& maxEdgeLength
+    double& maxEdgeLength,
+    double& meshPerimeter
 )
 {
     double minLength = VGREAT;
     double maxLength = 0.0;
+    double bbMinX = VGREAT;
+    double bbMaxX = -VGREAT;
+    double bbMinY = VGREAT;
+    double bbMaxY = -VGREAT;
+    double bbMinZ = VGREAT;
+    double bbMaxZ = -VGREAT;
 
     forAll(mesh.edges(), edgeI)
     {
@@ -1512,13 +1507,36 @@ int getMeshMinMaxEdgeLength
             minLength = length;
         if (length > maxLength)
             maxLength = length;
+
+        // Bounding box update
+        if (startCoords[0] < bbMinX) { bbMinX = startCoords[0]; }
+        if (startCoords[1] < bbMinY) { bbMinY = startCoords[1]; }
+        if (startCoords[2] < bbMinZ) { bbMinZ = startCoords[2]; }
+        if (startCoords[0] > bbMaxX) { bbMaxX = startCoords[0]; }
+        if (startCoords[1] > bbMaxY) { bbMaxY = startCoords[1]; }
+        if (startCoords[2] > bbMaxZ) { bbMaxZ = startCoords[2]; }
+
+        if (endCoords[0] < bbMinX) { bbMinX = endCoords[0]; }
+        if (endCoords[1] < bbMinY) { bbMinY = endCoords[1]; }
+        if (endCoords[2] < bbMinZ) { bbMinZ = endCoords[2]; }
+        if (endCoords[0] > bbMaxX) { bbMaxX = endCoords[0]; }
+        if (endCoords[1] > bbMaxY) { bbMaxY = endCoords[1]; }
+        if (endCoords[2] > bbMaxZ) { bbMaxZ = endCoords[2]; }
     }
 
     const double meshMinLength = returnReduce(minLength, minOp<double>());
     const double meshMaxLength = returnReduce(maxLength, maxOp<double>());
+    const double meshBbMinX = returnReduce(bbMinX, minOp<double>());
+    const double meshBbMaxX = returnReduce(bbMaxX, maxOp<double>());
+    const double meshBbMinY = returnReduce(bbMinY, minOp<double>());
+    const double meshBbMaxY = returnReduce(bbMaxY, maxOp<double>());
+    const double meshBbMinZ = returnReduce(bbMinZ, minOp<double>());
+    const double meshBbMaxZ = returnReduce(bbMaxZ, maxOp<double>());
 
     minEdgeLength = meshMinLength;
     maxEdgeLength = meshMaxLength;
+    meshPerimeter = meshBbMaxX - meshBbMinX + meshBbMaxY - meshBbMinY + meshBbMaxZ + meshBbMinZ;
+
     return 0;
 }
 
@@ -1621,16 +1639,12 @@ int main(int argc, char *argv[])
         "Move internal mesh points to increase mesh quality"
     );
 
-    #include "addRegionOption.H"
-    #include "addOverwriteOption.H"
-
     argList::addOption
     (
         "time",
         "time",
         "Specify the time (default is latest)"
     );
-
 
     argList::addOption
     (
@@ -1837,12 +1851,13 @@ int main(int argc, char *argv[])
             << endl;
     }
 
-    // Default minimum edge length is smaller than the minimum edge
-    // length from initial mesh to allow good boundary smoothing
     double meshMinEdgeLength;
     double meshMaxEdgeLength;
-    getMeshMinMaxEdgeLength(mesh, meshMinEdgeLength, meshMaxEdgeLength);
+    double meshPerimeter;
+    getMeshStats(mesh, meshMinEdgeLength, meshMaxEdgeLength, meshPerimeter);
 
+    // Default minimum edge length is smaller than the minimum edge
+    // length from initial mesh to allow good boundary smoothing
     double minEdgeLength =
         args.optionLookupOrDefault("minEdgeLength", 0.5 * meshMinEdgeLength);
 
@@ -1901,6 +1916,9 @@ int main(int argc, char *argv[])
     label writeInterval =
         // args.optionLookupOrDefault("writeInterval", 5); // for debugging test cases
         args.optionLookupOrDefault("writeInterval", centroidalIters);
+
+    // Absolute distance between points to consider points overlap
+    const double distanceTolerance = REL_TOL * min(meshMinEdgeLength, layerEdgeLength);
 
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
@@ -2058,12 +2076,13 @@ int main(int argc, char *argv[])
     // Storage for target corner point coordinates
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
 
-    // Storage for saving feature edge unique string indices
+    // Storage for saving unique edge string indices of feature edges
+    // for edges
     labelList targetEdgeStrings;
-    labelList pointStrings(mesh.nPoints(), UNDEF_LABEL);
 
-    // Closest edge mesh point indices (for feature edge points)
-    labelList closestEdgePointIs(mesh.nPoints(), UNDEF_LABEL);
+    // Storage for saving unique edge string indices of feature edges
+    // for points
+    labelList pointStrings(mesh.nPoints(), UNDEF_LABEL);
 
     // Preparations for boundary point smoothing
     if (doBoundarySmoothing)
@@ -2097,10 +2116,16 @@ int main(int argc, char *argv[])
             << "did not find file " << targetEdgesFileString << "." << endl << endl;
         }
 
-        // Generate indices for target edge mesh strings
-        Info << "Starting to build targetEdgeStrings" << endl;
+        // Check sanity of edge meshes
+        Info << "Checking initial edge mesh sanity" << endl;
+        checkEdgeMeshSanity(initEdges, meshMinEdgeLength, meshPerimeter);
+        Info << "Checking target edge mesh sanity" << endl;
+        checkEdgeMeshSanity(targetEdges, meshMinEdgeLength, meshPerimeter);
+
+        // Generate indices for target edge mesh edge strings
+        Info << endl << "Starting to build targetEdgeStrings" << endl;
         const label nStrings = findEdgeMeshStrings(targetEdgeStrings, targetEdges);
-        Info << "Detected number of edge mesh strings: " << nStrings + 1 << endl << endl;
+        Info << "Detected number of target edge mesh strings: " << nStrings + 1 << endl << endl;
     }
     else
     {
@@ -2115,7 +2140,8 @@ int main(int argc, char *argv[])
          << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
          << "  - " << nPoints - nInternalPoints << " boundary points" << endl
          << "Mesh minimum edge length = " << meshMinEdgeLength << endl
-         << "Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
+         << "Mesh maximum edge length = " << meshMaxEdgeLength << endl
+         << "Distance tolerance = " << distanceTolerance << endl << endl;
 
     // Classify boundary points and find target corner points for feature edge snapping
     classifyBoundaryPoints
@@ -2135,7 +2161,8 @@ int main(int argc, char *argv[])
         isSmoothingSurfacePoint,
         isFrozenSurfacePoint,
         targetEdgeStrings,
-        doBoundarySmoothing
+        doBoundarySmoothing,
+        distanceTolerance
     );
 
     // Preparations for optional smoothing and treatment
@@ -2155,6 +2182,26 @@ int main(int argc, char *argv[])
             }
         }
     }
+
+    // Find target edge string indices for points (used in feature
+    // edge snapping)
+    if (doBoundarySmoothing)
+    {
+        forAll(mesh.points(), pointI)
+        {
+            if (! isFeatureEdgePoint[pointI])
+            {
+                continue;
+            }
+
+            point dummyPoint;
+            label dummy, dummy2;
+            label pointStringI = UNDEF_LABEL;
+            findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, distanceTolerance, dummyPoint, dummy, pointStringI, dummy2);
+            pointStrings[pointI] = pointStringI;
+        }
+    }
+
 
     // Carry out smoothing iterations
     // ------------------------------
@@ -2213,22 +2260,6 @@ int main(int argc, char *argv[])
 
         if (doBoundarySmoothing)
         {
-            // Find initial closest edge points (for feature edge snapping)
-            if (i == 0)
-            {
-                forAll(mesh.points(), pointI)
-                {
-                    if (isFeatureEdgePoint[pointI])
-                    {
-                        label newClosestEdgePointI = UNDEF_LABEL;
-                        label pointStringI = UNDEF_LABEL;
-                        findClosestEdgeMeshPointIndex(mesh.points()[pointI], targetEdges, false, true, false, UNDEF_LABEL, targetEdgeStrings, newClosestEdgePointI, pointStringI);
-                        closestEdgePointIs[pointI] = newClosestEdgePointI;
-                        pointStrings[pointI] = pointStringI;
-                    }
-                }
-            }
-
             // Update neighbour coordinates and synchronize among processors
             updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
             // Project boundary points
@@ -2243,13 +2274,13 @@ int main(int argc, char *argv[])
                 isCornerPoint,
                 cornerPoints,
                 targetEdges,
-                closestEdgePointIs,
                 surf,
                 tree,
                 meshMinEdgeLength,
                 targetEdgeStrings,
                 pointStrings,
                 isSharpEdgePoint,
+                distanceTolerance,
                 isFrozenPoint
             );
 
@@ -2258,7 +2289,7 @@ int main(int argc, char *argv[])
 
             // Use the locations of first cell layer points for
             // projecting points to boundary surfaces
-            projectFreeBoundaryPointsToSurfaces
+            projectPrismaticInternalPointsToSurfaces
             (
                 mesh,
                 newPoints,

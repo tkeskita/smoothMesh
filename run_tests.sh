@@ -46,6 +46,8 @@ do_test "testcase3"
 do_test "testcase4"
 do_test "testcase5"
 do_test "testcase6"
+do_test "testcase7"
+do_test "testcase8"
 
 echo "Test runs completed"
 cd ..

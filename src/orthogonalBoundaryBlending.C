@@ -10,11 +10,7 @@ Description
 
 #include "fvMesh.H"
 #include <fstream> // for debug printing only (exportEdgesAsStl)
-
-// Macros for value definitions
-#define UNDEF_LABEL -1
-#define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
-#define ZERO_VECTOR vector(0, 0, 0)
+#include "smoothMeshCommon.H"
 
 using namespace Foam;
 
@@ -396,9 +392,9 @@ int propagateOuterNeighInfo
                            << mesh.points()[neighPointI][1] << " "
                            << mesh.points()[neighPointI][2] << "\n"
                            << "  vertex "
-                           << mesh.points()[pointI][0] + 1e-4 << " "
-                           << mesh.points()[pointI][1] + 1e-4 << " "
-                           << mesh.points()[pointI][2] + 1e-4 << "\n"
+                           << mesh.points()[pointI][0] * (1.0 + ABS_TOL) << " "
+                           << mesh.points()[pointI][1] * (1.0 + ABS_TOL) << " "
+                           << mesh.points()[pointI][2] * (1.0 + ABS_TOL) << "\n"
                            << " endloop" << "\n"
                            << "endfacet" << "\n";
                 }
@@ -615,11 +611,11 @@ int blendWithOrthogonalPoints
     return 0;
 }
 
-// Projection of boundary points not part of orthogonal
-// smoothing to surfaces. Projection is done from the first layer
-// prismatic points orthogonally towards boundary.
+// Projection of prismatic internal points to surfaces. Projection is
+// done from the first layer prismatic points orthogonally towards
+// boundary.
 
-int projectFreeBoundaryPointsToSurfaces
+int projectPrismaticInternalPointsToSurfaces
 (
     const fvMesh& mesh,
     pointField& newPoints,

@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# First test that OpenFOAM commands are available
+which surfaceFeatureExtract &> /dev/null
+retVal=$?
+if [ $retVal -ne 0 ]; then
+    echo "Could not find OpenFOAM command surfaceFeatureExtract, exiting. OpenFOAM is probably not sourced correctly?"
+    exit 1
+fi
+
+rm -rf ? ?? ??? constant/polyMesh processor*
+blockMesh
+mkdir -p 0/constant
+cp -rv constant/polyMesh 0/constant/
+decomposePar
+
+for i in `seq 1 1`; do
+  mpirun -np 3 smoothMesh -parallel -centroidalIters 100 -layerPatches '(walls)'
+
+  # Test: Mild pull of points near boundaries towards boundary to create boundary layers
+  # mpirun -np 3 smoothMesh -parallel -centroidalIters 500 -writeInterval 100 -layerPatches '(walls)' -minLayers 3 -maxLayers 6 -layerEdgeLength 0.004 -minEdgeLength 0.004 -internalSmoothingBlendingFraction 0.005
+
+  # Test: Strong pull (too greedy!) of points near boundaries towards boundary to create boundary layers
+  # mpirun -np 3 smoothMesh -parallel -centroidalIters 500 -writeInterval 100 -layerPatches '(walls)' -minLayers 4 -maxLayers 8 -layerEdgeLength 0.0015 -minEdgeLength 0.0015 -internalSmoothingBlendingFraction 0.005
+done
