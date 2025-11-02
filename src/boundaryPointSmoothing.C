@@ -14,6 +14,72 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Help function to check the sanity of the edge mesh. Checks minimum
+// edge length and perimeter size in comparison with polyMesh.
+
+int checkEdgeMeshSanity
+(
+    const edgeMesh& em,
+    const double meshMinEdgeLength,
+    const double meshPerimeter
+)
+{
+    double minEdgeLength = VGREAT;
+    double bbMinX = VGREAT;
+    double bbMaxX = -VGREAT;
+    double bbMinY = VGREAT;
+    double bbMaxY = -VGREAT;
+    double bbMinZ = VGREAT;
+    double bbMaxZ = -VGREAT;
+
+    forAll(em.edges(), edgeI)
+    {
+        const label startPointI = em.edges()[edgeI][0];
+        const label endPointI = em.edges()[edgeI][1];
+
+        const point startPoint = em.points()[startPointI];
+        const point endPoint = em.points()[endPointI];
+
+        const double edgeLength = mag(endPoint - startPoint);
+
+        if (edgeLength < minEdgeLength)
+        {
+            minEdgeLength = edgeLength;
+        }
+
+        // Bounding box update
+        if (startPoint[0] < bbMinX) { bbMinX = startPoint[0]; }
+        if (startPoint[1] < bbMinY) { bbMinY = startPoint[1]; }
+        if (startPoint[2] < bbMinZ) { bbMinZ = startPoint[2]; }
+        if (startPoint[0] > bbMaxX) { bbMaxX = startPoint[0]; }
+        if (startPoint[1] > bbMaxY) { bbMaxY = startPoint[1]; }
+        if (startPoint[2] > bbMaxZ) { bbMaxZ = startPoint[2]; }
+
+        if (endPoint[0] < bbMinX) { bbMinX = endPoint[0]; }
+        if (endPoint[1] < bbMinY) { bbMinY = endPoint[1]; }
+        if (endPoint[2] < bbMinZ) { bbMinZ = endPoint[2]; }
+        if (endPoint[0] > bbMaxX) { bbMaxX = endPoint[0]; }
+        if (endPoint[1] > bbMaxY) { bbMaxY = endPoint[1]; }
+        if (endPoint[2] > bbMaxZ) { bbMaxZ = endPoint[2]; }
+    }
+
+    if (minEdgeLength < REL_TOL * meshMinEdgeLength)
+    {
+        FatalError << "Minimum edge length in edge mesh " << minEdgeLength << " is too small in comparison to minimum edge length in polyMesh " << meshMinEdgeLength << endl << abort(FatalError);
+    }
+
+    const double emPerimeter = bbMaxX - bbMinX + bbMaxY - bbMinY + bbMaxZ + bbMinZ;
+    const double PERIMETER_TOLERANCE = 0.5;
+
+    if (abs((emPerimeter / meshPerimeter) - 1.0) > PERIMETER_TOLERANCE)
+    {
+        FatalError << "Perimeter (sum of bounding box side lengths) of edge mesh " << emPerimeter << " is too different in comparison to perimeter of polyMesh " << meshPerimeter << endl << abort(FatalError);
+    }
+
+    return 0;
+}
+
+
 // Help function to project point coordinates to a given edge in an
 // edge mesh. Does not allow extrapolation over the edge end points
 // (clips projection at edge end points). Additionally saves edge mesh
@@ -25,6 +91,7 @@ int projectPointToEdge
     const point& pt,
     const edgeMesh& em,
     const label edgeI,
+    const double distanceTolerance,
     point& projPoint,
     label& edgePointI
 )
@@ -38,10 +105,6 @@ int projectPointToEdge
     const point endPoint = em.points()[endPointI];
 
     const double edgeLength = mag(endPoint - startPoint);
-    if (edgeLength < DISTANCE_TOLERANCE)
-    {
-        FatalError << "Too small edge length " << edgeLength << " in edge mesh between points " << startPoint << " and " << endPoint << endl << abort(FatalError);
-    }
 
     // Project on the edge
     const point c2pt = pt - startPoint;
@@ -53,20 +116,20 @@ int projectPointToEdge
     //    Info << " edgeI " << edgeI << " startPoint " << startPoint <<  " endPoint " << endPoint << " c2pt " << c2pt << " edgeVec " << edgeVec << " normalizedDotProd " << normalizedDotProd << " projPoint " << startPoint + normalizedDotProd * edgeVec << endl;
 
     // Clip at start point
-    if (normalizedDotProd <= DISTANCE_TOLERANCE)
+    if (normalizedDotProd <= ABS_TOL)
     {
         projPoint = startPoint;
-        if (mag(testProjPoint - startPoint) <= DISTANCE_TOLERANCE)
+        if (mag(testProjPoint - startPoint) <= distanceTolerance)
         {
             edgePointI = startPointI;
         }
     }
 
     // Clip at end point
-    else if (normalizedDotProd >= (1.0 - DISTANCE_TOLERANCE))
+    else if (normalizedDotProd >= (1.0 - ABS_TOL))
     {
         projPoint = endPoint;
-        if (mag(testProjPoint - endPoint) <= DISTANCE_TOLERANCE)
+        if (mag(testProjPoint - endPoint) <= distanceTolerance)
         {
             edgePointI = endPointI;
         }
@@ -146,6 +209,7 @@ int findClosestEdgeInfo
     const edgeMesh& em,
     const label requiredStringI,
     const labelList& targetEdgeStrings,
+    const double distanceTolerance,
     point& projPoint,
     label& closestEdgeI,
     label& closestEdgeStringI,
@@ -169,7 +233,7 @@ int findClosestEdgeInfo
         // Project to edge
         point testProjPoint;
         label edgePointI;
-        projectPointToEdge(pt, em, edgeI, testProjPoint, edgePointI);
+        projectPointToEdge(pt, em, edgeI, distanceTolerance, testProjPoint, edgePointI);
         const scalar testDistance = mag(testProjPoint - pt);
 
         // Save if projected point is closest 
@@ -219,7 +283,8 @@ int classifyBoundaryPoints
     boolList& isSmoothingSurfacePoint,
     boolList& isFrozenSurfacePoint,
     const labelList& targetEdgeStrings,
-    const bool doBoundarySmoothing
+    const bool doBoundarySmoothing,
+    const double distanceTolerance
 )
 {
     label nFeatureEdgePoints = 0;
@@ -279,7 +344,7 @@ int classifyBoundaryPoints
                     point projPoint;
                     label dummy, dummy2;
                     label closestEdgePointI = UNDEF_LABEL;
-                    findClosestEdgeInfo(pt, initEdges, -1, targetEdgeStrings, projPoint, dummy, dummy2, closestEdgePointI);
+                    findClosestEdgeInfo(pt, initEdges, -1, targetEdgeStrings, distanceTolerance, projPoint, dummy, dummy2, closestEdgePointI);
 
                     //if (mag(pt - vector(1, 1, 1)) < 1e-6)
                     //    Info << "pointI " << pointI << " at " << pt << " projPoint" << projPoint << " closestEdgePointI " << closestEdgePointI << endl;
@@ -298,7 +363,7 @@ int classifyBoundaryPoints
                     }
 
                     // Feature edges
-                    else if (mag(pt - projPoint) < DISTANCE_TOLERANCE)
+                    else if (mag(pt - projPoint) < distanceTolerance)
                     {
                         isFeatureEdgePoint[pointI] = true;
                         nFeatureEdgePoints++;
@@ -541,6 +606,7 @@ int calculateFeatureEdgeProjections
     const boolList& isCornerPoint,
     const labelList& targetEdgeStrings,
     const labelList& pointStrings,
+    const double distanceTolerance,
     vectorList& featureEdgeProjections,
     labelList& nFeatureEdgeProjections
 )
@@ -561,7 +627,7 @@ int calculateFeatureEdgeProjections
             const point neighPoint = mesh.points()[neighPointIs[neighPointI]];
             point projPoint;
             label dummy, dummy2, dummy3;
-            findClosestEdgeInfo(neighPoint, em, pointStringI, targetEdgeStrings, projPoint, dummy, dummy2, dummy3);
+            findClosestEdgeInfo(neighPoint, em, pointStringI, targetEdgeStrings, distanceTolerance, projPoint, dummy, dummy2, dummy3);
             featureEdgeProjections[pointI] += projPoint;
             ++nFeatureEdgeProjections[pointI];
         }
@@ -768,13 +834,14 @@ int projectBoundaryPointsToEdgesAndSurfaces
     const labelList& targetEdgeStrings,
     const labelList& pointStrings,
     const boolList& isSharpEdgePoint,
+    const double distanceTolerance,
     boolList& isFrozenPoint
 )
 {
     // Calculate new feature edge point positions a priori
     vectorList featureEdgeProjections(mesh.nPoints(), ZERO_VECTOR);
     labelList nFeatureEdgeProjections(mesh.nPoints(), 0);
-    calculateFeatureEdgeProjections(mesh, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, targetEdgeStrings, pointStrings, featureEdgeProjections, nFeatureEdgeProjections);
+    calculateFeatureEdgeProjections(mesh, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, targetEdgeStrings, pointStrings, distanceTolerance, featureEdgeProjections, nFeatureEdgeProjections);
 
     // Calculate boundary surface face centroids a priori
     vectorList faceCentroids(mesh.nPoints(), ZERO_VECTOR);
@@ -821,7 +888,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
         else if (isSmoothingSurfacePoint[pointI])
         {
             const point pointNormal = pointNormals[pointI];
-            double searchDistance = 1e-2 * meshMinEdgeLength;
+            double searchDistance = distanceTolerance;
 
             // Blend face centroid with cell centroid
             const point newPoint = faceCentroidBlendingFraction * (faceCentroids[pointI] / double(nFaceCentroids[pointI])) + (1 - faceCentroidBlendingFraction) * newPoints[pointI];
@@ -831,7 +898,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
             point surfPoint = UNDEF_VECTOR;
             for (label i = 0; i < 4; ++i)
             {
-                searchDistance *= 1e2;
+                searchDistance *= (1.0 / REL_TOL);
                 surfPoint = findIntersection(tree, pointI, newPoint, pointNormal, searchDistance);
                 if (surfPoint != UNDEF_VECTOR)
                 {

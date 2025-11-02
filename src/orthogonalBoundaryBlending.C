@@ -392,9 +392,9 @@ int propagateOuterNeighInfo
                            << mesh.points()[neighPointI][1] << " "
                            << mesh.points()[neighPointI][2] << "\n"
                            << "  vertex "
-                           << mesh.points()[pointI][0] + 1e-4 << " "
-                           << mesh.points()[pointI][1] + 1e-4 << " "
-                           << mesh.points()[pointI][2] + 1e-4 << "\n"
+                           << mesh.points()[pointI][0] * (1.0 + ABS_TOL) << " "
+                           << mesh.points()[pointI][1] * (1.0 + ABS_TOL) << " "
+                           << mesh.points()[pointI][2] * (1.0 + ABS_TOL) << "\n"
                            << " endloop" << "\n"
                            << "endfacet" << "\n";
                 }

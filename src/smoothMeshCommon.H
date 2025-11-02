@@ -16,10 +16,9 @@ Description
 #define ZERO_VECTOR vector(0, 0, 0)
 #define ZERO 0.0
 
-// Minimum distance for detection of points by coordinates.
-// The value is fairly large to allow single precision point data from
-// third party applications.
-#define DISTANCE_TOLERANCE 1e-6
+// General safety factors or tolerances
+#define REL_TOL 1e-4
+#define ABS_TOL 1e-6
 
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.

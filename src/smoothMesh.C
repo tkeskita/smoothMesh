@@ -1471,17 +1471,26 @@ labelList getPatchIdsForOption
 }
 
 
-// Calculate and return the minimum edge length of the current mesh
+// Calculate and return mesh statistics: the minimum and maximum edge
+// length of the current mesh, and the total perimeter of the mesh,
+// calculated as a sum of bounding box side lengths
 
-int getMeshMinMaxEdgeLength
+int getMeshStats
 (
     const fvMesh& mesh,
     double& minEdgeLength,
-    double& maxEdgeLength
+    double& maxEdgeLength,
+    double& meshPerimeter
 )
 {
     double minLength = VGREAT;
     double maxLength = 0.0;
+    double bbMinX = VGREAT;
+    double bbMaxX = -VGREAT;
+    double bbMinY = VGREAT;
+    double bbMaxY = -VGREAT;
+    double bbMinZ = VGREAT;
+    double bbMaxZ = -VGREAT;
 
     forAll(mesh.edges(), edgeI)
     {
@@ -1498,13 +1507,36 @@ int getMeshMinMaxEdgeLength
             minLength = length;
         if (length > maxLength)
             maxLength = length;
+
+        // Bounding box update
+        if (startCoords[0] < bbMinX) { bbMinX = startCoords[0]; }
+        if (startCoords[1] < bbMinY) { bbMinY = startCoords[1]; }
+        if (startCoords[2] < bbMinZ) { bbMinZ = startCoords[2]; }
+        if (startCoords[0] > bbMaxX) { bbMaxX = startCoords[0]; }
+        if (startCoords[1] > bbMaxY) { bbMaxY = startCoords[1]; }
+        if (startCoords[2] > bbMaxZ) { bbMaxZ = startCoords[2]; }
+
+        if (endCoords[0] < bbMinX) { bbMinX = endCoords[0]; }
+        if (endCoords[1] < bbMinY) { bbMinY = endCoords[1]; }
+        if (endCoords[2] < bbMinZ) { bbMinZ = endCoords[2]; }
+        if (endCoords[0] > bbMaxX) { bbMaxX = endCoords[0]; }
+        if (endCoords[1] > bbMaxY) { bbMaxY = endCoords[1]; }
+        if (endCoords[2] > bbMaxZ) { bbMaxZ = endCoords[2]; }
     }
 
     const double meshMinLength = returnReduce(minLength, minOp<double>());
     const double meshMaxLength = returnReduce(maxLength, maxOp<double>());
+    const double meshBbMinX = returnReduce(bbMinX, minOp<double>());
+    const double meshBbMaxX = returnReduce(bbMaxX, maxOp<double>());
+    const double meshBbMinY = returnReduce(bbMinY, minOp<double>());
+    const double meshBbMaxY = returnReduce(bbMaxY, maxOp<double>());
+    const double meshBbMinZ = returnReduce(bbMinZ, minOp<double>());
+    const double meshBbMaxZ = returnReduce(bbMaxZ, maxOp<double>());
 
     minEdgeLength = meshMinLength;
     maxEdgeLength = meshMaxLength;
+    meshPerimeter = meshBbMaxX - meshBbMinX + meshBbMaxY - meshBbMinY + meshBbMaxZ + meshBbMinZ;
+
     return 0;
 }
 
@@ -1819,12 +1851,13 @@ int main(int argc, char *argv[])
             << endl;
     }
 
-    // Default minimum edge length is smaller than the minimum edge
-    // length from initial mesh to allow good boundary smoothing
     double meshMinEdgeLength;
     double meshMaxEdgeLength;
-    getMeshMinMaxEdgeLength(mesh, meshMinEdgeLength, meshMaxEdgeLength);
+    double meshPerimeter;
+    getMeshStats(mesh, meshMinEdgeLength, meshMaxEdgeLength, meshPerimeter);
 
+    // Default minimum edge length is smaller than the minimum edge
+    // length from initial mesh to allow good boundary smoothing
     double minEdgeLength =
         args.optionLookupOrDefault("minEdgeLength", 0.5 * meshMinEdgeLength);
 
@@ -1883,6 +1916,9 @@ int main(int argc, char *argv[])
     label writeInterval =
         // args.optionLookupOrDefault("writeInterval", 5); // for debugging test cases
         args.optionLookupOrDefault("writeInterval", centroidalIters);
+
+    // Absolute distance between points to consider points overlap
+    const double distanceTolerance = REL_TOL * min(meshMinEdgeLength, layerEdgeLength);
 
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
@@ -2080,6 +2116,12 @@ int main(int argc, char *argv[])
             << "did not find file " << targetEdgesFileString << "." << endl << endl;
         }
 
+        // Check sanity of edge meshes
+        Info << "Checking initial edge mesh sanity" << endl;
+        checkEdgeMeshSanity(initEdges, meshMinEdgeLength, meshPerimeter);
+        Info << "Checking target edge mesh sanity" << endl;
+        checkEdgeMeshSanity(targetEdges, meshMinEdgeLength, meshPerimeter);
+
         // Generate indices for target edge mesh edge strings
         Info << endl << "Starting to build targetEdgeStrings" << endl;
         const label nStrings = findEdgeMeshStrings(targetEdgeStrings, targetEdges);
@@ -2098,7 +2140,8 @@ int main(int argc, char *argv[])
          << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
          << "  - " << nPoints - nInternalPoints << " boundary points" << endl
          << "Mesh minimum edge length = " << meshMinEdgeLength << endl
-         << "Mesh maximum edge length = " << meshMaxEdgeLength << endl << endl;
+         << "Mesh maximum edge length = " << meshMaxEdgeLength << endl
+         << "Distance tolerance = " << distanceTolerance << endl << endl;
 
     // Classify boundary points and find target corner points for feature edge snapping
     classifyBoundaryPoints
@@ -2118,7 +2161,8 @@ int main(int argc, char *argv[])
         isSmoothingSurfacePoint,
         isFrozenSurfacePoint,
         targetEdgeStrings,
-        doBoundarySmoothing
+        doBoundarySmoothing,
+        distanceTolerance
     );
 
     // Preparations for optional smoothing and treatment
@@ -2153,7 +2197,7 @@ int main(int argc, char *argv[])
             point dummyPoint;
             label dummy, dummy2;
             label pointStringI = UNDEF_LABEL;
-            findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, dummyPoint, dummy, pointStringI, dummy2);
+            findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, distanceTolerance, dummyPoint, dummy, pointStringI, dummy2);
             pointStrings[pointI] = pointStringI;
         }
     }
@@ -2236,6 +2280,7 @@ int main(int argc, char *argv[])
                 targetEdgeStrings,
                 pointStrings,
                 isSharpEdgePoint,
+                distanceTolerance,
                 isFrozenPoint
             );
 

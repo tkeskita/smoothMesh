@@ -20,7 +20,7 @@ writeInterval   1;
 
 // ************************************************************************* //
 
-convertToMeters 1e-9;
+convertToMeters 1e-8;
 
 geometry
 {
