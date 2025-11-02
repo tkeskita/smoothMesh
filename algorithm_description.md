@@ -1,7 +1,5 @@
 # SmoothMesh Algorithm Description
 
-**Warning: Description update WIP.**
-
 SmoothMesh applies two main stages for mesh smoothing:
 A sequence of **Predictor algorithms** to *provide new
 target coordinates for moving each mesh
@@ -31,20 +29,92 @@ to a user given maximum step length value (`-maxStepLength` option),
 to allow stable iteration during the smoothing process. Additionally
 a relative step length factor (`-relStepFrac` option) is applied to
 limit the local step length, to stabilize the smoothing while allowing
-local relaxation. Boundary points are not allowed to move, to keep the
-mesh geometry intact.
+local relaxation.
 
 ### 1.2. Midpoint of two closest edge points
 
-**The midpoint of two closest edge points** is linearly blended with the
-point coordinate from Centroidal smoothing when the third shortest
+**The midpoint of two closest edge points** is linearly blended with
+the point coordinate from Centroidal smoothing when the third shortest
 adge is more then 1.5 times the length of the second shortest
 edge. Midpoint is forced if the ratio is more than 3. This heuristic
 is meant to deal with prismatic edges for high aspect ratio
 cells. Centroidal smoothing tends to produce twisting or folding of
-edges in this case.
+edges in this case, which needs to be avoided, as it can severly
+increase non-orthogonality and face twisting.
 
-### 1.3. Boundary layer treatment
+## 2. Boundary point smoothing
+
+Boundary point smoothing requires special treatment to obtain a wanted
+shape for the mesh, since free centroidal smoothing would simply
+contract the boundary. Boundary point smoothing requires three inputs:
+**initial feature edge mesh**, **target feature edge mesh**, and
+**target surface mesh**.
+
+Based on the *initial feature edge mesh*, every boundary point of the
+OpenFOAM polyMesh is initially classified as one of three categories:
+
+- **Feature edge point** - All boundary points located within
+  tolerance distance from the edges provided in the *initial feature
+  edge mesh* (except corner points). Feature edge points
+  will be projected onto the *edges* in the *target feature edge
+  mesh* during smoothing.
+
+- **Corner point** - Any boundary point where more or less than two
+  feature edges meet in the initial feature edge mesh. These points
+  will be projected to *closest corner point* in the *target feature
+  edge mesh*.
+
+- **Non-feature edge boundary point** - The remaining boundary points
+  located elsewhere than on corners and on feature edges. These points
+  will be projected to closest *face* on the *target surface mesh*.
+
+Note: Separation of initial and target feature edges allows optional
+morphing of boundaries, e.g. to project planar block mesh patches into
+curving shapes. Because of this, the initial mesh does not have to
+conform exactly to the shape of the final mesh, as boundary smoothing
+takes care of projection. As a consequence, the setup of the simpler
+initial mesh is faster.
+
+Starting locations for the smoothing of the boundary points are
+calculated by the predictor steps. On a high level, the locations are
+then corrected for corner points, feature edge points and non-feature
+edge boundary points as described above. As a final optional step, the
+location of the non-feature edge boundary points is tuned towards the
+location where the prismatic internal point is projected to the
+surface. The strength of the tuning is controlled by the
+`internalSmoothingBlendingFraction` option. This option can be applied
+to improve the orthogonality of the boundary layer cells, at the cost
+of increasing the aspect ratio of the boundary cells (depending on the
+mesh). Feature edge smoothing applies the following exceptional
+features to improve the smoothing results.
+
+### 2.1. Separation of edge strings for feature edge projection
+
+When a feature edge point is close to a corner point where three or
+more feature edges meet, it is important to limit the edges eligible
+for projection for that point, to avoid snapping to a wrong feature
+edge. To avoid snapping to wrong edge, the *edge strings* (continuous
+strings of edges connected to max two other edges) in the target edge
+mesh are initially identified and labeled. Each edge is assigned a
+string label accordingly. Each feature edge point is then initially
+assigned a string label by proximity to target feature edges. During
+smoothing, the projection on feature edges is then limited to edges
+with a matching string label.
+
+### 2.2. Calculation of the smoothing target for feature edge points
+
+It was noted that a direct projection of the point from centroidal
+smoothing back to the feature edge can cause extreme shortening of the
+feature edges when the boundary mesh cells are skewed. To avoid this
+skewing, the new location for feature edge points is calculated by
+projecting the locations of the non-feature edge boundary points
+connected to the feature edge point on the feature edge, and taking
+the mean of those projections as a target. As a result, the smoothing
+of feature edge points does not directly use centroidal prediction in
+the smoothing process.
+
+
+## 3. Boundary layer treatment
 
 The boundary layer related options of smoothMesh allow identification
 and special handling of prismatic cell edges near mesh
@@ -129,11 +199,7 @@ of the orthogonal point weight drops to zero for layer numbers
 exceeding a maximum number of layers (specified with
 `-boundaryMaxLayers` option).
 
-### 1.4. Boundary point smoothing
-
-TBA
-
-## 2. Heuristic quality control constraints
+## 4. Heuristic quality control constraints
 
 Unconstrained centroidal smoothing works well as such for cases where
 the initial mesh quality w.r.t face non-orthogonality, face skewness
@@ -150,7 +216,7 @@ moving of the point.
 The quality control constraints include the following, and they are by default
 all evaluated in sequence:
 
-### 2.1. Avoid shortening of short edge length
+### 4.1. Avoid shortening of short edge length
 
 This constraint considers only **the minimum length of edges connected
 to an internal point**. For each moving point, the minimum length of
@@ -169,7 +235,7 @@ the blue point to green point location.
 <p align="left"><img src="images/base_mesh_with_problematic_vertex.png"></p>
 
 
-### 2.2. Restrict decrease of smallest edge-edge angle
+### 4.2. Restrict decrease of smallest edge-edge angle
 
 The idea of this contraint is
 to use minimum of the angles of face edges meeting at a point as a
@@ -193,7 +259,7 @@ boundary feature (the red edge in the figure below)
 <p align="left"><img src="images/curving_boundary_feature.png"></p>
 
 
-### 2.3. Restrict deterioration of face-face angles
+### 4.3. Restrict deterioration of face-face angles
 
 This constraint focuses only on **the minimum and maximum angle
 between _cell faces_, which are connected to the all of the edges,
@@ -238,10 +304,10 @@ follows (please view the example figure below):
   deg), and the maximum angle would increase if the move would be
   allowed.
 
-### 2.4. The calculation method for face angles
+### 4.4. The calculation method for face angles
 
 Shortly put, the calculation of face angles at an edge is done by
-**first projecting face and cell centers to an edge normal plane**,
+first **projecting face and cell centers to an edge normal plane**,
 and then **calculating and summing the angles from edge center to each
 projected point**.
 

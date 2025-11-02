@@ -85,13 +85,39 @@ The following options are related to additional **heuristic quality control cons
 
 - Note: `-minAngle` value causes point freezing *only* if the minimum angle is below this value and if the minimum angle would *decrease* in smoothing. Points are allowed to move if the minimum angle value *increases* with smoothing, regardless of this value. The same applies for the `-maxAngle` option: Freezing takes place only if maximum angle is above the specified value and if the maximum angle would *increase* in smoothing.
 
+
+### Boundary point smoothing options
+
+Warning: This is a new and experimental feature!
+
+SmoothMesh has a possibility to move and smooth also boundary points. The usage of this feature requires that the user provides following files in the `constant/geometry` folder in the case directory in Wavefront OBJ format:
+
+- `constant/geometry/targetSurfaces.obj` (**required**). This **surface mesh** file must contain the target surface mesh for all boundary surfaces. The boundary points (other than feature edge points) are projected to closest triangulated surface mesh face provided in this file. The surface mesh can be generated e.g. by `Extract Surface` Filter in Paraview, or `surfaceMeshTriangulate` command in OpenFOAM.
+
+- `constant/geometry/initEdges.obj` (**required**). This **edge mesh** file must contain the initial feature edges (sharp edges) of the whole initial mesh. This edge mesh is used to identify which points in the initial mesh are feature edge points. Identification of points is based on projection of boundary mesh points to edges in `initEdges.obj`. Feature edge mesh can be generated e.g. by `Extract Surface` Filter followed by `Feature Edges` Filter in Paraview, or by `surfaceFeatures` or `surfaceFeatureExtract` commands in OpenFOAM.
+
+- `constant/geometry/targetEdges.obj` (**optional**). This **edge mesh** file contains the edge mesh locations for the final target mesh. If `targetEdges.obj` is provided, the points on the initial feature edges are projected to these edges during smoothing. If `targetEdges.obj` is not provided, then target edge mesh is assumed to be identical to the initial feature edge mesh. In practice, the result of providing no `targetEdges.obj` is that feature edges stay in their initial locations, but edge points may still move along the feature edges. However, providing `targetEdges.obj `allows projection of e.g. linear block mesh edges to curves.
+
+Options for smoothMesh related to boundary point smoothing:
+
+- `-smoothingPatches` option is used to limit the boundary point movement to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-smoothingPatches '(walls)'` or `-smoothingPatches '(stator "rotor.*")'`. All patches are included in smoothing by default, so if you provide the above OBJ files in the constant/geometry directory, boundary point smoothing will be applied.
+
+- `-internalSmoothingBlendingFraction` is related to how the location of the surface points on free boundaries (but not feature edges nor corners!) are calculated. Two methods are applied: Projection of coordinates from centroidal smoothing to closest boundary surface, and projection of inner mesh prismatic point to closest boundary surface. This fraction value specifies the blending (value between 0 and 1) for the inner mesh prismatic point. Value close to 0 means that centroidal smoothing dominates, which results in good boundary surface smoothing. Value close to 1 means that inner mesh point projection dominates, which results in highly orthogonal prismatic boundary edges at the cost of increased cell aspect ratio. The default value of 0 applies only centroidal smoothing. Note: More work is needed to study the effect of this value on the results.
+
+**Note:** Always view the initial mesh and all OBJ files visually in Paraview for correctness before use!
+
+Example from testcase4 is illustrated below.
+
+<img src="images/boundary_point_smoothing.png" width="600"/>
+
+
 ### Boundary layer treatment related options
 
 The options below are related to handling of prismatic cells near mesh boundaries, to either preserve or improve the orthogonality and control the thickness of boundary layer cells in the mesh. If the mesh contains prismatic boundary layers, the unconstrained centroidal smoothing will tend to bloat the boundary layer cells into normal size. That can be avoided using the options below. These options affect only the prismatic cell edges near the mesh boundaries (see [the algorithm description document](algorithm_description.md) for details).
 
 Warning: This is an experimental feature!
 
-- `-layerPatches` option is used to limit the boundary layer treatment to cells next to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-layerPatches 'walls'` or `-layerPatches '( stator "rotor.*" )'`. No patches are included by default.
+- `-layerPatches` option is used to limit the boundary layer treatment to cells next to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-layerPatches '(walls)'` or `-layerPatches '(stator "rotor.*")'`. No patches are included by default.
 
 - `-layerMaxBlendingFraction` is the maximum fraction (0 <= value <= 1) by which boundary layer edge length and edge direction are blended with the centroidal smoothing locations. Zero value disables the effect of all other boundary related variables below (default value 0.3). Values below 0.5 seems to produce good results in practice, but it depends on the case.
 
@@ -103,40 +129,16 @@ Warning: This is an experimental feature!
 
 - `-maxLayers` specifies the number of boundary cell layers beyond which boundary blending options above ceases to affect smoothing, and only centroidal smoothing is applied (default value 4).
 
-### Boundary point smoothing options
-
-Warning: This is a new and experimental feature!
-
-SmoothMesh now has a possibility to move and smooth also boundary points. The usage of this feature requires that the user provides following files in the `constant/geometry` folder in the case directory in Wavefront OBJ format:
-
-- `constant/geometry/initEdges.obj` (**required**). This edge mesh must contain the initial feature edges (sharp edges) of the whole initial mesh. This edge mesh is used to identify which points in the initial mesh are feature edge points. Identification of points is currently based on point locations. Feature edge mesh can be generated e.g. by `Extract Surface` Filter followed by `Feature Edges` Filter in Paraview, or by `surfaceFeatures` or `surfaceFeatureExtract` commands in OpenFOAM.
-
-- `constant/geometry/targetEdges.obj` (**optional**). This edge mesh file contains the edge mesh locations for the final target mesh. If `targetEdges.obj` is provided, the points on the initial feature edges are projected to these edges during smoothing. If `targetEdges.obj` is not provided, then target edge mesh is assumed to be identical to the initial feature edge mesh. In practice, the result of providing no `targetEdges.obj` is that feature edges stay in their initial locations, but edge points may still move along the feature edges. However, providing `targetEdges.obj `allows projection of e.g. linear block mesh edges to curves.
-
-- `constant/geometry/targetSurfaces.obj` (**required**). This surface mesh file must contain the target surface mesh for all boundary surfaces. The boundary points (besides feature edge points) are projected to closest triangulated surface mesh face provided in this file. The surface mesh can be generated e.g. by `Extract Surface` Filter in Paraview, or `surfaceMeshTriangulate` command in OpenFOAM.
-
-Options for smoothMesh related to boundary point smoothing:
-
-- `-smoothingPatches` option is used to limit the boundary point movement to specified patches only. You can specify one or several patches, optionally with wild cards. For example `-smoothingPatches 'walls'` or `-smoothingPatches '( stator "rotor.*" )'`. All patches are included in smoothing by default, so if you provide the above OBJ files in the constant/geometry directory, boundary point smoothing will be applied.
-
-- `-internalSmoothingBlendingFraction` is related to how the location of the surface points on free boundaries (but not feature edges nor corners!) are calculated. Two methods are applied: Projection of coordinates from centroidal smoothing to closest boundary surface, and projection of inner mesh prismatic point to closest boundary surface. This fraction value specifies the blending (value between 0 and 1) for the inner mesh prismatic point. Value close to 0 means that centroidal smoothing dominates, which results in good boundary surface smoothing. Value close to 1 means that inner mesh point projection dominates, which results in highly orthogonal prismatic boundary edges. The default value of 0 applies only centroidal smoothing. Note: More work is needed to study the effect of this value on the results.
-
-**Note:** Always view the initial mesh and all OBJ files visually in Paraview for correctness before use!
-
-Example from testcase4 is illustrated below.
-
-<img src="images/boundary_point_smoothing.png" width="600"/>
-
 
 ## Smoothing best practice
 
-Currently, the best results I've encountered seem to result from carryin out smoothing in stages:
+Currently, the best results I've encountered seem to result from carrying out smoothing in stages:
 
-1. Relaxation of initial mesh with `-layerMaxBlendingFraction 0 -internalSmoothingBlendingFraction 0`, so practically without any layer treatment, and without imposing orthogonality at boundary cells, but with boundary point smoothing enabled. In effect, this will bloat any boundary layer cells in the mesh into normal size.
+1. Free relaxation of initial mesh with `-layerMaxBlendingFraction 0 -internalSmoothingBlendingFraction 0`, so with boundary point smoothing, but without any layer treatment, and without imposing any orthogonality at boundary cells. If the original mesh contains boundary layer cells, they will be bloated into normal size cells.
 
-2. Continue smoothing with small values for the blending fractions, to bring back the boundary layers.
+2. Continue smoothing with small values for the above blending fractions, to pull in points towards boundaries, to create the boundary layers.
 
-3. Continue smoothing with increased values for the blending fractions if required. Possibly apply `-smoothingPatches 'none'` to freeze boundary points.
+3. Continue smoothing with increased values for the above blending fractions if required. Possibly apply `-smoothingPatches 'none'` to freeze boundary points.
 
 I don't yet have a more precise general recipe, it seems to depend on the case.
 
@@ -148,11 +150,20 @@ Please view [the algorithm description document](algorithm_description.md).
 
 ## Basic usage examples
 
-You can run smoothMesh without providing any parameter values, but the result may not be very good, depending on your initial mesh. It is suggested to adjust at least the `-centroidalIters`, `-relTol`, `-maxStepLength` and `-minEdgeLength` options according to your case.
+The aim is to optimize smoothMesh in future so that the default parameter values would yield good end result for most common cases. However, the result may not be very good, depending on your initial mesh and geometry.
 
-- Parallel run example: `mpirun -np 3 smoothMesh -centroidalIters 100 -maxStepLength 0.01 -minEdgeLength 0.05 -parallel`
+The most important parameters to adjust include `-centroidalIters`, `-relTol`, `-maxStepLength`, `-minEdgeLength` and `-minAngle` options according to your case.
 
-- Serial run example: `smoothMesh -centroidalIters 100 -maxStepLength 0.01 -minEdgeLength 0.05`
+- Parallel run example: `mpirun -np 3 smoothMesh -parallel -centroidalIters 10000 -maxStepLength 0.01 -minEdgeLength 0.05`
+
+- Serial run example: `smoothMesh -centroidalIters 10000 -maxStepLength 0.01 -minEdgeLength 0.05`
+
+
+## FAQ
+
+**Q1. Why is the smoothing result uneven? Some groups of points are moved a lot, but neighbour points are frozen, or move only a litte.**
+
+A1. This is due to quality constraints, which freezes points if smoothing move proposed by centroidal smoothing would decrease the mesh quality (min or max edge or face angle) below allowed limits. You can decrease the value of `-minAngle` parameter to allow more points to move during smoothing. However, the resulting mesh will then include very small angles, which likely means increase in mesh non-orthogonality.
 
 
 ## Test cases
