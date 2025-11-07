@@ -277,7 +277,10 @@ int classifyBoundaryPoints
     boolList& isProcessorPoint,
     boolList& isConnectedToInternalPoint,
     boolList& isFeatureEdgePoint,
+    labelIOList& isFeatureEdgePointIO,
     boolList& isCornerPoint,
+    labelIOList& isCornerPointIO,
+    bool labelIOListsHaveData,
     vectorList& cornerPoints,
     boolList& isLayerSurfacePoint,
     boolList& isSmoothingSurfacePoint,
@@ -337,35 +340,55 @@ int classifyBoundaryPoints
                 }
 
                 // Classification of boundary smoothing points is done
-                // only if information is available
+                // only if edge mesh is available
                 if ((initEdges.points().size() > 0) and (targetEdges.points().size() > 0))
                 {
                     const point pt = mesh.points()[pointI];
-                    point projPoint;
-                    label dummy, dummy2;
-                    label closestEdgePointI = UNDEF_LABEL;
-                    findClosestEdgeInfo(pt, initEdges, -1, targetEdgeStrings, distanceTolerance, projPoint, dummy, dummy2, closestEdgePointI);
 
-                    //if (mag(pt - vector(1, 1, 1)) < 1e-6)
-                    //    Info << "pointI " << pointI << " at " << pt << " projPoint" << projPoint << " closestEdgePointI " << closestEdgePointI << endl;
-
-                    // Corner points
-                    if ((closestEdgePointI >= 0) and
-                        (initEdges.pointEdges()[closestEdgePointI].size() != 2))
+                    // Get corner and feature edge classifications
+                    // from labelIOLists, if data is available
+                    if (labelIOListsHaveData)
                     {
-                        isCornerPoint[pointI] = true;
-                        nCornerPoints++;
-
-                        // Find and save the target coordinate for this corner
-                        const label closestCornerPointI = findClosestEdgeMeshCornerPointIndex(pt, targetEdges);
-                        cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
-                        // Info << mesh.points()[pointI][0] << "," << mesh.points()[pointI][1] << "," << mesh.points()[pointI][2] << endl;
+                        isCornerPoint[pointI] = (isCornerPointIO[pointI] == 1 ? true : false);
+                        isFeatureEdgePoint[pointI] = (isFeatureEdgePointIO[pointI] == 1 ? true : false);
                     }
 
-                    // Feature edges
-                    else if (mag(pt - projPoint) < distanceTolerance)
+                    // Otherwise deduce the corner and feature edge
+                    // classifications from edge meshes
+                    else
                     {
-                        isFeatureEdgePoint[pointI] = true;
+                        point projPoint;
+                        label dummy, dummy2;
+                        label closestEdgePointI = UNDEF_LABEL;
+                        findClosestEdgeInfo(pt, initEdges, -1, targetEdgeStrings, distanceTolerance, projPoint, dummy, dummy2, closestEdgePointI);
+
+                        // Corner points
+                        if ((closestEdgePointI >= 0) and
+                            (initEdges.pointEdges()[closestEdgePointI].size() != 2))
+                        {
+                            isCornerPoint[pointI] = true;
+                            isCornerPointIO[pointI] = 1;
+                        }
+
+                        // Feature edges
+                        else if (mag(pt - projPoint) < distanceTolerance)
+                        {
+                            isFeatureEdgePoint[pointI] = true;
+                            isFeatureEdgePointIO[pointI] = 1;
+                        }
+                    }
+
+                    if (isCornerPoint[pointI])
+                    {
+                        // Find and save the target coordinate if this is a corner
+                        const label closestCornerPointI = findClosestEdgeMeshCornerPointIndex(pt, targetEdges);
+                        cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
+
+                        nCornerPoints++;
+                    }
+
+                    if (isFeatureEdgePoint[pointI])
+                    {
                         nFeatureEdgePoints++;
                     }
                 }

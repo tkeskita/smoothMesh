@@ -13,6 +13,6 @@ blockMesh
 mkdir -p 0/constant
 cp -rv constant/polyMesh 0/constant/
 
-for i in `seq 1 1`; do
-  smoothMesh -layerPatches '(wall)'
+for i in `seq 1 2`; do
+  smoothMesh -centroidalIters 50
 done
