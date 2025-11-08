@@ -14,6 +14,6 @@ mkdir -p 0/constant
 cp -rv constant/polyMesh 0/constant/
 decomposePar
 
-for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -layerPatches '(wall)'
+for i in `seq 1 2`; do
+  mpirun -np 3 smoothMesh -parallel -centroidalIters 50
 done

@@ -1974,7 +1974,6 @@ int main(int argc, char *argv[])
 
     Info << endl;
 
-
     // Storage for markers for internal points
     boolList isInternalPoint(mesh.nPoints(), false);
     const label nInternalPoints = findInternalMeshPoints(mesh, isInternalPoint);
@@ -2033,10 +2032,54 @@ int main(int argc, char *argv[])
         Info << "Boundary layer treatment is disabled. Either no layerPatches were specified or boundaryMaxBlendingFraction is zero" << endl << endl;
     }
 
+    // IOLists for communication of isCornerPoint and
+    // isFeatureEdgePoint between consequent runs.
+    // Using labelIOList because there is no boolIOList.
+
+    labelIOList isCornerPointIO
+    (
+        IOobject
+        (
+            "isCornerPoint",
+            runTime.name(),
+            mesh,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE,
+            true
+        ),
+        labelList(mesh.nPoints(), 0)
+    );
+
+    labelIOList isFeatureEdgePointIO
+    (
+        IOobject
+        (
+            "isFeatureEdgePoint",
+            runTime.name(),
+            mesh,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE,
+            true
+        ),
+        labelList(mesh.nPoints(), 0)
+    );
+
+    // Determine do the labelIOLists contain classification data
+    bool labelIOListsHaveData = false;
+    if ((findIndex(isCornerPointIO, 1) >= 0) or (findIndex(isFeatureEdgePointIO, 1) >= 0))
+    {
+        labelIOListsHaveData = true;
+        Info << "Found corners and feature edges in isCornerPoint and isFeatureEdgePoint files" << endl << endl;
+    }
+    else
+    {
+        Info << "Did not find corners and feature edges in isCornerPoint and isFeatureEdgePoint files" << endl << endl;
+    }
+
     // Check prerequisites for carrying out boundary point smoothing
     bool doBoundarySmoothing = false;
     if ((fileExists(targetSurfacesFileString)) and
-        (fileExists(initEdgesFileString)) and
+        ((fileExists(initEdgesFileString)) or (labelIOListsHaveData)) and
         (smoothingPatchIds.size() > 0))
     {
         doBoundarySmoothing = true;
@@ -2155,7 +2198,10 @@ int main(int argc, char *argv[])
         isProcessorPoint,
         isConnectedToInternalPoint,
         isFeatureEdgePoint,
+        isFeatureEdgePointIO,
         isCornerPoint,
+        isCornerPointIO,
+        labelIOListsHaveData,
         cornerPoints,
         isLayerSurfacePoint,
         isSmoothingSurfacePoint,

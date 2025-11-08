@@ -233,51 +233,6 @@ int calculateBoundaryPointNormals
 }
 
 
-// A sentinel function to check if a point is a boundary point and not
-// part of a patch eligible for boundary layer treatment
-
-bool boundaryPatchCheck
-(
-    const fvMesh& mesh,
-    const label pointI,
-    const labelList& patchIds,
-    const label nHops
-)
-{
-    // Pass if point is not at boundary
-    if (nHops > 1)
-        return true;
-
-    // Pass if point is found in an allowed patch
-    for (const label patchI : patchIds)
-    {
-        const polyPatch& pp = mesh.boundaryMesh()[patchI];
-
-        // Skip processor and empty patches
-        if (isA<processorPolyPatch>(pp))
-            continue;
-        if (isA<emptyPolyPatch>(pp))
-            continue;
-
-        const label startI = mesh.boundary()[patchI].start();
-        const label endI = startI + mesh.boundary()[patchI].Cf().size();
-
-        for (label faceI = startI; faceI < endI; faceI++)
-        {
-            const face& f = mesh.faces()[faceI];
-            forAll (f, facePointI)
-            {
-                const label testPointI = mesh.faces()[faceI][facePointI];
-                if (testPointI == pointI)
-                    return true;
-            }
-        }
-    }
-
-    // Fail otherwise
-    return false;
-}
-
 // Generates mapping information (isNeighInProc and
 // pointToOuterPointMap) for propagation of information to outer
 // points. Propagates also the pointNormals vectors from boundary
