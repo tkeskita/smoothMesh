@@ -2107,6 +2107,7 @@ int main(int argc, char *argv[])
     autoPtr<edgeMesh> targetEdges(nullptr);
 
     // Point classification lists
+    boolList isPrismaticPoint(mesh.nPoints(), false);
     boolList isConnectedToInternalPoint(mesh.nPoints(), false);
     boolList isFeatureEdgePoint(mesh.nPoints(), false);
     boolList isLayerSurfacePoint(mesh.nPoints(), false);
@@ -2196,6 +2197,7 @@ int main(int argc, char *argv[])
         smoothingPatchIds,
         isInternalPoint,
         isProcessorPoint,
+        isPrismaticPoint,
         isConnectedToInternalPoint,
         isFeatureEdgePoint,
         isFeatureEdgePointIO,

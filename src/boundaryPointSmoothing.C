@@ -275,6 +275,7 @@ int classifyBoundaryPoints
     const labelList& smoothingPatchIds,
     const boolList& isInternalPoint,
     boolList& isProcessorPoint,
+    boolList& isPrismaticPoint,
     boolList& isConnectedToInternalPoint,
     boolList& isFeatureEdgePoint,
     labelIOList& isFeatureEdgePointIO,
@@ -330,13 +331,21 @@ int classifyBoundaryPoints
                 }
 
                 // Check if boundary point has connections to internal mesh point
+                label internalConnections = 0;
                 forAll (mesh.pointPoints()[pointI], pointPointI)
                 {
                     const label i = mesh.pointPoints()[pointI][pointPointI];
                     if (isInternalPoint[i])
                     {
+                        ++internalConnections;
                         isConnectedToInternalPoint[pointI] = true;
                     }
+                }
+
+                // Prismatic points have exactly one connection
+                if (internalConnections == 1)
+                {
+                    isPrismaticPoint[pointI] = true;
                 }
 
                 // Classification of boundary smoothing points is done
