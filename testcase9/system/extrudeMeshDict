@@ -1,0 +1,22 @@
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      extrudeMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+constructFrom surface;
+surface "constant/geometry/profile.obj";
+flipNormals false;
+extrudeModel        linearNormal;
+nLayers             5;
+expansionRatio      1.0;
+linearNormalCoeffs
+{
+    thickness       1.0;
+}
+mergeFaces false;
+mergeTol 0;
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
