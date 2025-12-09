@@ -141,7 +141,7 @@ int calculatePointHopsToBoundary
 int calculateBoundaryPointNormals
 (
     const fvMesh& mesh,
-    pointField& pointNormals,
+    vectorList& pointNormals,
     boolList& isSharpEdgePoint
 )
 {

@@ -11,6 +11,7 @@ Description
 #define smoothMeshCommon_H
 
 // Macros for value definitions
+#define IGNORED_LABEL -2
 #define UNDEF_LABEL -1
 #define UNDEF_VECTOR vector(GREAT, GREAT, GREAT)
 #define ZERO_VECTOR vector(0, 0, 0)

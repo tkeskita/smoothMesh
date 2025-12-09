@@ -27,6 +27,7 @@ Description
 
 #include "smoothMeshCommon.H"
 #include "orthogonalBoundaryBlending.C"
+#include "layerTreatment.C"
 #include "boundaryPointSmoothing.C"
 
 using namespace Foam;
@@ -1904,8 +1905,8 @@ int main(int argc, char *argv[])
     label maxLayers =
         args.optionLookupOrDefault("maxLayers", 4);
 
-    double internalSmoothingBlendingFraction =
-        args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.0);
+    // WIP double internalSmoothingBlendingFraction =
+    //         args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.0);
 
     double relTol =
         args.optionLookupOrDefault("relTol", 0.02);
@@ -1976,49 +1977,76 @@ int main(int argc, char *argv[])
 
     // Storage for markers for internal points
     boolList isInternalPoint(mesh.nPoints(), false);
-    const label nInternalPoints = findInternalMeshPoints(mesh, isInternalPoint);
-
-    // Storage for number of edge hops to reach layer and free
-    // boundaries for mesh points (for boundary layer treatment)
-    labelList pointHopsToLayerBoundary(mesh.nPoints(), UNDEF_LABEL);
-    labelList pointHopsToSmoothingBoundary(mesh.nPoints(), UNDEF_LABEL);
-
-    // Storage for point normals (for boundary layer treatment)
-    tmp<pointField> tPointNormals(new pointField(mesh.nPoints(), Zero));
-    pointField& pointNormals = tPointNormals.ref();
-
-    // Storage for neighbour point locations (for boundary layer treatment)
-    tmp<pointField> tInnerNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
-    pointField& innerNeighCoords = tInnerNeighCoords.ref();
-    tmp<pointField> tOuterNeighCoords(new pointField(mesh.nPoints(), UNDEF_VECTOR));
-    pointField& outerNeighCoords = tOuterNeighCoords.ref();
-
-    // Storage for marking neighbour point being inside same processor
-    // domain (for boundary layer treatment)
-    boolList isInnerNeighInProc(mesh.nPoints(), false);
-    boolList isOuterNeighInProc(mesh.nPoints(), false);
-
-    // Storage for index map from point to neighbour point inside same
-    // processor domain. One map points towards inner mesh, and
-    // another map towards outer boundary. (for boundary layer treatment)
-    labelList pointToInnerPointMap(mesh.nPoints(), UNDEF_LABEL);
-    labelList pointToOuterPointMap(mesh.nPoints(), UNDEF_LABEL);
 
     // Boolean list for marking frozen points (points not allowed to
     // move during smoothing). This list is synced among processors.
     boolList isFrozenPoint(mesh.nPoints(), false);
 
-    // A list of point label lists to indicate cell sharing. Used in
-    // aspectRatioSmoothing.
+    // Storage for boundary point normals (independent of layer
+    // patches)
+    vectorList pointNormals(mesh.nPoints(), Zero);
+
+    // Point classification lists
+    boolList isPrismaticPoint(mesh.nPoints(), false);
+    boolList isConnectedToInternalPoint(mesh.nPoints(), false);
+    boolList isFeatureEdgePoint(mesh.nPoints(), false);
+    boolList isLayerSurfacePoint(mesh.nPoints(), false);
+    boolList isSmoothingSurfacePoint(mesh.nPoints(), false);
+    boolList isFrozenSurfacePoint(mesh.nPoints(), false);
+    boolList isProcessorPoint(mesh.nPoints(), false); // TODO: remove?
+    boolList isCornerPoint(mesh.nPoints(), false);
+    boolList isSharpEdgePoint(mesh.nPoints(), false);
+
+    // Generate a list of point label lists to indicate cell
+    // sharing. Used in aspectRatioSmoothing.
     Info << "Starting to build pointNeighPoints (this may take some time)" << endl;
     labelListList pointNeighPoints(mesh.nPoints());
     generatePointNeighPoints(mesh, pointNeighPoints);
     Info << "Done building pointNeighPoints" << endl << endl;
 
-    // Lists of all cell faces (includes both internal and boundary
-    // faces) for all cells
+    // Generate lists of all cell faces (includes both internal and
+    // boundary faces) for all cells
     labelListList cellFaces(mesh.nCells());
     generateCellFaces(mesh, cellFaces);
+
+    // Boundary layer treatment variables (uninitialized, allocation only)
+
+    // Prismatic boundary island indices and propagation states for points
+    labelList prismIslands1;
+    labelList prismIslands2;
+    labelList prismIslands3;
+
+    // Number of edge hops to prismatic boundary island
+    labelList pointHops1;
+    labelList pointHops2;
+    labelList pointHops3;
+
+    // Boundary point normal vectors per boundary island
+    vectorList pointNormals1;
+    vectorList pointNormals2;
+    vectorList pointNormals3;
+
+    // Neigboring prismatic point locations towards internal mesh
+    vectorList innerPrismPoints1;
+    vectorList innerPrismPoints2;
+    vectorList innerPrismPoints3;
+
+    // Neigboring prismatic point locations towards boundary
+    vectorList outerPrismPoints1;
+    vectorList outerPrismPoints2;
+    vectorList outerPrismPoints3;
+
+    // Index map to neighbour point inside same processor domain.
+    // One map points towards inner mesh, and another map towards
+    // outer boundary
+    labelList innerPrismPointLabels1;
+    labelList innerPrismPointLabels2;
+    labelList innerPrismPointLabels3;
+    labelList outerPrismPointLabels1;
+    labelList outerPrismPointLabels2;
+    labelList outerPrismPointLabels3;
+
+    // End of boundary layer treatment variables
 
     // Check prerequisites for carrying out boundary layer treatment
     bool doLayerTreatment = false;
@@ -2092,11 +2120,6 @@ int main(int argc, char *argv[])
              << initEdgesFileString << endl << endl;
     }
 
-    if ((doLayerTreatment) and (! doBoundarySmoothing))
-    {
-        Info << "WARNING: Boundary layer treatment will be done without boundary point smoothing. This can result in distorted boundary cells." << endl << endl;
-    }
-
     // Objects for boundary point snapping to surfaces
     autoPtr<triSurface> surf(nullptr);
     autoPtr<triSurfaceSearch> searchSurfaces(nullptr);
@@ -2105,17 +2128,6 @@ int main(int argc, char *argv[])
     // Objects for boundary point snapping to feature edges
     autoPtr<edgeMesh> initEdges(nullptr);
     autoPtr<edgeMesh> targetEdges(nullptr);
-
-    // Point classification lists
-    boolList isPrismaticPoint(mesh.nPoints(), false);
-    boolList isConnectedToInternalPoint(mesh.nPoints(), false);
-    boolList isFeatureEdgePoint(mesh.nPoints(), false);
-    boolList isLayerSurfacePoint(mesh.nPoints(), false);
-    boolList isSmoothingSurfacePoint(mesh.nPoints(), false);
-    boolList isFrozenSurfacePoint(mesh.nPoints(), false);
-    boolList isProcessorPoint(mesh.nPoints(), false);
-    boolList isCornerPoint(mesh.nPoints(), false);
-    boolList isSharpEdgePoint(mesh.nPoints(), false);
 
     // Storage for target corner point coordinates
     vectorList cornerPoints(mesh.nPoints(), UNDEF_VECTOR);
@@ -2180,6 +2192,8 @@ int main(int argc, char *argv[])
     }
 
     const label nPoints = returnReduce(mesh.nPoints(), sumOp<label>());
+    const label nInternalPoints = findInternalMeshPoints(mesh, isInternalPoint);
+
     Info << "Mesh includes a total of " << nPoints << " points:" << endl
          << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
          << "  - " << nPoints - nInternalPoints << " boundary points" << endl
@@ -2213,14 +2227,49 @@ int main(int argc, char *argv[])
         distanceTolerance
     );
 
-    // Preparations for optional smoothing and treatment
+    // Preparations for optional smoothing and layer treatment
     if ((doBoundarySmoothing) or (doLayerTreatment))
     {
-        calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
-        calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);
+        // Resize and initialize storage variables
+        prismIslands1.setSize(mesh.nPoints(), UNDEF_LABEL);
+        prismIslands2.setSize(mesh.nPoints(), UNDEF_LABEL);
+        prismIslands3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointHops1.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointHops2.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointHops3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointNormals1.setSize(mesh.nPoints(), Zero);
+        pointNormals2.setSize(mesh.nPoints(), Zero);
+        pointNormals3.setSize(mesh.nPoints(), Zero);
+        innerPrismPoints1.setSize(mesh.nPoints(), UNDEF_VECTOR);
+        innerPrismPoints2.setSize(mesh.nPoints(), UNDEF_VECTOR);
+        innerPrismPoints3.setSize(mesh.nPoints(), UNDEF_VECTOR);
+        outerPrismPoints1.setSize(mesh.nPoints(), UNDEF_VECTOR);
+        outerPrismPoints2.setSize(mesh.nPoints(), UNDEF_VECTOR);
+        outerPrismPoints3.setSize(mesh.nPoints(), UNDEF_VECTOR);
+        innerPrismPointLabels1.setSize(mesh.nPoints(), UNDEF_LABEL);
+        innerPrismPointLabels2.setSize(mesh.nPoints(), UNDEF_LABEL);
+        innerPrismPointLabels3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        outerPrismPointLabels1.setSize(mesh.nPoints(), UNDEF_LABEL);
+        outerPrismPointLabels2.setSize(mesh.nPoints(), UNDEF_LABEL);
+        outerPrismPointLabels3.setSize(mesh.nPoints(), UNDEF_LABEL);
+
+        // Pre-calculate global boundary point normals and identify
+        // sharp edge points
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
-        propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
-        propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
+
+        // Identify prismatic islands
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, prismIslands1, prismIslands2, prismIslands3);
+
+        // Propagate island fronts
+        for (label i = 0; i < maxLayers + 1; i++)
+        {
+            // WIP propagateIslandFronts(mesh, prismIslands1, prismIslands2, prismIslands3);
+        }
+
+        // calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
+        // calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);
+        // propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
+        // propagateInnerNeighInfo(mesh, isSmoothingSurfacePoint, isConnectedToInternalPoint, isInnerNeighInProc, pointToInnerPointMap, pointHopsToSmoothingBoundary);
 
         forAll (mesh.points(), pointI)
         {
@@ -2285,22 +2334,22 @@ int main(int argc, char *argv[])
         if (doLayerTreatment)
         {
             // Update neighbour coordinates and synchronize among processors
-            updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerNeighCoords);
+            // WIP updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerPrismPoints);
             // Blend orthogonal and centroidal coordinates to newPoints
-            blendWithOrthogonalPoints
-            (
-                 mesh,
-                 newPoints,
-                 isInternalPoint,
-                 pointHopsToLayerBoundary,
-                 pointNormals,
-                 outerNeighCoords,
-                 layerMaxBlendingFraction,
-                 layerEdgeLength,
-                 layerExpansionRatio,
-                 minLayers,
-                 maxLayers + 1  // +1 for correct number of layers
-            );
+            // WIP blendWithOrthogonalPoints
+            // (
+            //      mesh,
+            //      newPoints,
+            //      isInternalPoint,
+            //      pointHopsToLayerBoundary,
+            //      pointNormals,
+            //      outerPrismPoints,
+            //      layerMaxBlendingFraction,
+            //      layerEdgeLength,
+            //      layerExpansionRatio,
+            //      minLayers,
+            //      maxLayers + 1  // +1 for correct number of layers
+            // );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
@@ -2309,49 +2358,49 @@ int main(int argc, char *argv[])
         if (doBoundarySmoothing)
         {
             // Update neighbour coordinates and synchronize among processors
-            updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerNeighCoords);
+            // WIP updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerPrismPoints);
             // Project boundary points
-            projectBoundaryPointsToEdgesAndSurfaces
-            (
-                mesh,
-                newPoints,
-                pointNormals,
-                isInternalPoint,
-                isSmoothingSurfacePoint,
-                isFeatureEdgePoint,
-                isCornerPoint,
-                cornerPoints,
-                targetEdges,
-                surf,
-                tree,
-                meshMinEdgeLength,
-                targetEdgeStrings,
-                pointStrings,
-                isSharpEdgePoint,
-                distanceTolerance,
-                isFrozenPoint
-            );
+            // WIP projectBoundaryPointsToEdgesAndSurfaces
+            // (
+            //     mesh,
+            //     newPoints,
+            //     pointNormals,
+            //     isInternalPoint,
+            //     isSmoothingSurfacePoint,
+            //     isFeatureEdgePoint,
+            //     isCornerPoint,
+            //     cornerPoints,
+            //     targetEdges,
+            //     surf,
+            //     tree,
+            //     meshMinEdgeLength,
+            //     targetEdgeStrings,
+            //     pointStrings,
+            //     isSharpEdgePoint,
+            //     distanceTolerance,
+            //     isFrozenPoint
+            // );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
             // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
 
             // Use the locations of first cell layer points for
             // projecting points to boundary surfaces
-            projectPrismaticInternalPointsToSurfaces
-            (
-                mesh,
-                newPoints,
-                pointHopsToSmoothingBoundary,
-                pointNormals,
-                isSmoothingSurfacePoint,
-                isConnectedToInternalPoint,
-                isFeatureEdgePoint,
-                isCornerPoint,
-                pointToInnerPointMap,
-                innerNeighCoords,
-                internalSmoothingBlendingFraction,
-                isSharpEdgePoint
-            );
+            // WIP projectPrismaticInternalPointsToSurfaces
+            // (
+            //     mesh,
+            //     newPoints,
+            //     pointHopsToSmoothingBoundary,
+            //     pointNormals,
+            //     isSmoothingSurfacePoint,
+            //     isConnectedToInternalPoint,
+            //     isFeatureEdgePoint,
+            //     isCornerPoint,
+            //     pointToInnerPointMap,
+            //     innerPrismPoints,
+            //     internalSmoothingBlendingFraction,
+            //     isSharpEdgePoint
+            // );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
