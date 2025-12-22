@@ -2021,6 +2021,11 @@ int main(int argc, char *argv[])
     labelList pointHops2;
     labelList pointHops3;
 
+    // Indices of point normal source points
+    labelList pointNormalSource1;
+    labelList pointNormalSource2;
+    labelList pointNormalSource3;
+
     // Boundary point normal vectors per boundary island
     vectorList pointNormals1;
     vectorList pointNormals2;
@@ -2237,6 +2242,9 @@ int main(int argc, char *argv[])
         pointHops1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointNormalSource1.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointNormalSource2.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointNormalSource3.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointNormals1.setSize(mesh.nPoints(), Zero);
         pointNormals2.setSize(mesh.nPoints(), Zero);
         pointNormals3.setSize(mesh.nPoints(), Zero);
@@ -2258,9 +2266,9 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
         // Identify prismatic islands
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, prismIslands1, prismIslands2, prismIslands3);
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-        // Propagate island fronts
+        // Propagate island fronts to inner mesh
         for (label i = 0; i < maxLayers + 1; i++)
         {
             // WIP propagateIslandFronts(mesh, prismIslands1, prismIslands2, prismIslands3);

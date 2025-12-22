@@ -59,32 +59,52 @@ label findNewPrismBoundaryPointI
 }
 
 
-// Help function to set a given island id for a point index. If no
+// Help function to set a given island info for a point index. If no
 // island slots are available, reset all slots to ignored value and
-// return false to indicate reset.
+// return false to indicate that point has been reset.
 
-bool addIslandIdForPoint
+bool addIslandInfoForPoint
 (
     const label pointI,
-    const label id,
+    const label pointNormalSourceI,
+    const label islandI,
+    const vectorList& pointNormals,
     labelList& prismIslands1,
     labelList& prismIslands2,
-    labelList& prismIslands3
+    labelList& prismIslands3,
+    labelList& pointHops1,
+    labelList& pointHops2,
+    labelList& pointHops3,
+    labelList& pointNormalSource1,
+    labelList& pointNormalSource2,
+    labelList& pointNormalSource3,
+    vectorList& pointNormals1,
+    vectorList& pointNormals2,
+    vectorList& pointNormals3
 )
 {
     if (prismIslands1[pointI] == UNDEF_LABEL)
     {
-        prismIslands1[pointI] = id;
+        prismIslands1[pointI] = islandI;
+        pointNormalSource1[pointI] = pointNormalSourceI;
+        pointNormals1[pointI] = pointNormals[pointNormalSourceI];
+        pointHops1[pointI] = 0;
         return true;
     }
     else if (prismIslands2[pointI] == UNDEF_LABEL)
     {
-        prismIslands2[pointI] = id;
+        prismIslands2[pointI] = islandI;
+        pointNormalSource2[pointI] = pointNormalSourceI;
+        pointNormals2[pointI] = pointNormals[pointNormalSourceI];
+        pointHops2[pointI] = 0;
         return true;
     }
     else if (prismIslands3[pointI] == UNDEF_LABEL)
     {
-        prismIslands3[pointI] = id;
+        prismIslands3[pointI] = islandI;
+        pointNormalSource3[pointI] = pointNormalSourceI;
+        pointNormals3[pointI] = pointNormals[pointNormalSourceI];
+        pointHops3[pointI] = 0;
         return true;
     }
 
@@ -92,35 +112,54 @@ bool addIslandIdForPoint
     prismIslands1[pointI] = IGNORED_LABEL;
     prismIslands2[pointI] = IGNORED_LABEL;
     prismIslands3[pointI] = IGNORED_LABEL;
+    pointNormalSource1[pointI] = UNDEF_LABEL;
+    pointNormalSource2[pointI] = UNDEF_LABEL;
+    pointNormalSource3[pointI] = UNDEF_LABEL;
+    pointNormals1[pointI] = Zero;
+    pointNormals2[pointI] = Zero;
+    pointNormals3[pointI] = Zero;
+    pointHops1[pointI] = UNDEF_LABEL;
+    pointHops2[pointI] = UNDEF_LABEL;
+    pointHops3[pointI] = UNDEF_LABEL;
     return false;
 }
 
 
 // Help function which propagates the island id of given point index
-// to neighboring prismatic points and to island edge points on the
-// boundary
+// to neighboring prismatic points on the boundary
 
-label propagatePrismIndex
+label propagateIslandInfoOnBoundary
 (
     const fvMesh& mesh,
-    const label pointI,
+    const label startPointI,
     boolList& isVisitedPoint,
     const boolList& isPrismaticPoint,
     const boolList& isLayerSurfacePoint,
+    const vectorList& pointNormals,
     labelList& prismIslands1,
     labelList& prismIslands2,
-    labelList& prismIslands3
+    labelList& prismIslands3,
+    labelList& pointHops1,
+    labelList& pointHops2,
+    labelList& pointHops3,
+    labelList& pointNormalSource1,
+    labelList& pointNormalSource2,
+    labelList& pointNormalSource3,
+    vectorList& pointNormals1,
+    vectorList& pointNormals2,
+    vectorList& pointNormals3
 )
 {
     label n = 1;
     label nTot = 1;
-    const label id = prismIslands1[pointI];
-    if (id < 0)
+    const label islandI = prismIslands1[startPointI];
+    if (islandI < 0)
     {
-        FatalError << "Illegal propagation id " << id << endl << abort(FatalError);
+        FatalError << "Illegal propagation islandI " << islandI << endl << abort(FatalError);
     }
 
-    // Propagate island id in a loop until propagation stops
+    // Propagate island id among prismatic points in a loop until
+    // propagation stops
     while (n > 0)
     {
         n = 0;
@@ -142,13 +181,13 @@ label propagatePrismIndex
                 if (isVisitedPoint[pointI])
                     continue;
 
-                if (prismIslands1[neighI] == id)
+                if (prismIslands1[neighI] == islandI)
                 {
-                    prismIslands1[pointI] = id;
                     isVisitedPoint[pointI] = true;
+                    addIslandInfoForPoint(pointI, pointI, islandI, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
                     ++n;
                     ++nTot;
-                    Info << mesh.points()[pointI] << endl;
+                    // Info << mesh.points()[pointI] << endl;
                 }
             }
         }
@@ -166,58 +205,71 @@ int identifyPrismaticBoundaryIslands
     const fvMesh& mesh,
     const boolList& isPrismaticPoint,
     const boolList& isLayerSurfacePoint,
+    const vectorList& pointNormals,
     labelList& prismIslands1,
     labelList& prismIslands2,
-    labelList& prismIslands3
+    labelList& prismIslands3,
+    labelList& pointHops1,
+    labelList& pointHops2,
+    labelList& pointHops3,
+    labelList& pointNormalSource1,
+    labelList& pointNormalSource2,
+    labelList& pointNormalSource3,
+    vectorList& pointNormals1,
+    vectorList& pointNormals2,
+    vectorList& pointNormals3
 )
 {
     // Processor number (MPI rank)
     const label myProcNo = Pstream::myProcNo();
 
     // Next available island ID
-    label id = myProcNo * maxIds;
+    label islandI = myProcNo * maxIds;
 
     // Storage of processed points
     boolList isVisitedPoint(mesh.nPoints(), false);
-
-    labelList dummy;
 
     // Main identification loop
     while (true)
     {
         // Find an unprocessed prism boundary point
-        const label pointI = findNewPrismBoundaryPointI(mesh, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint);
+        const label startPointI = findNewPrismBoundaryPointI(mesh, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint);
 
         // No more unprocessed prism points, stop
-        if (pointI == UNDEF_LABEL)
+        if (startPointI == UNDEF_LABEL)
         {
             break;
         }
 
         // Add and propagate the island id to all unprocessed prism
-        // boundary points and island edge points on this island
-        addIslandIdForPoint(pointI, id, prismIslands1, dummy, dummy);
-        Info << "Starting pointI " << pointI << " at " << mesh.points()[pointI] << endl;
+        // boundary points points on this island
+        addIslandInfoForPoint(startPointI, startPointI, islandI, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+        // Info << "Starting pointI " << pointI << " at " << mesh.points()[pointI] << endl;
 
-        const label n = propagatePrismIndex(mesh, pointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, prismIslands1, prismIslands2, prismIslands3);
+        const label n = propagateIslandInfoOnBoundary(mesh, startPointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-        FatalError << "WIP stop. Island " << id << " has " << n << " prism points" << endl << abort(FatalError);
+        Pout << "Island " << islandI << " has " << n << " prism points" << endl;
         
+        // Add the non-prismatic edge points to this island
+        // addEdgePointsToPrismIndex(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, prismIslands1, prismIslands2, prismIslands3);
+
         if (n < 1)
         {
             break;
         }
 
         // Reserve next id
-        ++id;
+        ++islandI;
 
-        if (id >= (myProcNo + 1) * maxIds)
+        if (islandI >= (myProcNo + 1) * maxIds)
         {
             FatalError << "Exceeded maximum number of islands " << maxIds << endl << abort(FatalError);
         }
     }
 
-    // WIP TBA: Synchronize island IDs among processors
+    // Synchronize island IDs among processors
+
+
 
     return 0;
 }
