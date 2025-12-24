@@ -80,15 +80,7 @@ int findInternalMeshPoints
         }
     }
 
-    label nPoints = 0;
-    forAll(isInternalPoint, pointI)
-    {
-        if (isInternalPoint[pointI])
-            ++nPoints;
-    }
-
-    const label sumNPoints = returnReduce(nPoints, sumOp<label>());
-    return sumNPoints;
+    return 0;
 }
 
 
@@ -1921,6 +1913,10 @@ int main(int argc, char *argv[])
     // Absolute distance between points to consider points overlap
     const double distanceTolerance = REL_TOL * min(meshMinEdgeLength, layerEdgeLength);
 
+    Info << "Mesh minimum edge length = " << meshMinEdgeLength << endl;
+    Info << "Mesh maximum edge length = " << meshMaxEdgeLength << endl;
+    Info << "Distance tolerance = " << distanceTolerance << endl << endl;
+
     // Boundary point smoothing edge and surface meshes
     const string initEdgesFileString("constant/geometry/initEdges.obj");
     const string targetEdgesFileString("constant/geometry/targetEdges.obj");
@@ -1975,8 +1971,11 @@ int main(int argc, char *argv[])
 
     Info << endl;
 
+    // Number of processors sharing points
+    labelList nProcessorsOnPoint(mesh.nPoints(), 1);
+
     // Storage for markers for internal points
-    boolList isInternalPoint(mesh.nPoints(), false);
+    boolList isInternalPoint(mesh.nPoints(), true);
 
     // Boolean list for marking frozen points (points not allowed to
     // move during smoothing). This list is synced among processors.
@@ -2196,17 +2195,8 @@ int main(int argc, char *argv[])
         targetEdges.reset(new edgeMesh());
     }
 
-    const label nPoints = returnReduce(mesh.nPoints(), sumOp<label>());
-    const label nInternalPoints = findInternalMeshPoints(mesh, isInternalPoint);
-
-    Info << "Mesh includes a total of " << nPoints << " points:" << endl
-         << "  - " << nInternalPoints << " internal (non-boundary) points" << endl
-         << "  - " << nPoints - nInternalPoints << " boundary points" << endl
-         << "Mesh minimum edge length = " << meshMinEdgeLength << endl
-         << "Mesh maximum edge length = " << meshMaxEdgeLength << endl
-         << "Distance tolerance = " << distanceTolerance << endl << endl;
-
     // Classify boundary points and find target corner points for feature edge snapping
+    findInternalMeshPoints(mesh, isInternalPoint);
     classifyBoundaryPoints
     (
         mesh,
@@ -2215,6 +2205,7 @@ int main(int argc, char *argv[])
         layerPatchIds,
         smoothingPatchIds,
         isInternalPoint,
+        nProcessorsOnPoint,
         isProcessorPoint,
         isPrismaticPoint,
         isConnectedToInternalPoint,
@@ -2266,7 +2257,7 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
         // Identify prismatic islands
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint);
 
         // Propagate island fronts to inner mesh
         for (label i = 0; i < maxLayers + 1; i++)

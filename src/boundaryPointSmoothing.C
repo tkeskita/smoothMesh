@@ -274,6 +274,7 @@ int classifyBoundaryPoints
     const labelList& layerPatchIds,
     const labelList& smoothingPatchIds,
     const boolList& isInternalPoint,
+    labelList& nProcessorsOnPoint,
     boolList& isProcessorPoint,
     boolList& isPrismaticPoint,
     boolList& isConnectedToInternalPoint,
@@ -291,11 +292,32 @@ int classifyBoundaryPoints
     const double distanceTolerance
 )
 {
-    label nFeatureEdgePoints = 0;
-    label nCornerPoints = 0;
-    label nLayerSurfacePoints = 0;
-    label nSmoothingSurfacePoints = 0;
-    label nFrozenSurfacePoints = 0;
+    scalar nProcessorPoints = 0.0;
+    scalar nBoundaryPoints = 0.0;
+    scalar nPrismaticPoints = 0.0;
+    scalar nFeatureEdgePoints = 0.0;
+    scalar nCornerPoints = 0.0;
+    scalar nLayerSurfacePoints = 0.0;
+    scalar nSmoothingSurfacePoints = 0.0;
+    scalar nFrozenSurfacePoints = 0.0;
+    scalar nInternalMeshPoints = 0;
+
+    // Count the number of processors sharing each point, to properly
+    // account for each point only once in parallel computation
+
+    forAll (mesh.points(), pointI)
+    {
+        nProcessorsOnPoint[pointI] = 1;
+    }
+    syncTools::syncPointList
+    (
+        mesh,
+        nProcessorsOnPoint,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    // Classify boundary points
 
     boolList isVisitedPoint(mesh.nPoints(), false);
 
@@ -316,12 +338,18 @@ int classifyBoundaryPoints
                 // Process each point only once
                 if (isVisitedPoint[pointI])
                     continue;
+
                 isVisitedPoint[pointI] = true;
 
                 // Processor patch
                 if (isA<processorPolyPatch>(pp))
                 {
                     isProcessorPoint[pointI] = true;
+                    nProcessorPoints += 1.0 / nProcessorsOnPoint[pointI];
+                }
+                else
+                {
+                    nBoundaryPoints += 1.0 / nProcessorsOnPoint[pointI];
                 }
 
                 // Skip rest of classifications if this is not a boundary point
@@ -346,6 +374,7 @@ int classifyBoundaryPoints
                 if (internalConnections == 1)
                 {
                     isPrismaticPoint[pointI] = true;
+                    nPrismaticPoints += 1.0 / nProcessorsOnPoint[pointI];
                 }
 
                 // Classification of boundary smoothing points is done
@@ -393,12 +422,12 @@ int classifyBoundaryPoints
                         const label closestCornerPointI = findClosestEdgeMeshCornerPointIndex(pt, targetEdges);
                         cornerPoints[pointI] = targetEdges.points()[closestCornerPointI];
 
-                        nCornerPoints++;
+                        nCornerPoints += 1.0 / nProcessorsOnPoint[pointI];
                     }
 
                     if (isFeatureEdgePoint[pointI])
                     {
-                        nFeatureEdgePoints++;
+                        nFeatureEdgePoints += 1.0 / nProcessorsOnPoint[pointI];
                     }
                 }
 
@@ -407,7 +436,7 @@ int classifyBoundaryPoints
                 if (testIsLayerSurfacePoint)
                 {
                     isLayerSurfacePoint[pointI] = true;
-                    nLayerSurfacePoints++;
+                    nLayerSurfacePoints += 1.0 / nProcessorsOnPoint[pointI];
                 }
 
                 // Smoothing surface points
@@ -416,7 +445,7 @@ int classifyBoundaryPoints
                 if ((doBoundarySmoothing) and (testIsSmoothingSurfacePoint))
                 {
                     isSmoothingSurfacePoint[pointI] = true;
-                    nSmoothingSurfacePoints++;
+                    nSmoothingSurfacePoints += 1.0 / nProcessorsOnPoint[pointI];
                     continue;
                 }
 
@@ -424,26 +453,60 @@ int classifyBoundaryPoints
                 else
                 {
                     isFrozenSurfacePoint[pointI] = true;
-                    nFrozenSurfacePoints++;
+                    nFrozenSurfacePoints += 1.0 / nProcessorsOnPoint[pointI];
                     continue;
                 }
             }
         }
     }
 
-    // Summarize
-    const label nSumCornerPoints  = returnReduce(nCornerPoints, sumOp<label>());
-    const label nSumFeatureEdgePoints  = returnReduce(nFeatureEdgePoints, sumOp<label>());
-    const label nSumLayerSurfacePoints  = returnReduce(nLayerSurfacePoints, sumOp<label>());
-    const label nSumSmoothingSurfacePoints  = returnReduce(nSmoothingSurfacePoints, sumOp<label>());
-    const label nSumFrozenSurfacePoints  = returnReduce(nFrozenSurfacePoints, sumOp<label>());
+    // Calculate constructed mesh size and internal mesh points
+    scalar nPoints = 0.0;
+    forAll (mesh.points(), pointI)
+    {
+        nPoints += 1.0 / nProcessorsOnPoint[pointI];
 
-    Info << "Boundary point classification summary:" << endl;
-    Info << "- Detected number of corner points: " << nSumCornerPoints << endl;
-    Info << "- Detected number of feature edge points: " << nSumFeatureEdgePoints << endl;
-    Info << "- Detected number of layer surface points: " << nSumLayerSurfacePoints << endl;
-    Info << "- Detected number of smoothing surface points: " << nSumSmoothingSurfacePoints << endl;
-    Info << "- Detected number of frozen surface points: " << nSumFrozenSurfacePoints << endl;
+        if (isInternalPoint[pointI])
+        {
+            nInternalMeshPoints += 1.0 / nProcessorsOnPoint[pointI];
+        }
+    }
+
+    // Summarize
+    const scalar nSumPoints = returnReduce(nPoints, sumOp<scalar>());
+    const scalar nSumProcessorPoints = returnReduce(nProcessorPoints, sumOp<scalar>());
+    const scalar nSumBoundaryPoints = returnReduce(nBoundaryPoints, sumOp<scalar>());
+    const scalar nSumPrismaticPoints = returnReduce(nPrismaticPoints, sumOp<scalar>());
+    const scalar nSumFeatureEdgePoints = returnReduce(nFeatureEdgePoints, sumOp<scalar>());
+    const scalar nSumCornerPoints = returnReduce(nCornerPoints, sumOp<scalar>());
+    const scalar nSumLayerSurfacePoints = returnReduce(nLayerSurfacePoints, sumOp<scalar>());
+    const scalar nSumSmoothingSurfacePoints = returnReduce(nSmoothingSurfacePoints, sumOp<scalar>());
+    const scalar nSumFrozenSurfacePoints = returnReduce(nFrozenSurfacePoints, sumOp<scalar>());
+    const scalar nSumInternalMeshPoints = returnReduce(nInternalMeshPoints, sumOp<scalar>());
+
+    if (nProcessorPoints > 0.0)
+    {
+        Info << "Decomposed mesh contains a total of " << returnReduce(mesh.nPoints(), sumOp<label>()) << " points." << endl << endl;
+        Info << "Mesh statistics (counting all overlapping processor points only once, and" << endl << "not considering processor points as boundary points):" << endl;
+    }
+    else
+    {
+        Info << "Mesh statistics:" << endl;
+    }
+
+    Info << "- Total number of points: " << nSumPoints << endl;
+    Info << "- Internal points: " << nSumInternalMeshPoints << endl;
+    Info << "- Boundary points: " << nSumBoundaryPoints << endl;
+    Info << "- Prismatic points: " << nSumPrismaticPoints << endl;
+    Info << "- Corner points: " << nSumCornerPoints << endl;
+    Info << "- Feature edge points: " << nSumFeatureEdgePoints << endl;
+    Info << "- Layer surface points: " << nSumLayerSurfacePoints << endl;
+    Info << "- Smoothing surface points: " << nSumSmoothingSurfacePoints << endl;
+    Info << "- Frozen surface points: " << nSumFrozenSurfacePoints << endl;
+    if (nSumProcessorPoints > 0.0)
+    {
+        Info << "- Processor points: " << nSumProcessorPoints << endl;
+    }
     Info << endl;
 
     return 0;
