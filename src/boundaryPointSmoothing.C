@@ -274,7 +274,7 @@ int classifyBoundaryPoints
     const labelList& layerPatchIds,
     const labelList& smoothingPatchIds,
     const boolList& isInternalPoint,
-    labelList& nProcessorsOnPoint,
+    const labelList& nProcessorsOnPoint,
     boolList& isProcessorPoint,
     boolList& isPrismaticPoint,
     boolList& isConnectedToInternalPoint,
@@ -302,29 +302,13 @@ int classifyBoundaryPoints
     scalar nFrozenSurfacePoints = 0.0;
     scalar nInternalMeshPoints = 0;
 
-    // Count the number of processors sharing each point, to properly
-    // account for each point only once in parallel computation
-
-    forAll (mesh.points(), pointI)
-    {
-        nProcessorsOnPoint[pointI] = 1;
-    }
-    syncTools::syncPointList
-    (
-        mesh,
-        nProcessorsOnPoint,
-        plusEqOp<label>(),
-        0                         // null value
-    );
+    boolList isVisitedPoint(mesh.nPoints(), false);
+    scalarList internalConnections(mesh.nPoints(), Zero);
 
     // Classify boundary points
 
-    boolList isVisitedPoint(mesh.nPoints(), false);
-
     forAll (mesh.boundary(), patchI)
     {
-        const polyPatch& pp = mesh.boundaryMesh()[patchI];
-
         const label startI = mesh.boundary()[patchI].start();
         const label endI = startI + mesh.boundary()[patchI].Cf().size();
 
@@ -341,13 +325,15 @@ int classifyBoundaryPoints
 
                 isVisitedPoint[pointI] = true;
 
-                // Processor patch
-                if (isA<processorPolyPatch>(pp))
+                // Processor point
+                if (nProcessorsOnPoint[pointI] > 1)
                 {
                     isProcessorPoint[pointI] = true;
                     nProcessorPoints += 1.0 / nProcessorsOnPoint[pointI];
                 }
-                else
+
+                // Boundary point
+                if (! isInternalPoint[pointI])
                 {
                     nBoundaryPoints += 1.0 / nProcessorsOnPoint[pointI];
                 }
@@ -359,22 +345,14 @@ int classifyBoundaryPoints
                 }
 
                 // Check if boundary point has connections to internal mesh point
-                label internalConnections = 0;
                 forAll (mesh.pointPoints()[pointI], pointPointI)
                 {
                     const label i = mesh.pointPoints()[pointI][pointPointI];
                     if (isInternalPoint[i])
                     {
-                        ++internalConnections;
+                        internalConnections[pointI] += 1.0 / nProcessorsOnPoint[pointI];
                         isConnectedToInternalPoint[pointI] = true;
                     }
-                }
-
-                // Prismatic points have exactly one connection
-                if (internalConnections == 1)
-                {
-                    isPrismaticPoint[pointI] = true;
-                    nPrismaticPoints += 1.0 / nProcessorsOnPoint[pointI];
                 }
 
                 // Classification of boundary smoothing points is done
@@ -457,6 +435,25 @@ int classifyBoundaryPoints
                     continue;
                 }
             }
+        }
+    }
+
+    // Sync number of internal connections and deduce prismatic points
+    syncTools::syncPointList
+    (
+        mesh,
+        internalConnections,
+        plusEqOp<scalar>(),
+        0.0                         // null value
+    );
+
+    forAll (mesh.points(), pointI)
+    {
+        // Prismatic points have exactly one internal connection
+        if (abs(internalConnections[pointI] - 1.0) < ABS_TOL)
+        {
+            isPrismaticPoint[pointI] = true;
+            nPrismaticPoints += 1.0 / nProcessorsOnPoint[pointI];
         }
     }
 

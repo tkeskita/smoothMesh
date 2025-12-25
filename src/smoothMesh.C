@@ -24,6 +24,7 @@ Description
 #include "triSurfaceSearch.H"
 #include "edgeMesh.H"
 #include <fstream> // for fileExists
+#include "pointMesh.H" // for pointScalarDebug
 
 #include "smoothMeshCommon.H"
 #include "orthogonalBoundaryBlending.C"
@@ -38,13 +39,28 @@ using namespace Foam;
 // Updates argument boolList accordingly: true for internal points
 // (including processor points) and false for boundary points.
 
-int findInternalMeshPoints
+int classifyInternalPoints
 (
     const fvMesh& mesh,
+    labelList& nProcessorsOnPoint,
     boolList& isInternalPoint
 )
 {
-    // Start from all points in
+    // Count the number of processors sharing each point, to properly
+    // account for each point only once in parallel computation
+    forAll (mesh.points(), pointI)
+    {
+        nProcessorsOnPoint[pointI] = 1;
+    }
+    syncTools::syncPointList
+    (
+        mesh,
+        nProcessorsOnPoint,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    // Start from all points as internal
     isInternalPoint = true;
 
     // Remove points on boundary patches, except not
@@ -2196,7 +2212,7 @@ int main(int argc, char *argv[])
     }
 
     // Classify boundary points and find target corner points for feature edge snapping
-    findInternalMeshPoints(mesh, isInternalPoint);
+    classifyInternalPoints(mesh, nProcessorsOnPoint, isInternalPoint);
     classifyBoundaryPoints
     (
         mesh,
@@ -2222,6 +2238,27 @@ int main(int argc, char *argv[])
         doBoundarySmoothing,
         distanceTolerance
     );
+
+    // // Write selected point field, for debugging only
+    // pointScalarField pointScalarDebugIO
+    // (
+    //     IOobject
+    //     (
+    //         "pointScalarDebug",
+    //         runTime.name(),
+    //         mesh,
+    //         IOobject::NO_READ,
+    //         IOobject::AUTO_WRITE
+    //     ),
+    //     pointMesh::New(mesh),
+    //     dimensionedScalar(dimless, 0)
+    // );
+    // forAll (mesh.points(), pointI)
+    // {
+    //     pointScalarDebugIO[pointI] = (isPrismaticPoint[pointI] ? 1 : 0);
+    // }
+    // pointScalarDebugIO.write();
+    // FatalError << "Wrote pointScalarDebug" << endl << abort(FatalError);
 
     // Preparations for optional smoothing and layer treatment
     if ((doBoundarySmoothing) or (doLayerTreatment))
@@ -2258,6 +2295,27 @@ int main(int argc, char *argv[])
 
         // Identify prismatic islands
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint);
+
+        // Write selected point field, for debugging only
+        pointScalarField pointScalarDebugIO
+            (
+             IOobject
+             (
+              "pointScalarDebug",
+              runTime.name(),
+              mesh,
+              IOobject::NO_READ,
+              IOobject::AUTO_WRITE
+              ),
+             pointMesh::New(mesh),
+             dimensionedScalar(dimless, 0)
+             );
+        forAll (mesh.points(), pointI)
+        {
+            pointScalarDebugIO[pointI] = prismIslands1[pointI];
+        }
+        pointScalarDebugIO.write();
+        FatalError << "Wrote pointScalarDebug" << endl << abort(FatalError);
 
         // Propagate island fronts to inner mesh
         for (label i = 0; i < maxLayers + 1; i++)

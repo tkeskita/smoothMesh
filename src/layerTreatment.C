@@ -14,7 +14,7 @@ Description
 using namespace Foam;
 
 // Maximum number of prism islands allowed in one processor
-const label maxIds = 10000;
+const label maxIslands = 10000;
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -43,15 +43,21 @@ label findNewPrismBoundaryPointI
 
         // Check that all neighbor boundary points are prismatic
         // before accepting
+        bool allNeighsArePrismatic = true;
         forAll (mesh.pointPoints()[pointI], pointPointI)
         {
             const label neighI = mesh.pointPoints()[pointI][pointPointI];
             if ((isLayerSurfacePoint[neighI]) and (! isPrismaticPoint[neighI]))
-                continue;
+            {
+                allNeighsArePrismatic = false;
+            }
         }
 
         // Accept point
-        return pointI;
+        if (allNeighsArePrismatic)
+        {
+            return pointI;
+        }
     }
 
     // All points processed
@@ -70,7 +76,9 @@ bool isPointInIsland
     const labelList& prismIslands3
 )
 {
-    return ((prismIslands1[pointI] == islandI) or
+    return
+    (
+        (prismIslands1[pointI] == islandI) or
         (prismIslands2[pointI] == islandI) or
         (prismIslands3[pointI] == islandI)
     );
@@ -170,11 +178,14 @@ label propagateIslandInfoOnBoundary
     labelList& pointNormalSource3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
-    vectorList& pointNormals3
+    vectorList& pointNormals3,
+    const boolList& isProcessorPoint,
+    label& nProcPrisms
 )
 {
     label n = 1;
     label nTot = 1;
+    nProcPrisms = 0;
     const label islandI = prismIslands1[startPointI];
     if (islandI < 0)
     {
@@ -186,6 +197,7 @@ label propagateIslandInfoOnBoundary
     while (n > 0)
     {
         n = 0;
+        Pout << "  Starting propagation round, nTot=" << nTot << endl;
 
         forAll(mesh.points(), pointI)
         {
@@ -195,14 +207,14 @@ label propagateIslandInfoOnBoundary
                 continue;
             if (prismIslands1[pointI] != UNDEF_LABEL)
                 continue;
+            // Pout << "    Considering pointI " << pointI << endl;
 
             forAll (mesh.pointPoints()[pointI], pointPointI)
             {
                 const label neighI = mesh.pointPoints()[pointI][pointPointI];
                 if (! isLayerSurfacePoint[neighI])
                     continue;
-                if (isVisitedPoint[pointI])
-                    continue;
+                // Pout << "      Considering neighI " << neighI << endl;
 
                 if (prismIslands1[neighI] == islandI)
                 {
@@ -210,7 +222,12 @@ label propagateIslandInfoOnBoundary
                     addIslandInfoForPoint(pointI, pointI, islandI, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
                     ++n;
                     ++nTot;
-                    // Info << mesh.points()[pointI] << endl;
+                    if (isProcessorPoint[pointI])
+                    {
+                        ++nProcPrisms;
+                    }
+                    // Pout << "    Added pointI " << pointI << " at " << mesh.points()[pointI] << endl;
+                    break;
                 }
             }
         }
@@ -313,7 +330,6 @@ label addEdgePointsToIsland
                     addIslandInfoForPoint(pointI, pointNormalSource1[neighI], islandI, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
                     ++n;
                     ++nTot;
-                    // Pout << "  Added edge point " << pointI << " to island " << islandI << " res " << res << endl;
                     break;
                 }
             }
@@ -343,19 +359,21 @@ int identifyPrismaticBoundaryIslands
     labelList& pointNormalSource3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
-    vectorList& pointNormals3
+    vectorList& pointNormals3,
+    const boolList& isProcessorPoint
 )
 {
     // Processor number (MPI rank)
     const label myProcNo = Pstream::myProcNo();
 
     // Next available island ID
-    label islandI = myProcNo * maxIds;
+    label islandI = myProcNo * maxIslands;
 
     // Storage of processed points
     boolList isVisitedPoint(mesh.nPoints(), false);
 
     // Main identification loop
+    label nProcPrisms = 0;
     while (true)
     {
         // Find an unprocessed prism boundary point
@@ -370,14 +388,9 @@ int identifyPrismaticBoundaryIslands
         // Add and propagate the island id to all unprocessed prism
         // boundary points points on this island
         addIslandInfoForPoint(startPointI, startPointI, islandI, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-        // Info << "Starting pointI " << pointI << " at " << mesh.points()[pointI] << endl;
+        Pout << "Starting island " << islandI << " pointI " << startPointI << " at " << mesh.points()[startPointI] << endl;
 
-        const label n = propagateIslandInfoOnBoundary(mesh, startPointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-
-        // Add the non-prismatic edge points to this island
-        const label ne = addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-
-        Pout << "Island " << islandI << " has " << n << " prism points" << " and " << ne << " edge points" << endl;
+        const label n = propagateIslandInfoOnBoundary(mesh, startPointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, nProcPrisms);
 
         if (n < 1)
         {
@@ -387,15 +400,92 @@ int identifyPrismaticBoundaryIslands
         // Reserve next id
         ++islandI;
 
-        if (islandI >= (myProcNo + 1) * maxIds)
+        if (islandI >= (myProcNo + 1) * maxIslands)
         {
-            FatalError << "Exceeded maximum number of islands " << maxIds << endl << abort(FatalError);
+            FatalError << "Exceeded maximum number of islands " << maxIslands << endl << abort(FatalError);
         }
     }
 
     // Synchronize island IDs among processors
 
+    labelList prismIslands1Sync(mesh.nPoints(), UNDEF_LABEL);
+    label oldI = UNDEF_LABEL;
+    label newI = UNDEF_LABEL;
+    label nRenumbered = 1;
+    label i = 0;
 
+    while (nRenumbered > 0)
+    {
+        nRenumbered = 0;
+        oldI = UNDEF_LABEL;
+        newI = UNDEF_LABEL;
+        ++i;
+        Info << "Renumbering round " << i << endl;
+
+        forAll(mesh.points(), pointI)
+        {
+            prismIslands1Sync[pointI] = prismIslands1[pointI];
+        }
+
+        syncTools::syncPointList
+            (
+                mesh,
+                prismIslands1Sync,
+                maxEqOp<label>(),
+                UNDEF_LABEL               // null value
+            );
+
+        // Find old and new index numbers from synced result
+        forAll(mesh.points(), pointI)
+        {
+            if ((prismIslands1[pointI]) < 0)
+                continue;
+            if (prismIslands1Sync[pointI] > prismIslands1[pointI])
+            {
+                oldI = prismIslands1[pointI];
+                newI = prismIslands1Sync[pointI];
+            }
+        }
+
+        // Change old index number to new one
+        if (newI > 0)
+        {
+            forAll(mesh.points(), pointI)
+            {
+                if (prismIslands1[pointI] == oldI)
+                {
+                    prismIslands1[pointI] = newI;
+                    ++nRenumbered;
+                }
+            }
+
+            Pout << "  Renumbered island " << oldI << " to " << newI << endl;
+        }
+
+        // Sync work switch among processors
+        const label nRenumberedMax = returnReduce(nRenumbered, maxOp<label>());
+        nRenumbered = nRenumberedMax;
+    }
+
+    // Find out final island id numbers
+    labelList islandIs;
+    forAll (mesh.points(), pointI)
+    {
+        if (prismIslands1[pointI] < 0)
+            continue;
+        if (findIndex(islandIs, prismIslands1[pointI]) == -1)
+        {
+            islandIs.append(prismIslands1[pointI]);
+        }
+    }
+
+    // Add the non-prismatic edge points to final islands
+    for (const label islandI : islandIs)
+    {
+        const label ne = addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+
+        // Pout << "Island " << islandI << " has " << n << " prism points, " << nProcPrisms <<  " processor-prism points and " << ne << " edge points" << endl;
+    }
 
     return 0;
 }
