@@ -2026,6 +2026,9 @@ int main(int argc, char *argv[])
 
     // Boundary layer treatment variables (uninitialized, allocation only)
 
+    // Island indices
+    labelList islandIs;
+
     // Prismatic boundary island indices and propagation states for points
     labelList prismIslands1;
     labelList prismIslands2;
@@ -2294,33 +2297,33 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
         // Identify prismatic islands
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint);
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
 
-        // Write selected point field, for debugging only
-        pointScalarField pointScalarDebugIO
-            (
-             IOobject
-             (
-              "pointScalarDebug",
-              runTime.name(),
-              mesh,
-              IOobject::NO_READ,
-              IOobject::AUTO_WRITE
-              ),
-             pointMesh::New(mesh),
-             dimensionedScalar(dimless, 0)
-             );
-        forAll (mesh.points(), pointI)
-        {
-            pointScalarDebugIO[pointI] = prismIslands1[pointI];
-        }
-        pointScalarDebugIO.write();
-        FatalError << "Wrote pointScalarDebug" << endl << abort(FatalError);
+        // // Write selected point field, for debugging only
+        // pointScalarField pointScalarDebugIO
+        //     (
+        //      IOobject
+        //      (
+        //       "pointScalarDebug",
+        //       runTime.name(),
+        //       mesh,
+        //       IOobject::NO_READ,
+        //       IOobject::AUTO_WRITE
+        //       ),
+        //      pointMesh::New(mesh),
+        //      dimensionedScalar(dimless, 0)
+        //      );
+        // forAll (mesh.points(), pointI)
+        // {
+        //     pointScalarDebugIO[pointI] = prismIslands1[pointI];
+        // }
+        // pointScalarDebugIO.write();
+        // FatalError << "Wrote pointScalarDebug" << endl << abort(FatalError);
 
         // Propagate island fronts to inner mesh
-        for (label i = 0; i < maxLayers + 1; i++)
+        for (label i = 0; i < maxLayers; i++)
         {
-            // WIP propagateIslandFronts(mesh, prismIslands1, prismIslands2, prismIslands3);
+            propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
         }
 
         // calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
