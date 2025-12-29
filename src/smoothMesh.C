@@ -2299,6 +2299,8 @@ int main(int argc, char *argv[])
         // Identify prismatic islands
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
 
+        Pout << "islandIs " << islandIs << endl;
+
         // // Write selected point field, for debugging only
         // pointScalarField pointScalarDebugIO
         //     (

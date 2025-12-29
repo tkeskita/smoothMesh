@@ -507,27 +507,71 @@ int identifyPrismaticBoundaryIslands
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Help function to convert active island id number to passive or vice versa
+
+label invertIslandI
+(
+    const label islandI
+)
+{
+    if (islandI < 0)
+    {
+        FatalError << "island " << islandI << " is illegal for conversion" << endl;
+    }
+
+    if (islandI < passiveIndexStart)
+    {
+        return passiveIndexStart + islandI;
+    }
+    else
+    {
+        return islandI - passiveIndexStart;
+    }
+}
+
 // Help function to find current front and candidate points for front propagation
 
-int findFrontPointIs
+int findPropagationFrontPointIs
 (
     const fvMesh& mesh,
     const label islandI,
     labelList& frontPointIs,
     labelList& candidatePointIs,
     boolList& isCandidatePrismatic,
+    boolList& isPropagationModeActive,
     const labelList& prismIslands1,
     const labelList& prismIslands2,
     const labelList& prismIslands3
 )
 {
+    label nFreePoints = 0;
+    label candidateI = UNDEF_LABEL;
+    label nFrontPoints = 0;
+
     forAll (mesh.points(), pointI)
     {
+        // Info << "islandI " << islandI << " pointI " << pointI << endl;
+
         if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
             continue;
 
-        label nFreePoints = 0;
-        label candidateI = UNDEF_LABEL;
+        nFreePoints = 0;
+        candidateI = UNDEF_LABEL;
+
+        // Check are there any passive points next to this one. That
+        // makes propagation mode passive.
+        bool isActive = true;
+        forAll (mesh.pointPoints()[pointI], pointPointI)
+        {
+            const label neighI = mesh.pointPoints()[pointI][pointPointI];
+
+            if (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            {
+                isActive = false;
+            }
+        }
+
+        // Find all connections to inner mesh, initialize as item in storage lists
 
         forAll (mesh.pointPoints()[pointI], pointPointI)
         {
@@ -540,20 +584,19 @@ int findFrontPointIs
                 frontPointIs.append(pointI);
                 candidatePointIs.append(candidateI);
                 isCandidatePrismatic.append(false);
+                isPropagationModeActive.append(isActive);
             }
         }
 
-        // If point connection from front point to candidate is
-        // prismatic, check and modify the prismatic information if
-        // needed
+        // Check is point connection from front point to candidate
+        // prismatic
 
         if (nFreePoints == 1)
         {
-            // Calculate the number of connections from candidate to
-            // island front to check if candidate connection is
+            // Check is connections from candidate to island front
             // prismatic
 
-            label nFrontPoints = 0;
+            nFrontPoints = 0;
             forAll (mesh.pointPoints()[candidateI], pointPointI)
             {
                 const label neighI = mesh.pointPoints()[candidateI][pointPointI];
@@ -564,19 +607,40 @@ int findFrontPointIs
                 }
             }
 
+            const label lastPointI = isCandidatePrismatic.size() - 1;
+
+            // If it is prismatic, correct the information for last point
             if (nFrontPoints == 1)
             {
-                const label lastPointI = isCandidatePrismatic.size();
                 isCandidatePrismatic[lastPointI] = true;
 
-                // OBJ Debug printout for viewing prismatic edges
-                Info << "v " << mesh.points()[pointI][0] << " " << mesh.points()[pointI][1] << " " << mesh.points()[pointI][2] << endl;
-                Info << "v " << mesh.points()[candidateI][0] << " " << mesh.points()[candidateI][1] << " " << mesh.points()[candidateI][2] << endl;
-                Info << "l " << lastPointI*2 - 1 << " " << lastPointI*2 << endl;
+                if (islandI == 0)
+                {
+                    // OBJ Debug printout for viewing prismatic edges
+                    Info << "v " << mesh.points()[pointI][0] << " " << mesh.points()[pointI][1] << " " << mesh.points()[pointI][2] << endl;
+                    Info << "v " << mesh.points()[candidateI][0] << " " << mesh.points()[candidateI][1] << " " << mesh.points()[candidateI][2] << endl;
+                    Info << "l " << lastPointI*2 + 1 << " " << lastPointI*2 + 2 << endl;
+                }
+            }
+
+            // If candidate is not prismatic (there are many
+            // connections to front), then make sure propagation mode
+            // is passive
+            else
+            {
+                forAll (candidatePointIs, testI)
+                {
+                    if (candidatePointIs[testI] == candidateI)
+                    {
+                        isPropagationModeActive[testI] = false;
+                    }
+                }
             }
         }
     }
-    FatalError << "DEBUG STOP" << endl << abort(FatalError);
+
+    if (islandI == 0)
+        FatalError << "DEBUG STOP" << endl << abort(FatalError);
 
     return 0;
 }
@@ -612,21 +676,25 @@ int propagateIslandFronts
 )
 {
     scalar nAddedPrisms = 0.0;
+    labelList candidatePointIs;
+    labelList frontPointIs;
+    boolList isCandidatePrismatic;
+    boolList isPropagationModeActive;
 
     for (const label islandI : islandIs)
     {
         // Find next front points (free unassigned point indices next
         // to active island points), and their neighboring active
         // current front point indices
-        labelList candidatePointIs;
-        labelList frontPointIs;
-        boolList isCandidatePrismatic;
-        findFrontPointIs(mesh, islandI, frontPointIs, candidatePointIs, isCandidatePrismatic, prismIslands1, prismIslands2, prismIslands3);
+        candidatePointIs.clear();
+        frontPointIs.clear();
+        isCandidatePrismatic.clear();
+        isPropagationModeActive.clear();
+        findPropagationFrontPointIs(mesh, islandI, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3);
 
-        // Deduce does current front points propagate active index (or
-        // do they propagate passive index)
-        boolList isPropagationModeActive;
-        // WIP deducePropagationMode(mesh, curPointIs, isPropagationModeActive)
+        // Info << "size of candidatePointIs " << candidatePointIs.size() << endl;
+        // Info << "size of frontPointIs " << frontPointIs.size() << endl;
+        // Info << "size of isCandidatePrismatic " << isCandidatePrismatic.size() << endl;
 
         // Process the candidate points
         forAll (candidatePointIs, pointI)
