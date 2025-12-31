@@ -277,6 +277,11 @@ label addEdgePointsToIsland
 
         for (label faceI = startI; faceI < endI; faceI++)
         {
+            // Skip faces on processor patches
+            const polyPatch& pp = mesh.boundaryMesh()[patchI];
+            if (isA<processorPolyPatch>(pp))
+                continue;
+
             const face& f = mesh.faces()[faceI];
 
             // Is this face part of island?
@@ -487,6 +492,7 @@ int identifyPrismaticBoundaryIslands
     {
         if (prismIslands1[pointI] < 0)
             continue;
+
         if (findIndex(islandIs, prismIslands1[pointI]) == -1)
         {
             islandIs.append(prismIslands1[pointI]);
@@ -499,7 +505,7 @@ int identifyPrismaticBoundaryIslands
         // const label ne =
         addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-        // Pout << "Island " << islandI << " has " << n << " prism points, " << nProcPrisms <<  " processor-prism points and " << ne << " edge points" << endl;
+        // Pout << "Island " << islandI << " has " << ne << " edge points" << endl;
     }
 
     return 0;
@@ -529,6 +535,99 @@ label invertIslandI
     }
 }
 
+// Help function to calculate number of free (undefined) islands,
+// number of all front islands points, and passive front points
+// neighboring each point
+
+int countFrontPoints
+(
+    const fvMesh& mesh,
+    const label islandI,
+    labelList& freePoints,
+    labelList& frontPoints,
+    labelList& passivePoints,
+    const labelList& prismIslands1,
+    const labelList& prismIslands2,
+    const labelList& prismIslands3
+)
+{
+    forAll (mesh.points(), pointI)
+    {
+        forAll (mesh.pointPoints()[pointI], pointPointI)
+        {
+            const label neighI = mesh.pointPoints()[pointI][pointPointI];
+
+            // Free points
+            if
+            (
+                (! isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)) and
+                (! isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            )
+            {
+                freePoints[pointI] += 1;
+                if (pointI==32)
+                    Pout << "32 free at " << neighI << endl;
+            }
+
+            // All front points
+            if
+            (
+                (isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)) or
+                (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            )
+            {
+                frontPoints[pointI] += 1;
+                if (pointI==32)
+                    Pout << "32 front at " << neighI
+                         << " islandI " <<  isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)
+                         << " invIslandI " <<  isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3)
+                         << " prismIslands1 " << prismIslands1[32]
+                         << " prismIslands2 " << prismIslands2[32]
+                         << " prismIslands3 " << prismIslands3[32]
+                         << endl;
+            }
+
+            // Passive front points
+            if (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            {
+                passivePoints[pointI] += 1;
+            }
+        }
+    }
+
+    // Synchronize free points
+    syncTools::syncPointList
+    (
+        mesh,
+        freePoints,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    // Synchronize front points
+    syncTools::syncPointList
+    (
+        mesh,
+        frontPoints,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    // Synchronize passive points
+    syncTools::syncPointList
+    (
+        mesh,
+        passivePoints,
+        plusEqOp<label>(),
+        0                         // null value
+    );
+
+    Pout << "32 free " << freePoints[32] << " front " << frontPoints[32] << " passive " << passivePoints[32] << endl;
+
+    return 0;
+}
+
+
 // Help function to find current front and candidate points for front propagation
 
 int findPropagationFrontPointIs
@@ -544,103 +643,91 @@ int findPropagationFrontPointIs
     const labelList& prismIslands3
 )
 {
-    label nFreePoints = 0;
-    label candidateI = UNDEF_LABEL;
-    label nFrontPoints = 0;
+    // label debugV = 0;
+
+    // Count global number of free (undefined) islands, number of
+    // front islands and passive island points connected to each point
+    labelList freePoints(mesh.nPoints(), Zero);
+    labelList frontPoints(mesh.nPoints(), Zero);
+    labelList passivePoints(mesh.nPoints(), Zero);
+    countFrontPoints(mesh, islandI, freePoints, frontPoints, passivePoints, prismIslands1, prismIslands2, prismIslands3);
 
     forAll (mesh.points(), pointI)
     {
         // Info << "islandI " << islandI << " pointI " << pointI << endl;
 
+        // Consider only active front points next to
         if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
             continue;
 
-        nFreePoints = 0;
-        candidateI = UNDEF_LABEL;
-
-        // Check are there any passive points next to this one. That
-        // makes propagation mode passive.
-        bool isActive = true;
+        // Find and add pairs of front-to-free points into lists
         forAll (mesh.pointPoints()[pointI], pointPointI)
         {
             const label neighI = mesh.pointPoints()[pointI][pointPointI];
 
-            if (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            // Skip neighbor if it is not free
+            if
+            (
+                (isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)) or
+                (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            )
             {
-                isActive = false;
+                continue;
             }
-        }
 
-        // Find all connections to inner mesh, initialize as item in storage lists
-
-        forAll (mesh.pointPoints()[pointI], pointPointI)
-        {
-            const label neighI = mesh.pointPoints()[pointI][pointPointI];
-
-            if (! isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3))
+            if (frontPoints[neighI] > 0)
             {
-                ++nFreePoints;
-                candidateI = neighI;
+                // Front point
                 frontPointIs.append(pointI);
-                candidatePointIs.append(candidateI);
-                isCandidatePrismatic.append(false);
-                isPropagationModeActive.append(isActive);
-            }
-        }
 
-        // Check is point connection from front point to candidate
-        // prismatic
+                // Candidate free point
+                candidatePointIs.append(neighI);
 
-        if (nFreePoints == 1)
-        {
-            // Check is connections from candidate to island front
-            // prismatic
-
-            nFrontPoints = 0;
-            forAll (mesh.pointPoints()[candidateI], pointPointI)
-            {
-                const label neighI = mesh.pointPoints()[candidateI][pointPointI];
-
-                if (isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3))
+                // Is connection prismatic? Yes if front point has
+                // only one free point connection (it's the
+                // candidate), and the candidate has only one front
+                // point connection (it's the front point)
+                if ((freePoints[pointI] == 1) and (frontPoints[neighI] == 1))
                 {
-                    ++nFrontPoints;
+                    isCandidatePrismatic.append(true);
                 }
-            }
-
-            const label lastPointI = isCandidatePrismatic.size() - 1;
-
-            // If it is prismatic, correct the information for last point
-            if (nFrontPoints == 1)
-            {
-                isCandidatePrismatic[lastPointI] = true;
-
-                if (islandI == 0)
+                else
                 {
-                    // OBJ Debug printout for viewing prismatic edges
-                    Info << "v " << mesh.points()[pointI][0] << " " << mesh.points()[pointI][1] << " " << mesh.points()[pointI][2] << endl;
-                    Info << "v " << mesh.points()[candidateI][0] << " " << mesh.points()[candidateI][1] << " " << mesh.points()[candidateI][2] << endl;
-                    Info << "l " << lastPointI*2 + 1 << " " << lastPointI*2 + 2 << endl;
+                    isCandidatePrismatic.append(false);
                 }
-            }
 
-            // If candidate is not prismatic (there are many
-            // connections to front), then make sure propagation mode
-            // is passive
-            else
-            {
-                forAll (candidatePointIs, testI)
+                // Is propagation for this connection active or
+                // passive? Mode is passive if connection is not
+                // prismatic, or if the front point is connected to
+                // passive front point. Otherwise propagation is
+                // active.
+                const label lastI = isCandidatePrismatic.size() - 1;
+                if
+                (
+                    (! isCandidatePrismatic[lastI]) or
+                    (passivePoints[pointI] > 0)
+                )
                 {
-                    if (candidatePointIs[testI] == candidateI)
-                    {
-                        isPropagationModeActive[testI] = false;
-                    }
+                    isPropagationModeActive.append(false);
+                }
+                else
+                {
+                    isPropagationModeActive.append(true);
+
+                    // // OBJ format debug printout for viewing prismatic edges
+                    // if (islandI == 0)
+                    // {
+                    //     Pout << "v " << mesh.points()[pointI][0] << " " << mesh.points()[pointI][1] << " " << mesh.points()[pointI][2] << endl;
+                    //     Pout << "v " << mesh.points()[neighI][0] << " " << mesh.points()[neighI][1] << " " << mesh.points()[neighI][2] << endl;
+                    //     Pout << "l " << debugV + 1 << " " << debugV + 2 << endl;
+                    //     debugV += 2;
+                    // }
                 }
             }
         }
     }
 
-    if (islandI == 0)
-        FatalError << "DEBUG STOP" << endl << abort(FatalError);
+    // FatalError << "DEBUG STOP" << endl << abort(FatalError);
 
     return 0;
 }
@@ -711,7 +798,7 @@ int propagateIslandFronts
             // Otherwise propagate the passive island index number
             else
             {
-                addIslandInfoForPoint(candidatePointIs[pointI], frontPointIs[pointI], passiveIndexStart + islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                addIslandInfoForPoint(candidatePointIs[pointI], frontPointIs[pointI], invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
             }
         }
 

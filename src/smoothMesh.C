@@ -2301,26 +2301,67 @@ int main(int argc, char *argv[])
 
         Pout << "islandIs " << islandIs << endl;
 
-        // // Write selected point field, for debugging only
-        // pointScalarField pointScalarDebugIO
-        //     (
-        //      IOobject
-        //      (
-        //       "pointScalarDebug",
-        //       runTime.name(),
-        //       mesh,
-        //       IOobject::NO_READ,
-        //       IOobject::AUTO_WRITE
-        //       ),
-        //      pointMesh::New(mesh),
-        //      dimensionedScalar(dimless, 0)
-        //      );
-        // forAll (mesh.points(), pointI)
-        // {
-        //     pointScalarDebugIO[pointI] = prismIslands1[pointI];
-        // }
-        // pointScalarDebugIO.write();
-        // FatalError << "Wrote pointScalarDebug" << endl << abort(FatalError);
+        // Write selected point field, for debugging only
+        runTime++;
+
+        pointScalarField pointScalarDebugIO
+            (
+             IOobject
+             (
+              "pointScalarDebug1",
+              runTime.name(),
+              mesh,
+              IOobject::NO_READ,
+              IOobject::AUTO_WRITE
+              ),
+             pointMesh::New(mesh),
+             dimensionedScalar(dimless, 0)
+             );
+        forAll (mesh.points(), pointI)
+        {
+            pointScalarDebugIO[pointI] = prismIslands1[pointI];
+        }
+        pointScalarDebugIO.write();
+
+        pointScalarField pointScalarDebugIO2
+            (
+             IOobject
+             (
+              "pointScalarDebug2",
+              runTime.name(),
+              mesh,
+              IOobject::NO_READ,
+              IOobject::AUTO_WRITE
+              ),
+             pointMesh::New(mesh),
+             dimensionedScalar(dimless, 0)
+             );
+        forAll (mesh.points(), pointI)
+        {
+            pointScalarDebugIO2[pointI] = prismIslands2[pointI];
+        }
+        pointScalarDebugIO2.write();
+
+        pointScalarField pointScalarDebugIO3
+            (
+             IOobject
+             (
+              "pointScalarDebug3",
+              runTime.name(),
+              mesh,
+              IOobject::NO_READ,
+              IOobject::AUTO_WRITE
+              ),
+             pointMesh::New(mesh),
+             dimensionedScalar(dimless, 0)
+             );
+        forAll (mesh.points(), pointI)
+        {
+            pointScalarDebugIO3[pointI] = prismIslands3[pointI];
+        }
+        pointScalarDebugIO3.write();
+
+        FatalError << "DEBUG STOP, wrote pointScalarDebugX fields" << endl << abort(FatalError);
 
         // Propagate island fronts to inner mesh
         for (label i = 0; i < maxLayers; i++)
