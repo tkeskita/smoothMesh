@@ -2299,7 +2299,15 @@ int main(int argc, char *argv[])
         // Identify prismatic islands
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
 
-        Pout << "islandIs " << islandIs << endl;
+        // Synchronize and sort a global list of islandIs
+        mergeAndSortIslandIs(islandIs);
+
+        // Propagate island fronts to inner mesh
+        //for (label i = 0; i < maxLayers; i++)
+        for (label i = 0; i < 1; i++)
+        {
+            propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+        }
 
         // Write selected point field, for debugging only
         runTime++;
@@ -2362,12 +2370,6 @@ int main(int argc, char *argv[])
         pointScalarDebugIO3.write();
 
         FatalError << "DEBUG STOP, wrote pointScalarDebugX fields" << endl << abort(FatalError);
-
-        // Propagate island fronts to inner mesh
-        for (label i = 0; i < maxLayers; i++)
-        {
-            propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-        }
 
         // calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
         // calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);

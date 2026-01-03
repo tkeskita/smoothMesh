@@ -511,6 +511,56 @@ int identifyPrismaticBoundaryIslands
     return 0;
 }
 
+
+// Help function to synchronize and sort island ids among processors
+
+int mergeAndSortIslandIs
+(
+    labelList& islandIs
+)
+{
+    // Sort local islands to build stack in correct order
+    labelList sortedIs;
+    // Foam::sortedOrder(islandIs, sortedIs, maxOp<label>()); // Does not work right, bug in OF?
+    Foam::sortedOrder(islandIs, sortedIs);
+
+    // Populate a stack with local island ids
+    std::stack<label> islandStack;
+    islandStack.push(UNDEF_LABEL);  // terminator label
+    for (label i = sortedIs.size() - 1; i >= 0; --i)
+    {
+        islandStack.push(islandIs[sortedIs[i]]);
+    }
+
+    islandIs.clear();
+
+    label firstIsland = 0;
+
+    while (firstIsland != UNDEF_LABEL)
+    {
+        // Get smallest id among processors
+        firstIsland = islandStack.top();
+        const label syncedFirst = returnReduce(firstIsland, minOp<label>());
+
+        // Stop if done
+        if (syncedFirst == UNDEF_LABEL)
+        {
+            break;
+        }
+
+        // Add to island list and clean up if needed
+        islandIs.append(syncedFirst);
+
+        if (firstIsland == syncedFirst)
+        {
+            islandStack.pop();
+        }
+    }
+
+    return 0;
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 // Help function to convert active island id number to passive or vice versa
@@ -543,19 +593,29 @@ int countFrontPoints
 (
     const fvMesh& mesh,
     const label islandI,
-    labelList& freePoints,
-    labelList& frontPoints,
-    labelList& passivePoints,
+    const labelList& nProcessorsOnPoint,
+    labelList& nFreePoints,
+    labelList& nFrontPoints,
+    labelList& nPassivePoints,
     const labelList& prismIslands1,
     const labelList& prismIslands2,
     const labelList& prismIslands3
 )
 {
+    vectorList freePoints(mesh.nPoints(), UNDEF_VECTOR);
+    vectorList frontPoints(mesh.nPoints(), UNDEF_VECTOR);
+    vectorList passivePoints(mesh.nPoints(), UNDEF_VECTOR);
+
+    vectorList freePointsSync(mesh.nPoints(), UNDEF_VECTOR);
+    vectorList frontPointsSync(mesh.nPoints(), UNDEF_VECTOR);
+    vectorList passivePointsSync(mesh.nPoints(), UNDEF_VECTOR);
+
     forAll (mesh.points(), pointI)
     {
         forAll (mesh.pointPoints()[pointI], pointPointI)
         {
             const label neighI = mesh.pointPoints()[pointI][pointPointI];
+            const vector neighP = mesh.points()[neighI];
 
             // Free points
             if
@@ -564,9 +624,9 @@ int countFrontPoints
                 (! isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
             )
             {
-                freePoints[pointI] += 1;
-                if (pointI==32)
-                    Pout << "32 free at " << neighI << endl;
+                freePoints[pointI] = neighP;
+                freePointsSync[pointI] = neighP;
+                nFreePoints[pointI] += 1;
             }
 
             // All front points
@@ -576,53 +636,96 @@ int countFrontPoints
                 (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
             )
             {
-                frontPoints[pointI] += 1;
-                if (pointI==32)
-                    Pout << "32 front at " << neighI
-                         << " islandI " <<  isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)
-                         << " invIslandI " <<  isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3)
-                         << " prismIslands1 " << prismIslands1[32]
-                         << " prismIslands2 " << prismIslands2[32]
-                         << " prismIslands3 " << prismIslands3[32]
-                         << endl;
+                frontPoints[pointI] = neighP;
+                frontPointsSync[pointI] = neighP;
+                nFrontPoints[pointI] += 1;
             }
 
             // Passive front points
             if (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
             {
-                passivePoints[pointI] += 1;
+                passivePoints[pointI] = neighP;
+                passivePointsSync[pointI] = neighP;
+                nPassivePoints[pointI] += 1;
             }
         }
     }
 
-    // Synchronize free points
+    // Synchronize point coordinates
+
     syncTools::syncPointList
     (
         mesh,
-        freePoints,
-        plusEqOp<label>(),
-        0                         // null value
+        freePointsSync,
+        eqOp<vector>(),
+        UNDEF_VECTOR              // null value
     );
 
-    // Synchronize front points
     syncTools::syncPointList
     (
         mesh,
-        frontPoints,
-        plusEqOp<label>(),
-        0                         // null value
+        frontPointsSync,
+        eqOp<vector>(),
+        UNDEF_VECTOR              // null value
     );
 
-    // Synchronize passive points
     syncTools::syncPointList
     (
         mesh,
-        passivePoints,
-        plusEqOp<label>(),
+        passivePointsSync,
+        eqOp<vector>(),
+        UNDEF_VECTOR              // null value
+    );
+
+    // Check for differences in point coordinates, which indicates
+    // that different processors found a different point
+
+    forAll (mesh.points(), pointI)
+    {
+        if (freePoints[pointI] != freePointsSync[pointI])
+        {
+            nFreePoints[pointI] += 1;
+        }
+
+        if (frontPoints[pointI] != frontPointsSync[pointI])
+        {
+            nFrontPoints[pointI] += 1;
+        }
+
+        if (passivePoints[pointI] != passivePointsSync[pointI])
+        {
+            nPassivePoints[pointI] += 1;
+        }
+    }
+
+    // Finally get maximum count as the result. Note that this is not
+    // a true count for values above one, because not every point
+    // coordinate was compared. However this is fine, since only the
+    // counts of zero, one and "more than one" are interesting.
+
+    syncTools::syncPointList
+    (
+        mesh,
+        nFreePoints,
+        maxEqOp<label>(),
         0                         // null value
     );
 
-    Pout << "32 free " << freePoints[32] << " front " << frontPoints[32] << " passive " << passivePoints[32] << endl;
+    syncTools::syncPointList
+    (
+        mesh,
+        nFrontPoints,
+        maxEqOp<label>(),
+        0                         // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        nPassivePoints,
+        maxEqOp<label>(),
+        0                         // null value
+    );
 
     return 0;
 }
@@ -634,6 +737,7 @@ int findPropagationFrontPointIs
 (
     const fvMesh& mesh,
     const label islandI,
+    const labelList& nProcessorsOnPoint,
     labelList& frontPointIs,
     labelList& candidatePointIs,
     boolList& isCandidatePrismatic,
@@ -647,10 +751,10 @@ int findPropagationFrontPointIs
 
     // Count global number of free (undefined) islands, number of
     // front islands and passive island points connected to each point
-    labelList freePoints(mesh.nPoints(), Zero);
-    labelList frontPoints(mesh.nPoints(), Zero);
-    labelList passivePoints(mesh.nPoints(), Zero);
-    countFrontPoints(mesh, islandI, freePoints, frontPoints, passivePoints, prismIslands1, prismIslands2, prismIslands3);
+    labelList nFreePoints(mesh.nPoints(), Zero);
+    labelList nFrontPoints(mesh.nPoints(), Zero);
+    labelList nPassivePoints(mesh.nPoints(), Zero);
+    countFrontPoints(mesh, islandI, nProcessorsOnPoint, nFreePoints, nFrontPoints, nPassivePoints, prismIslands1, prismIslands2, prismIslands3);
 
     forAll (mesh.points(), pointI)
     {
@@ -675,7 +779,7 @@ int findPropagationFrontPointIs
                 continue;
             }
 
-            if (frontPoints[neighI] > 0)
+            if (nFrontPoints[neighI] > 0)
             {
                 // Front point
                 frontPointIs.append(pointI);
@@ -687,7 +791,7 @@ int findPropagationFrontPointIs
                 // only one free point connection (it's the
                 // candidate), and the candidate has only one front
                 // point connection (it's the front point)
-                if ((freePoints[pointI] == 1) and (frontPoints[neighI] == 1))
+                if ((nFreePoints[pointI] == 1) and (nFrontPoints[neighI] == 1))
                 {
                     isCandidatePrismatic.append(true);
                 }
@@ -705,7 +809,7 @@ int findPropagationFrontPointIs
                 if
                 (
                     (! isCandidatePrismatic[lastI]) or
-                    (passivePoints[pointI] > 0)
+                    (nPassivePoints[pointI] > 0)
                 )
                 {
                     isPropagationModeActive.append(false);
@@ -767,17 +871,24 @@ int propagateIslandFronts
     labelList frontPointIs;
     boolList isCandidatePrismatic;
     boolList isPropagationModeActive;
+    boolList isVisitedPoint(mesh.nPoints(), false);
 
     for (const label islandI : islandIs)
     {
-        // Find next front points (free unassigned point indices next
-        // to active island points), and their neighboring active
-        // current front point indices
+        // Clean up
         candidatePointIs.clear();
         frontPointIs.clear();
         isCandidatePrismatic.clear();
         isPropagationModeActive.clear();
-        findPropagationFrontPointIs(mesh, islandI, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3);
+        forAll (isVisitedPoint, pointI)
+        {
+            isVisitedPoint[pointI] = false;
+        }
+
+        // Find next front points (free unassigned point indices next
+        // to active island points), and their neighboring active
+        // current front point indices
+        findPropagationFrontPointIs(mesh, islandI, nProcessorsOnPoint, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3);
 
         // Info << "size of candidatePointIs " << candidatePointIs.size() << endl;
         // Info << "size of frontPointIs " << frontPointIs.size() << endl;
@@ -786,13 +897,19 @@ int propagateIslandFronts
         // Process the candidate points
         forAll (candidatePointIs, pointI)
         {
+            if (isVisitedPoint[pointI])
+                continue;
+
+            isVisitedPoint[pointI] = true;
+
             // Propagate active island index to candidate point only
             // if candidate is prismatic and propagation type is active
             if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
             {
+
                 addIslandInfoForPoint(candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
                 // WIP addPrismaticMappingsForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-                nAddedPrisms += 1.0 / nProcessorsOnPoint[candidatePointIs[pointI]];
+                nAddedPrisms += 1.0;
             }
 
             // Otherwise propagate the passive island index number
@@ -802,34 +919,34 @@ int propagateIslandFronts
             }
         }
 
-        // Synchronize propagation variables among processors
+        // // Synchronize propagation variables among processors
 
-        syncTools::syncPointList
-        (
-            mesh,
-            prismIslands1,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
+        // syncTools::syncPointList
+        // (
+        //     mesh,
+        //     prismIslands1,
+        //     maxEqOp<label>(),
+        //     UNDEF_LABEL           // null value
+        // );
 
-        syncTools::syncPointList
-        (
-            mesh,
-            prismIslands2,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
+        // syncTools::syncPointList
+        // (
+        //     mesh,
+        //     prismIslands2,
+        //     maxEqOp<label>(),
+        //     UNDEF_LABEL           // null value
+        // );
 
-        syncTools::syncPointList
-        (
-            mesh,
-            prismIslands3,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
+        // syncTools::syncPointList
+        // (
+        //     mesh,
+        //     prismIslands3,
+        //     maxEqOp<label>(),
+        //     UNDEF_LABEL           // null value
+        // );
 
         const scalar nSumAddedPrisms = returnReduce(nAddedPrisms, sumOp<scalar>());
-        Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
+        Info << "Layer " << nLayer << " island " << islandI << " decomposed case added prisms " << nSumAddedPrisms << endl;
     }
 
     return 0;
