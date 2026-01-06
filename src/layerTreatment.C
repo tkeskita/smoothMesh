@@ -942,8 +942,12 @@ int propagateIslandFronts
             }
 
             // Otherwise propagate the passive island index number
+            // unless it's already propagated
             else
             {
+                if (isPointInIsland(candidatePointIs[pointI], invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+                    continue;
+
                 addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
             }
         }
