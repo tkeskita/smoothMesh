@@ -2297,6 +2297,7 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
         // Identify prismatic islands
+        Info << "Identifying prismatic boundary islands in the mesh" << endl;
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
 
         // Synchronize and sort a global list of islandIs
@@ -2306,7 +2307,7 @@ int main(int argc, char *argv[])
         //for (label i = 0; i < maxLayers; i++)
         for (label i = 0; i < 3; i++)
         {
-            Info << "Island propagation iteration " << i + 1 << endl;
+            Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
             propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
         }
 

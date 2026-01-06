@@ -450,7 +450,7 @@ int identifyPrismaticBoundaryIslands
         oldI = UNDEF_LABEL;
         newI = UNDEF_LABEL;
         ++i;
-        Info << "Renumbering round " << i << endl;
+        Info << "  Island label synchronization iteration " << i << endl;
 
         forAll(mesh.points(), pointI)
         {
@@ -465,7 +465,8 @@ int identifyPrismaticBoundaryIslands
                 UNDEF_LABEL               // null value
             );
 
-        // Find old and new index numbers from synced result
+        // Find old and new index numbers from synced result.
+        // Only prismIslands1 needs to be checked.
         forAll(mesh.points(), pointI)
         {
             if ((prismIslands1[pointI]) < 0)
@@ -488,7 +489,6 @@ int identifyPrismaticBoundaryIslands
                     ++nRenumbered;
                 }
             }
-
             Pout << "  Renumbered island " << oldI << " to " << newI << endl;
         }
 
@@ -759,8 +759,8 @@ int findPropagationFrontPointIs
 )
 {
     // OBJ output for debugging
-    const bool writeObj = true;
-    const label debugIsland = 1;
+    const bool writeObj = false;
+    const label debugIsland = 3;
     label debugV = 0;
     std::ofstream myfile;
     if ((writeObj) and (islandI == debugIsland))
@@ -974,8 +974,8 @@ int propagateIslandFronts
             UNDEF_LABEL           // null value
         );
 
-        const scalar nSumAddedPrisms = returnReduce(nAddedPrisms, sumOp<scalar>());
-        Info << "Layer " << nLayer << " island " << islandI << " decomposed case added prisms " << nSumAddedPrisms << endl;
+        // const scalar nSumAddedPrisms = returnReduce(nAddedPrisms, sumOp<scalar>());
+        // Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
     }
 
     return 0;
