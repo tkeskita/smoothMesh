@@ -2304,74 +2304,74 @@ int main(int argc, char *argv[])
         mergeAndSortIslandIs(islandIs);
 
         // Propagate island fronts to inner mesh
-        //for (label i = 0; i < maxLayers; i++)
-        for (label i = 0; i < 3; i++)
+        for (label i = 0; i < maxLayers; i++)
         {
-            Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            Info << "  Prismatic edge propagation iteration " << i + 1;
+            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            Info << " done, identified " << nPrisms << " prismatic edges" << endl;
         }
 
-        // Write selected point field, for debugging only
-        runTime++;
+        // // Write selected point field, for debugging only
+        // runTime++;
 
-        pointScalarField pointScalarDebugIO
-            (
-             IOobject
-             (
-              "pointScalarDebug1",
-              runTime.name(),
-              mesh,
-              IOobject::NO_READ,
-              IOobject::AUTO_WRITE
-              ),
-             pointMesh::New(mesh),
-             dimensionedScalar(dimless, 0)
-             );
-        forAll (mesh.points(), pointI)
-        {
-            pointScalarDebugIO[pointI] = prismIslands1[pointI];
-        }
-        pointScalarDebugIO.write();
+        // pointScalarField pointScalarDebugIO
+        //     (
+        //      IOobject
+        //      (
+        //       "pointScalarDebug1",
+        //       runTime.name(),
+        //       mesh,
+        //       IOobject::NO_READ,
+        //       IOobject::AUTO_WRITE
+        //       ),
+        //      pointMesh::New(mesh),
+        //      dimensionedScalar(dimless, 0)
+        //      );
+        // forAll (mesh.points(), pointI)
+        // {
+        //     pointScalarDebugIO[pointI] = prismIslands1[pointI];
+        // }
+        // pointScalarDebugIO.write();
 
-        pointScalarField pointScalarDebugIO2
-            (
-             IOobject
-             (
-              "pointScalarDebug2",
-              runTime.name(),
-              mesh,
-              IOobject::NO_READ,
-              IOobject::AUTO_WRITE
-              ),
-             pointMesh::New(mesh),
-             dimensionedScalar(dimless, 0)
-             );
-        forAll (mesh.points(), pointI)
-        {
-            pointScalarDebugIO2[pointI] = prismIslands2[pointI];
-        }
-        pointScalarDebugIO2.write();
+        // pointScalarField pointScalarDebugIO2
+        //     (
+        //      IOobject
+        //      (
+        //       "pointScalarDebug2",
+        //       runTime.name(),
+        //       mesh,
+        //       IOobject::NO_READ,
+        //       IOobject::AUTO_WRITE
+        //       ),
+        //      pointMesh::New(mesh),
+        //      dimensionedScalar(dimless, 0)
+        //      );
+        // forAll (mesh.points(), pointI)
+        // {
+        //     pointScalarDebugIO2[pointI] = prismIslands2[pointI];
+        // }
+        // pointScalarDebugIO2.write();
 
-        pointScalarField pointScalarDebugIO3
-            (
-             IOobject
-             (
-              "pointScalarDebug3",
-              runTime.name(),
-              mesh,
-              IOobject::NO_READ,
-              IOobject::AUTO_WRITE
-              ),
-             pointMesh::New(mesh),
-             dimensionedScalar(dimless, 0)
-             );
-        forAll (mesh.points(), pointI)
-        {
-            pointScalarDebugIO3[pointI] = prismIslands3[pointI];
-        }
-        pointScalarDebugIO3.write();
+        // pointScalarField pointScalarDebugIO3
+        //     (
+        //      IOobject
+        //      (
+        //       "pointScalarDebug3",
+        //       runTime.name(),
+        //       mesh,
+        //       IOobject::NO_READ,
+        //       IOobject::AUTO_WRITE
+        //       ),
+        //      pointMesh::New(mesh),
+        //      dimensionedScalar(dimless, 0)
+        //      );
+        // forAll (mesh.points(), pointI)
+        // {
+        //     pointScalarDebugIO3[pointI] = prismIslands3[pointI];
+        // }
+        // pointScalarDebugIO3.write();
 
-        FatalError << "DEBUG STOP, wrote pointScalarDebugX fields" << endl << abort(FatalError);
+        // FatalError << "DEBUG STOP, wrote pointScalarDebugX fields" << endl << abort(FatalError);
 
         // calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
         // calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);

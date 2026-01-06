@@ -489,7 +489,7 @@ int identifyPrismaticBoundaryIslands
                     ++nRenumbered;
                 }
             }
-            Pout << "  Renumbered island " << oldI << " to " << newI << endl;
+            // Pout << "  Renumbered island " << oldI << " to " << newI << endl;
         }
 
         // Sync work switch among processors
@@ -866,6 +866,85 @@ int findPropagationFrontPointIs
 }
 
 
+// Help function to set a label value in list
+
+void setLabel
+(
+    labelList& aList,
+    const label index,
+    const label value
+)
+{
+    if (aList[index] != UNDEF_LABEL)
+    {
+        FatalError << "List index " << index << " value is not UNDEF_LABEL" << endl << abort(FatalError);
+    }
+
+    aList[index] = value;
+}
+
+
+// Help function to add prismatic mappings for a point pair
+
+int addPrismaticMappingsForPoint
+(
+    const fvMesh& mesh,
+    const label islandI,
+    const label frontI,
+    const label candidateI,
+    labelList& prismIslands1,
+    labelList& prismIslands2,
+    labelList& prismIslands3,
+    labelList& innerPrismPointLabels1,
+    labelList& innerPrismPointLabels2,
+    labelList& innerPrismPointLabels3,
+    labelList& outerPrismPointLabels1,
+    labelList& outerPrismPointLabels2,
+    labelList& outerPrismPointLabels3
+)
+{
+    // Pout << "islandI " << islandI << " frontI " << frontI << " candidateI " << candidateI << endl;
+
+    // Set outer label
+    if (prismIslands1[frontI] == islandI)
+    {
+        setLabel(outerPrismPointLabels1, frontI, candidateI);
+    }
+    else if (prismIslands2[frontI] == islandI)
+    {
+        setLabel(outerPrismPointLabels2, frontI, candidateI);
+    }
+    else if (prismIslands3[frontI] == islandI)
+    {
+        setLabel(outerPrismPointLabels3, frontI, candidateI);
+    }
+    else
+    {
+        FatalError << "frontI " << frontI << " at " << mesh.points()[frontI] << " is not part of islandI " << islandI << endl << abort(FatalError);
+    }
+
+    // Set inner label
+    if (prismIslands1[candidateI] == islandI)
+    {
+        setLabel(innerPrismPointLabels1, candidateI, frontI);
+    }
+    else if (prismIslands2[candidateI] == islandI)
+    {
+        setLabel(innerPrismPointLabels2, candidateI, frontI);
+    }
+    else if (prismIslands3[candidateI] == islandI)
+    {
+        setLabel(innerPrismPointLabels3, candidateI, frontI);
+    }
+    else
+    {
+        FatalError << "candidateI " << candidateI << " at " << mesh.points()[candidateI] << " is not part of islandI " << islandI << endl << abort(FatalError);
+    }
+
+    return 0;
+}
+
+
 // Function to run one island info propagation iteration
 
 int propagateIslandFronts
@@ -895,7 +974,8 @@ int propagateIslandFronts
     labelList& outerPrismPointLabels3
 )
 {
-    scalar nAddedPrisms = 0.0;
+    label nAddedPrisms = 0;
+    label nSumAddedPrisms = 0;
     labelList candidatePointIs;
     labelList frontPointIs;
     boolList isCandidatePrismatic;
@@ -913,6 +993,7 @@ int propagateIslandFronts
         {
             isVisitedPoint[pointI] = false;
         }
+        nAddedPrisms = 0;
 
         // Find next front points (free unassigned point indices next
         // to active island points), and their neighboring active
@@ -936,9 +1017,14 @@ int propagateIslandFronts
             if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
             {
 
-                addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-                // WIP addPrismaticMappingsForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-                nAddedPrisms += 1.0;
+                const label res = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+
+                // Add mappings only if addition of info was successful
+                if (res == 0)
+                    continue;
+
+                ++nAddedPrisms;
+                addPrismaticMappingsForPoint(mesh, islandI, frontPointIs[pointI], candidatePointIs[pointI], prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             }
 
             // Otherwise propagate the passive island index number
@@ -978,9 +1064,59 @@ int propagateIslandFronts
             UNDEF_LABEL           // null value
         );
 
-        // const scalar nSumAddedPrisms = returnReduce(nAddedPrisms, sumOp<scalar>());
+        syncTools::syncPointList
+        (
+            mesh,
+            innerPrismPointLabels1,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            innerPrismPointLabels2,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            innerPrismPointLabels3,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            outerPrismPointLabels1,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            outerPrismPointLabels2,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            outerPrismPointLabels3,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        nSumAddedPrisms += nAddedPrisms;
+
         // Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
     }
 
-    return 0;
+    const label nAdditions = returnReduce(nSumAddedPrisms, sumOp<label>());
+    return nAdditions;
 }
