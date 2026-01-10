@@ -982,6 +982,16 @@ int propagateIslandFronts
     boolList isPropagationModeActive;
     boolList isVisitedPoint(mesh.nPoints(), false);
 
+    // Debug option to set true for printing edges as a STL file
+    // Best visualized as wireframe in Paraview
+    const bool exportEdgesAsStl = true;
+    std::ofstream myfile;
+    if (exportEdgesAsStl)
+    {
+        myfile.open ("debugPrismEdgesAsStl_" + std::to_string(nLayer) + ".stl");
+        myfile << "solid edgesAsStl\n";
+    }
+
     for (const label islandI : islandIs)
     {
         // Clean up
@@ -1019,12 +1029,39 @@ int propagateIslandFronts
 
                 const label res = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-                // Add mappings only if addition of info was successful
+                // Stop if point was reset
                 if (res == 0)
                     continue;
 
                 ++nAddedPrisms;
                 addPrismaticMappingsForPoint(mesh, islandI, frontPointIs[pointI], candidatePointIs[pointI], prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+
+                // Debugging: export edge as a sliver triangle in STL ascii format,
+                // with fake normal direction
+                if (exportEdgesAsStl)
+                {
+                    const label i1 = candidatePointIs[pointI];
+                    const label i2 = frontPointIs[pointI];
+                    if (i1 == i2)
+                        FatalError << "candidate point " << i1 << " is same as front point" << endl << abort(FatalError);
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] << " "
+                           << mesh.points()[i1][1] << " "
+                           << mesh.points()[i1][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i2][0] << " "
+                           << mesh.points()[i2][1] << " "
+                           << mesh.points()[i2][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+                }
+
             }
 
             // Otherwise propagate the passive island index number
@@ -1115,6 +1152,12 @@ int propagateIslandFronts
         nSumAddedPrisms += nAddedPrisms;
 
         // Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
+    }
+
+    if (exportEdgesAsStl)
+    {
+        myfile << "endsolid\n";
+        myfile.close();
     }
 
     const label nAdditions = returnReduce(nSumAddedPrisms, sumOp<label>());
