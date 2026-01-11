@@ -2373,6 +2373,7 @@ int main(int argc, char *argv[])
 
         // FatalError << "DEBUG STOP, wrote pointScalarDebugX fields" << endl << abort(FatalError);
 
+        // OBSOLETED
         // calculatePointHopsToBoundary(mesh, layerPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToLayerBoundary, maxLayers + 1);
         // calculatePointHopsToBoundary(mesh, smoothingPatchIds, isInternalPoint, isConnectedToInternalPoint, pointHopsToSmoothingBoundary, 2);
         // propagateOuterNeighInfo(mesh, isInternalPoint, isLayerSurfacePoint, isOuterNeighInProc, pointToOuterPointMap, pointNormals, pointHopsToLayerBoundary, maxLayers + 1);
@@ -2441,7 +2442,20 @@ int main(int argc, char *argv[])
         if (doLayerTreatment)
         {
             // Update neighbour coordinates and synchronize among processors
-            // WIP updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerPrismPoints);
+            // OBSOLETED updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerPrismPoints);
+            updatePointVectorValues(mesh, mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
+
+            // Update new point normals for boundary points
+            updateBoundaryPointNormals(mesh, pointNormals, pointHops1, pointHops2, pointHops3, pointNormals1, pointNormals2, pointNormals3);
+
+            // Propagate point normals towards inner mesh
+            labelList hopOrder;
+            for (label i = maxLayers; i > 0; i--)
+            {
+                hopOrder.append(i);
+            }
+            propagatePointVectorValues(mesh, hopOrder, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+
             // Blend orthogonal and centroidal coordinates to newPoints
             // WIP blendWithOrthogonalPoints
             // (
@@ -2466,6 +2480,8 @@ int main(int argc, char *argv[])
         {
             // Update neighbour coordinates and synchronize among processors
             // WIP updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerPrismPoints);
+            updatePointVectorValues(mesh, mesh.points(), innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, innerPrismPoints1, innerPrismPoints2, innerPrismPoints3);
+
             // Project boundary points
             // WIP projectBoundaryPointsToEdgesAndSurfaces
             // (

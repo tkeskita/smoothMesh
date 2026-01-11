@@ -155,6 +155,15 @@ label addIslandInfoForPoint
         return 3;
     }
 
+    // Fail if storage slot runs out. TODO: This needs to be improved
+    // in such a way that layer propagation is simply not done for any
+    // island for that point if the storage slots run out on that
+    // round. However, deducing that condition before changing state
+    // variables requires thinking through how to program it for
+    // parallel processing. Fail for now.
+
+    FatalError << "Maximum limit of three prism islands exceeded for pointI " << pointI << " at " << mesh.points()[pointI] << ". Can't add islandI " << islandI << ". You need to either lower maxLayers or remove patch(es) from layerPatches, until storage overflow handling is improved." << endl << abort(FatalError);
+
     // All slots are already in use, reset slots to ignored
     // Pout << "Reset island pointI " << pointI << " at " << mesh.points()[pointI] << endl;
     prismIslands1[pointI] = IGNORED_LABEL;
@@ -1101,6 +1110,34 @@ int propagateIslandFronts
             UNDEF_LABEL           // null value
         );
 
+        //
+
+        syncTools::syncPointList
+        (
+            mesh,
+            pointHops1,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            pointHops2,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            pointHops3,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
+
+        //
+
         syncTools::syncPointList
         (
             mesh,
@@ -1124,6 +1161,8 @@ int propagateIslandFronts
             maxEqOp<label>(),
             UNDEF_LABEL           // null value
         );
+
+        //
 
         syncTools::syncPointList
         (
@@ -1163,3 +1202,211 @@ int propagateIslandFronts
     const label nAdditions = returnReduce(nSumAddedPrisms, sumOp<label>());
     return nAdditions;
 }
+
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Help function to update neighboring point vector property to
+// points. Used in the propagation of e.g. locations of either inner
+// or outer points, depending on which label and vector lists are
+// given as arguments
+
+int updatePointVectorValues
+(
+    const fvMesh& mesh,
+    const vectorList& vectorValues,
+    const labelList& pointLabels1,
+    const labelList& pointLabels2,
+    const labelList& pointLabels3,
+    vectorList& points1,
+    vectorList& points2,
+    vectorList& points3
+)
+{
+    // Set current values
+    forAll(vectorValues, pointI)
+    {
+        if (pointLabels1[pointI] == UNDEF_LABEL)
+        {
+            points1[pointI] = ZERO_VECTOR;
+        }
+        else
+        {
+            points1[pointI] = vectorValues[pointLabels1[pointI]];
+        }
+
+        if (pointLabels2[pointI] == UNDEF_LABEL)
+        {
+            points2[pointI] = ZERO_VECTOR;
+        }
+        else
+        {
+            points2[pointI] = vectorValues[pointLabels2[pointI]];
+        }
+
+        if (pointLabels3[pointI] == UNDEF_LABEL)
+        {
+            points3[pointI] = ZERO_VECTOR;
+        }
+        else
+        {
+            points3[pointI] = vectorValues[pointLabels3[pointI]];
+        }
+    }
+
+    // Synchronize
+    syncTools::syncPointList
+    (
+        mesh,
+        points1,
+        maxMagSqrEqOp<vector>(),
+        ZERO_VECTOR           // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        points2,
+        maxMagSqrEqOp<vector>(),
+        ZERO_VECTOR           // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        points3,
+        maxMagSqrEqOp<vector>(),
+        ZERO_VECTOR           // null value
+    );
+
+    return 0;
+}
+
+
+// Help function to set potentially updated boundary point normals
+// from pointNormals to island slots. Point normals can change if
+// boundary patches deform during smoothing.
+
+int updateBoundaryPointNormals
+(
+    const fvMesh& mesh,
+    const vectorList& pointNormals,
+    const labelList& pointHops1,
+    const labelList& pointHops2,
+    const labelList& pointHops3,
+    vectorList& pointNormals1,
+    vectorList& pointNormals2,
+    vectorList& pointNormals3
+)
+{
+    forAll(mesh.points(), pointI)
+    {
+        if (pointHops1[pointI] == 0)
+        {
+            pointNormals1[pointI] = pointNormals[pointI];
+        }
+
+        if (pointHops2[pointI] == 0)
+        {
+            pointNormals2[pointI] = pointNormals[pointI];
+        }
+
+        if (pointHops3[pointI] == 0)
+        {
+            pointNormals3[pointI] = pointNormals[pointI];
+        }
+    }
+
+    return 0;
+}
+
+
+// Help function to propagate neighboring point vector property to
+// points. Propagation is done for points in given hop order.
+
+int propagatePointVectorValues
+(
+    const fvMesh& mesh,
+    const labelList& hopOrder,
+    const labelList& pointHops1,
+    const labelList& pointHops2,
+    const labelList& pointHops3,
+    const labelList& pointLabels1,
+    const labelList& pointLabels2,
+    const labelList& pointLabels3,
+    vectorList& points1,
+    vectorList& points2,
+    vectorList& points3
+)
+{
+    for (const label nHops : hopOrder)
+    {
+        // Set current values
+        forAll(mesh.points(), pointI)
+        {
+            if (pointHops1[pointI] == nHops)
+            {
+                if (pointLabels1[pointI] == UNDEF_LABEL)
+                {
+                    points1[pointI] = ZERO_VECTOR;
+                }
+                else
+                {
+                    points1[pointI] = points1[pointLabels1[pointI]];
+                }
+            }
+
+            if (pointHops2[pointI] == nHops)
+            {
+                if (pointLabels2[pointI] == UNDEF_LABEL)
+                {
+                    points2[pointI] = ZERO_VECTOR;
+                }
+                else
+                {
+                    points2[pointI] = points2[pointLabels2[pointI]];
+                }
+            }
+
+            if (pointHops3[pointI] == nHops)
+            {
+                if (pointLabels3[pointI] == UNDEF_LABEL)
+                {
+                    points3[pointI] = ZERO_VECTOR;
+                }
+                else
+                {
+                    points3[pointI] = points3[pointLabels3[pointI]];
+                }
+            }
+        }
+    }
+
+    // Synchronize
+    syncTools::syncPointList
+    (
+        mesh,
+        points1,
+        maxMagSqrEqOp<vector>(),
+        ZERO_VECTOR           // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        points2,
+        maxMagSqrEqOp<vector>(),
+        ZERO_VECTOR           // null value
+    );
+
+    syncTools::syncPointList
+    (
+        mesh,
+        points3,
+        maxMagSqrEqOp<vector>(),
+        ZERO_VECTOR           // null value
+    );
+
+    return 0;
+}
+
