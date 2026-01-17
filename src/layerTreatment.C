@@ -881,12 +881,18 @@ void setLabel
 (
     labelList& aList,
     const label index,
-    const label value
+    const label value,
+    const string debugI
 )
 {
+    if (aList[index] == value)
+    {
+        return;
+    }
+
     if (aList[index] != UNDEF_LABEL)
     {
-        FatalError << "List index " << index << " value is not UNDEF_LABEL" << endl << abort(FatalError);
+        FatalError << "List " << debugI << " index " << index << " value is not UNDEF_LABEL but " << aList[index] << ", would have set value to " << value << endl << abort(FatalError);
     }
 
     aList[index] = value;
@@ -901,9 +907,9 @@ int addPrismaticMappingsForPoint
     const label islandI,
     const label frontI,
     const label candidateI,
-    labelList& prismIslands1,
-    labelList& prismIslands2,
-    labelList& prismIslands3,
+    const labelList& prismIslands1,
+    const labelList& prismIslands2,
+    const labelList& prismIslands3,
     labelList& innerPrismPointLabels1,
     labelList& innerPrismPointLabels2,
     labelList& innerPrismPointLabels3,
@@ -914,18 +920,28 @@ int addPrismaticMappingsForPoint
 {
     // Pout << "islandI " << islandI << " frontI " << frontI << " candidateI " << candidateI << endl;
 
+    if (frontI==0)
+        Info<< "islandI " << islandI
+            << " prismIslands1 " << prismIslands1[0]
+            << " prismIslands2 " << prismIslands2[0]
+            << " prismIslands3 " << prismIslands3[0]
+            << " innerPrismPointLabels1 " << innerPrismPointLabels1[0]
+            << " innerPrismPointLabels2 " << innerPrismPointLabels2[0]
+            << " innerPrismPointLabels3 " << innerPrismPointLabels3[0]
+            << endl;
+
     // Set outer label
-    if (prismIslands1[frontI] == islandI)
+    if (prismIslands1[candidateI] == islandI)
     {
-        setLabel(outerPrismPointLabels1, frontI, candidateI);
+        setLabel(outerPrismPointLabels1, candidateI, frontI, "outerPrismPointLabels1");
     }
-    else if (prismIslands2[frontI] == islandI)
+    else if (prismIslands2[candidateI] == islandI)
     {
-        setLabel(outerPrismPointLabels2, frontI, candidateI);
+        setLabel(outerPrismPointLabels2, candidateI, frontI, "outerPrismPointLabels2");
     }
-    else if (prismIslands3[frontI] == islandI)
+    else if (prismIslands3[candidateI] == islandI)
     {
-        setLabel(outerPrismPointLabels3, frontI, candidateI);
+        setLabel(outerPrismPointLabels3, candidateI, frontI, "outerPrismPointLabels3");
     }
     else
     {
@@ -933,17 +949,19 @@ int addPrismaticMappingsForPoint
     }
 
     // Set inner label
-    if (prismIslands1[candidateI] == islandI)
+    if (prismIslands1[frontI] == islandI)
     {
-        setLabel(innerPrismPointLabels1, candidateI, frontI);
+        setLabel(innerPrismPointLabels1, frontI, candidateI, "innerPrismPointLabels1");
     }
-    else if (prismIslands2[candidateI] == islandI)
+    else if (prismIslands2[frontI] == islandI)
     {
-        setLabel(innerPrismPointLabels2, candidateI, frontI);
+        if (frontI == 0)
+            Info << "2: Setting 0 to " << candidateI << endl;
+        setLabel(innerPrismPointLabels2, frontI, candidateI, "innerPrismPointLabels2");
     }
-    else if (prismIslands3[candidateI] == islandI)
+    else if (prismIslands3[frontI] == islandI)
     {
-        setLabel(innerPrismPointLabels3, candidateI, frontI);
+        setLabel(innerPrismPointLabels3, frontI, candidateI, "innerPrismPointLabels3");
     }
     else
     {
@@ -1410,3 +1428,152 @@ int propagatePointVectorValues
     return 0;
 }
 
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+
+// Help function to calculate point coordinates, which is located a
+// given distance away from startPoint to inverse of given normal
+// direction, on a line defined by startPoint and endPoint
+
+point slidePointOnLine
+(
+    const point startPoint,
+    const point endPoint,
+    const double distance,
+    const vector normalVec
+)
+{
+    const point targetVec = -1.0 * distance * normalVec;
+    const point lineVec = endPoint - startPoint;
+    const double lineLength = mag(lineVec);
+    const double scaledDotProd = (targetVec & lineVec) / sqr(lineLength);
+    const point slidePoint = startPoint + scaledDotProd * lineVec;
+
+    return slidePoint;
+}
+
+// Help function to calculate a layer point location for one island
+// slot
+
+int calcLayerPoint
+(
+    const fvMesh& mesh,
+    const label pointI,
+    point& layerPoint,
+    const labelList& pointHops,
+    const vectorList& outerPrismPoints,
+    const vectorList& pointNormals,
+    const double layerEdgeLength,
+    const double layerExpansionRatio,
+    const label debugI
+)
+{
+    if (pointNormals[pointI] == ZERO_VECTOR)
+    {
+        FatalError
+            << "Sanity broken, pointNormals" << debugI << " is zero for pointI"
+            << pointI << " at " << mesh.points()[pointI] << endl << abort(FatalError);
+    }
+
+    if (pointHops[pointI] < 1)
+    {
+        FatalError
+            << "Sanity broken, pointHops" << debugI << " is " << pointHops[pointI]
+            << " for pointI " << pointI << " at " << mesh.points()[pointI]
+            << endl << abort(FatalError);
+    }
+
+    // Target length of edge towards boundary
+    const label nHops = pointHops[pointI] - 1;
+    const double layerThickness = layerEdgeLength * pow(layerExpansionRatio, nHops);
+
+    const point startPoint = mesh.points()[pointI];
+    const point endPoint = outerPrismPoints[pointI];
+    const vector endNormal = pointNormals[pointI];
+    layerPoint = slidePointOnLine(startPoint, endPoint, layerThickness, endNormal);
+
+    return 0;
+}
+
+
+// Function to calculate new coordinates according to  layer treatment
+
+int blendWithLayerPoints
+(
+    const fvMesh& mesh,
+    pointField& newPoints,
+    const labelList& pointHops1,
+    const labelList& pointHops2,
+    const labelList& pointHops3,
+    const vectorList& outerPrismPoints1,
+    const vectorList& outerPrismPoints2,
+    const vectorList& outerPrismPoints3,
+    const vectorList& pointNormals1,
+    const vectorList& pointNormals2,
+    const vectorList& pointNormals3,
+    const double layerMaxBlendingFraction,
+    const double layerEdgeLength,
+    const double layerExpansionRatio,
+    const double minLayers,
+    const double maxLayers
+)
+{
+    forAll(mesh.points(), pointI)
+    {
+        double n = 0.0;
+        point layerPoint = ZERO_VECTOR;
+        labelList nHops;
+
+        // Calculate layer point
+
+        if (outerPrismPoints1[pointI] != UNDEF_VECTOR)
+        {
+            Info << "pointI " << pointI << " outerPrismPoints1 " << outerPrismPoints1[pointI] << endl;
+            point pt;
+            calcLayerPoint(mesh, pointI, pt, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
+            layerPoint += pt;
+            n += 1.0;
+            nHops.append(pointHops1[pointI]);
+        }
+
+        if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
+        {
+            point pt;
+            calcLayerPoint(mesh, pointI, pt, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
+            layerPoint += pt;
+            n += 1.0;
+            nHops.append(pointHops1[pointI]);
+        }
+
+        if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
+        {
+            point pt;
+            calcLayerPoint(mesh, pointI, pt, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
+            layerPoint += pt;
+            n += 1.0;
+            nHops.append(pointHops1[pointI]);
+        }
+
+        // Very simple average of all points without any weighting e.g. by nHops
+        layerPoint /= n;
+
+        if (layerPoint != ZERO_VECTOR)
+        {
+            // Target blending fraction
+            const double slope = -layerMaxBlendingFraction / (maxLayers - minLayers);
+            const double y0 = -slope * maxLayers;
+            const double y = y0 + slope * min(nHops);
+            const double blendFrac = max(0.0, min(y, layerMaxBlendingFraction));
+
+            const vector newPoint = newPoints[pointI];
+            const vector blendedPoint = blendFrac * layerPoint +
+                (1.0 - blendFrac) * newPoint;
+
+            // Update point coordinates
+            newPoints[pointI] = blendedPoint;
+        }
+    }
+
+    return 0;
+}

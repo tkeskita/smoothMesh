@@ -2306,7 +2306,7 @@ int main(int argc, char *argv[])
         // Propagate island fronts to inner mesh
         for (label i = 0; i < maxLayers; i++)
         {
-            Info << "  Prismatic edge propagation iteration " << i + 1;
+            Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
             const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << " done, identified " << nPrisms << " prismatic edges" << endl;
         }
@@ -2442,7 +2442,6 @@ int main(int argc, char *argv[])
         if (doLayerTreatment)
         {
             // Update neighbour coordinates and synchronize among processors
-            // OBSOLETED updateNeighCoords(mesh, isOuterNeighInProc, pointToOuterPointMap, outerPrismPoints);
             updatePointVectorValues(mesh, mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
 
             // Update new point normals for boundary points
@@ -2456,21 +2455,20 @@ int main(int argc, char *argv[])
             }
             propagatePointVectorValues(mesh, hopOrder, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-            // Blend orthogonal and centroidal coordinates to newPoints
-            // WIP blendWithOrthogonalPoints
-            // (
-            //      mesh,
-            //      newPoints,
-            //      isInternalPoint,
-            //      pointHopsToLayerBoundary,
-            //      pointNormals,
-            //      outerPrismPoints,
-            //      layerMaxBlendingFraction,
-            //      layerEdgeLength,
-            //      layerExpansionRatio,
-            //      minLayers,
-            //      maxLayers + 1  // +1 for correct number of layers
-            // );
+            // Blend centroidal coordinates with layer controlled points to newPoints
+            blendWithLayerPoints
+            (
+                 mesh,
+                 newPoints,
+                 pointHops1, pointHops2, pointHops3,
+                 outerPrismPoints1, outerPrismPoints2, outerPrismPoints3,
+                 pointNormals1, pointNormals2, pointNormals3,
+                 layerMaxBlendingFraction,
+                 layerEdgeLength,
+                 layerExpansionRatio,
+                 minLayers,
+                 maxLayers + 1  // +1 for correct number of layers
+            );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
