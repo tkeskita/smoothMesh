@@ -920,16 +920,6 @@ int addPrismaticMappingsForPoint
 {
     // Pout << "islandI " << islandI << " frontI " << frontI << " candidateI " << candidateI << endl;
 
-    if (frontI==0)
-        Info<< "islandI " << islandI
-            << " prismIslands1 " << prismIslands1[0]
-            << " prismIslands2 " << prismIslands2[0]
-            << " prismIslands3 " << prismIslands3[0]
-            << " innerPrismPointLabels1 " << innerPrismPointLabels1[0]
-            << " innerPrismPointLabels2 " << innerPrismPointLabels2[0]
-            << " innerPrismPointLabels3 " << innerPrismPointLabels3[0]
-            << endl;
-
     // Set outer label
     if (prismIslands1[candidateI] == islandI)
     {
@@ -955,8 +945,6 @@ int addPrismaticMappingsForPoint
     }
     else if (prismIslands2[frontI] == islandI)
     {
-        if (frontI == 0)
-            Info << "2: Setting 0 to " << candidateI << endl;
         setLabel(innerPrismPointLabels2, frontI, candidateI, "innerPrismPointLabels2");
     }
     else if (prismIslands3[frontI] == islandI)
@@ -1246,7 +1234,7 @@ int updatePointVectorValues
     {
         if (pointLabels1[pointI] == UNDEF_LABEL)
         {
-            points1[pointI] = ZERO_VECTOR;
+            points1[pointI] = UNDEF_VECTOR;
         }
         else
         {
@@ -1255,7 +1243,7 @@ int updatePointVectorValues
 
         if (pointLabels2[pointI] == UNDEF_LABEL)
         {
-            points2[pointI] = ZERO_VECTOR;
+            points2[pointI] = UNDEF_VECTOR;
         }
         else
         {
@@ -1264,7 +1252,7 @@ int updatePointVectorValues
 
         if (pointLabels3[pointI] == UNDEF_LABEL)
         {
-            points3[pointI] = ZERO_VECTOR;
+            points3[pointI] = UNDEF_VECTOR;
         }
         else
         {
@@ -1277,24 +1265,24 @@ int updatePointVectorValues
     (
         mesh,
         points1,
-        maxMagSqrEqOp<vector>(),
-        ZERO_VECTOR           // null value
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR           // null value
     );
 
     syncTools::syncPointList
     (
         mesh,
         points2,
-        maxMagSqrEqOp<vector>(),
-        ZERO_VECTOR           // null value
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR           // null value
     );
 
     syncTools::syncPointList
     (
         mesh,
         points3,
-        maxMagSqrEqOp<vector>(),
-        ZERO_VECTOR           // null value
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR           // null value
     );
 
     return 0;
@@ -1366,7 +1354,7 @@ int propagatePointVectorValues
             {
                 if (pointLabels1[pointI] == UNDEF_LABEL)
                 {
-                    points1[pointI] = ZERO_VECTOR;
+                    points1[pointI] = UNDEF_VECTOR;
                 }
                 else
                 {
@@ -1378,7 +1366,7 @@ int propagatePointVectorValues
             {
                 if (pointLabels2[pointI] == UNDEF_LABEL)
                 {
-                    points2[pointI] = ZERO_VECTOR;
+                    points2[pointI] = UNDEF_VECTOR;
                 }
                 else
                 {
@@ -1390,7 +1378,7 @@ int propagatePointVectorValues
             {
                 if (pointLabels3[pointI] == UNDEF_LABEL)
                 {
-                    points3[pointI] = ZERO_VECTOR;
+                    points3[pointI] = UNDEF_VECTOR;
                 }
                 else
                 {
@@ -1405,24 +1393,24 @@ int propagatePointVectorValues
     (
         mesh,
         points1,
-        maxMagSqrEqOp<vector>(),
-        ZERO_VECTOR           // null value
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR           // null value
     );
 
     syncTools::syncPointList
     (
         mesh,
         points2,
-        maxMagSqrEqOp<vector>(),
-        ZERO_VECTOR           // null value
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR           // null value
     );
 
     syncTools::syncPointList
     (
         mesh,
         points3,
-        maxMagSqrEqOp<vector>(),
-        ZERO_VECTOR           // null value
+        minMagSqrEqOp<vector>(),
+        UNDEF_VECTOR           // null value
     );
 
     return 0;
@@ -1469,7 +1457,7 @@ int calcLayerPoint
     const label debugI
 )
 {
-    if (pointNormals[pointI] == ZERO_VECTOR)
+    if (pointNormals[pointI] == UNDEF_VECTOR)
     {
         FatalError
             << "Sanity broken, pointNormals" << debugI << " is zero for pointI"
@@ -1503,6 +1491,7 @@ int blendWithLayerPoints
 (
     const fvMesh& mesh,
     pointField& newPoints,
+    const boolList& isInternalPoint,
     const labelList& pointHops1,
     const labelList& pointHops2,
     const labelList& pointHops3,
@@ -1529,7 +1518,6 @@ int blendWithLayerPoints
 
         if (outerPrismPoints1[pointI] != UNDEF_VECTOR)
         {
-            Info << "pointI " << pointI << " outerPrismPoints1 " << outerPrismPoints1[pointI] << endl;
             point pt;
             calcLayerPoint(mesh, pointI, pt, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
             layerPoint += pt;
@@ -1555,11 +1543,20 @@ int blendWithLayerPoints
             nHops.append(pointHops1[pointI]);
         }
 
-        // Very simple average of all points without any weighting e.g. by nHops
-        layerPoint /= n;
-
         if (layerPoint != ZERO_VECTOR)
         {
+            // Very simple average of all points without any weighting e.g. by nHops
+            layerPoint /= n;
+
+            // Artificially slow down smoothing of boundary points, to
+            // get internal points to smoothen faster. This avoids
+            // squishing of internal cells.
+            // if (! isInternalPoint[pointI])
+            // {
+            //     const double fac = 0.5;  // blending factor
+            //     layerPoint = (1.0 - fac) * newPoints[pointI] + fac * layerPoint;
+            // }
+
             // Target blending fraction
             const double slope = -layerMaxBlendingFraction / (maxLayers - minLayers);
             const double y0 = -slope * maxLayers;

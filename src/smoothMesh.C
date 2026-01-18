@@ -2460,6 +2460,7 @@ int main(int argc, char *argv[])
             (
                  mesh,
                  newPoints,
+                 isInternalPoint,
                  pointHops1, pointHops2, pointHops3,
                  outerPrismPoints1, outerPrismPoints2, outerPrismPoints3,
                  pointNormals1, pointNormals2, pointNormals3,
@@ -2556,7 +2557,9 @@ int main(int argc, char *argv[])
         label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
-            if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
+            // !!! WIP #32 override !!!
+            // if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
+            if (isFrozenPoint[pointI])
             {
                 newPoints[pointI] = mesh.points()[pointI];
                 ++nFrozenPoints;
