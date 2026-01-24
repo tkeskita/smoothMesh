@@ -32,4 +32,30 @@ Description
 
 // #include "smoothMeshCommon.C"
 
+using namespace Foam;
+
+// Help function to project point pt to a line defined by startPoint
+// and endPoint
+
+vector projectPointToLine
+(
+    const point pt,
+    const point startPoint,
+    const point endPoint
+)
+{
+    const double edgeLength = mag(endPoint - startPoint);
+    if (edgeLength < VSMALL)
+    {
+        FatalError << "startPoint " << startPoint << " and endPoint " << endPoint << " overlap" << endl << abort(FatalError);
+    }
+
+    const point c2pt = pt - startPoint;
+    const point edgeVec = endPoint - startPoint;
+    const double normalizedDotProd = (c2pt & edgeVec) / sqr(edgeLength);
+    const point projPoint = startPoint + normalizedDotProd * edgeVec;
+
+    return projPoint;
+}
+
 #endif
