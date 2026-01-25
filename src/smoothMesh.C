@@ -2588,7 +2588,7 @@ int main(int argc, char *argv[])
         // Increase time
         runTime++;
 
-        if ((stopIteration) or ((((i + 1) % writeInterval) == 0) and (i > 0)))
+        if ((stopIteration) or (writeInterval == 1) or ((((i + 1) % writeInterval) == 0) and (i > 0)))
         {
             // Save mesh
             if (overwrite)

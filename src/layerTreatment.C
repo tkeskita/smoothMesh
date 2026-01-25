@@ -1420,26 +1420,27 @@ int propagatePointVectorValues
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 
-// Help function to calculate movement vector of a point to point
-// coordinates, which is located a given distance away from startPoint
-// to inverse of given normal direction, on a line defined by
-// startPoint and endPoint
+// Help function to calculate target point location for the first
+// argument point. The target is located a given distance from second
+// argument point, on a line defined by first point and second point,
+// so that a specific layer distance is reached in the given normal
+// direction from the second point.
 
 point calcPointSlideOnLine
 (
-    const point startPoint,
-    const point endPoint,
+    const point firstPoint,
+    const point secondPoint,
     const double distance,
     const vector normalVec
 )
 {
-    const point targetVec = -1.0 * distance * normalVec;
-    const point lineVec = endPoint - startPoint;
+    const point targetVec = distance * normalVec;
+    const point lineVec = firstPoint - secondPoint;
     const double lineLength = mag(lineVec);
     const double scaledDotProd = (targetVec & lineVec) / sqr(lineLength);
-    const point pointMove = scaledDotProd * lineVec;
+    const point firstPointTarget = secondPoint + scaledDotProd * lineVec;
 
-    return pointMove;
+    return firstPointTarget;
 }
 
 // Help function to calculate a layer point location for one island
@@ -1476,57 +1477,12 @@ vector calcLayerPointMove
     const label nHops = pointHops[pointI] - 1;
     const double layerThickness = layerEdgeLength * pow(layerExpansionRatio, nHops);
 
-    const point startPoint = mesh.points()[pointI];
-    const point endPoint = outerPrismPoints[pointI];
+    const point movingPoint = mesh.points()[pointI];
+    const point refPoint = outerPrismPoints[pointI];
     const vector endNormal = pointNormals[pointI];
-    const vector layerPointMove = calcPointSlideOnLine(startPoint, endPoint, layerThickness, endNormal);
+    const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
 
-    return layerPointMove;
-}
-
-
-// OBSOLETE, DELETE
-// Calculates the target point coordinates for layer point from
-// collected information
-
-point calcTargetLayerPoint
-(
-    const label n,
-    const vectorList planePoints,
-    const vectorList planeNormals,
-    const labelList nHops
-)
-{
-    // Single point, ready to go
-    if (n == 1)
-    {
-        return planePoints[0];
-    }
-
-    // When more than one point is considered, the crossing of
-    // normal planes crossing forms a line. Project two points to
-    // the line and get average.
-    else if (n == 2)
-    {
-        point startPoint;
-        point endPoint;
-        // TBA calcPlaneCrossingPoints(startPoint, endPoint, planePoints[0], planePoints[1], planeNormals[0], planeNormals[1]);
-        const point p1 = projectPointToLine(planePoints[0], startPoint, endPoint);
-        const point p2 = projectPointToLine(planePoints[1], startPoint, endPoint);
-        return (p1 + p2) / 2.0;
-    }
-
-    // Three normal planes cross at a point, calculate it similarly to above
-    else if (n == 3)
-    {
-        point startPoint;
-        point endPoint;
-        // TBA calcPlaneCrossingPoints(startPoint, endPoint, planePoints[0], planePoints[1], planeNormals[0], planeNormals[1]);
-        const point p3 = projectPointToLine(planePoints[2], startPoint, endPoint);
-        return p3;
-    }
-
-    return UNDEF_VECTOR;
+    return layerTargetPoint;
 }
 
 
@@ -1563,24 +1519,24 @@ int blendWithLayerPoints
 
         if (outerPrismPoints1[pointI] != UNDEF_VECTOR)
         {
-            const vector moveVec = calcLayerPointMove(mesh, pointI, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
-            pointMove += moveVec;
+            const vector newCoords = calcLayerPointMove(mesh, pointI, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
+            pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops1[pointI]);
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
         {
-            const vector moveVec = calcLayerPointMove(mesh, pointI, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
-            pointMove += moveVec;
+            const vector newCoords = calcLayerPointMove(mesh, pointI, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
+            pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops2[pointI]);
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
         {
-            const vector moveVec = calcLayerPointMove(mesh, pointI, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
-            pointMove += moveVec;
+            const vector newCoords = calcLayerPointMove(mesh, pointI, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
+            pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops3[pointI]);
         }
@@ -1600,9 +1556,10 @@ int blendWithLayerPoints
             // }
 
             // Target blending fraction
-            const double slope = -layerMaxBlendingFraction / (maxLayers - minLayers);
+            const double slope = -layerMaxBlendingFraction / (maxLayers - minLayers + REL_TOL);
             const double y0 = -slope * maxLayers;
-            const double y = y0 + slope * min(nHops);
+            // const double y = y0 + slope * min(nHops);
+            const double y = y0 + slope;
             const double blendFrac = max(0.0, min(y, layerMaxBlendingFraction));
 
             const point newPoint = newPoints[pointI];
