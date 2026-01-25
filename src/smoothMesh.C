@@ -2430,7 +2430,6 @@ int main(int argc, char *argv[])
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         // constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
-
         // Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
@@ -2468,7 +2467,7 @@ int main(int argc, char *argv[])
                  layerEdgeLength,
                  layerExpansionRatio,
                  minLayers,
-                 maxLayers + 1  // +1 for correct number of layers
+                 maxLayers
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing

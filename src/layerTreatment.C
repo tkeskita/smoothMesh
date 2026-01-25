@@ -1142,58 +1142,6 @@ int propagateIslandFronts
             UNDEF_LABEL           // null value
         );
 
-        //
-
-        syncTools::syncPointList
-        (
-            mesh,
-            innerPrismPointLabels1,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
-
-        syncTools::syncPointList
-        (
-            mesh,
-            innerPrismPointLabels2,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
-
-        syncTools::syncPointList
-        (
-            mesh,
-            innerPrismPointLabels3,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
-
-        //
-
-        syncTools::syncPointList
-        (
-            mesh,
-            outerPrismPointLabels1,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
-
-        syncTools::syncPointList
-        (
-            mesh,
-            outerPrismPointLabels2,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
-
-        syncTools::syncPointList
-        (
-            mesh,
-            outerPrismPointLabels3,
-            maxEqOp<label>(),
-            UNDEF_LABEL           // null value
-        );
-
         nSumAddedPrisms += nAddedPrisms;
 
         // Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
@@ -1486,7 +1434,7 @@ vector calcLayerPointMove
 }
 
 
-// Function to calculate new coordinates according to  layer treatment
+// Function to calculate new coordinates according to layer treatment
 
 int blendWithLayerPoints
 (
