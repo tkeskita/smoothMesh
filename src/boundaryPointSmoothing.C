@@ -600,7 +600,7 @@ int stringifyEdgeMeshEdges
 
     // Recurse into neighbour edges if they don't already have a
     // string index and if the neighbor is not a corner
-    if ((neighEdgeI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL) and (em.pointEdges()[neighEdgeI1].size() == 2))
+    if ((neighEdgeI1 != UNDEF_LABEL) and (stringI1 == UNDEF_LABEL) and (em.edges()[neighEdgeI1].size() == 2))
     {
         label neighNeighEdgeI1(UNDEF_LABEL);
         label neighNeighEdgeI2(UNDEF_LABEL);
@@ -608,7 +608,7 @@ int stringifyEdgeMeshEdges
         stringifyEdgeMeshEdges(em, targetEdgeStrings, neighEdgeI1, neighNeighEdgeI1, neighNeighEdgeI2, nStrings);
     }
 
-    if ((neighEdgeI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL) and (em.pointEdges()[neighEdgeI2].size() == 2))
+    if ((neighEdgeI2 != UNDEF_LABEL) and (stringI2 == UNDEF_LABEL) and (em.edges()[neighEdgeI2].size() == 2))
     {
         label neighNeighEdgeI1(UNDEF_LABEL);
         label neighNeighEdgeI2(UNDEF_LABEL);
@@ -913,7 +913,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
 (
     const fvMesh& mesh,
     pointField& newPoints,
-    const pointField& pointNormals,
+    const vectorList& pointNormals,
     const boolList& isInternalPoint,
     const boolList& isSmoothingSurfacePoint,
     const boolList& isFeatureEdgePoint,

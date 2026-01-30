@@ -2481,26 +2481,26 @@ int main(int argc, char *argv[])
             updatePointVectorValues(mesh, mesh.points(), innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, innerPrismPoints1, innerPrismPoints2, innerPrismPoints3);
 
             // Project boundary points
-            // WIP projectBoundaryPointsToEdgesAndSurfaces
-            // (
-            //     mesh,
-            //     newPoints,
-            //     pointNormals,
-            //     isInternalPoint,
-            //     isSmoothingSurfacePoint,
-            //     isFeatureEdgePoint,
-            //     isCornerPoint,
-            //     cornerPoints,
-            //     targetEdges,
-            //     surf,
-            //     tree,
-            //     meshMinEdgeLength,
-            //     targetEdgeStrings,
-            //     pointStrings,
-            //     isSharpEdgePoint,
-            //     distanceTolerance,
-            //     isFrozenPoint
-            // );
+            projectBoundaryPointsToEdgesAndSurfaces
+            (
+                mesh,
+                newPoints,
+                pointNormals,
+                isInternalPoint,
+                isSmoothingSurfacePoint,
+                isFeatureEdgePoint,
+                isCornerPoint,
+                cornerPoints,
+                targetEdges,
+                surf,
+                tree,
+                meshMinEdgeLength,
+                targetEdgeStrings,
+                pointStrings,
+                isSharpEdgePoint,
+                distanceTolerance,
+                isFrozenPoint
+            );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
             // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
