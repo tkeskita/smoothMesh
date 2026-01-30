@@ -701,17 +701,20 @@ int countFrontPoints
 
     forAll (mesh.points(), pointI)
     {
-        if (freePoints[pointI] != freePointsSync[pointI])
+        if ((freePointsSync[pointI] != UNDEF_VECTOR) and
+            (freePoints[pointI] != freePointsSync[pointI]))
         {
             nFreePoints[pointI] += 1;
         }
 
-        if (frontPoints[pointI] != frontPointsSync[pointI])
+        if ((frontPointsSync[pointI] != UNDEF_VECTOR) and
+            (frontPoints[pointI] != frontPointsSync[pointI]))
         {
             nFrontPoints[pointI] += 1;
         }
 
-        if (passivePoints[pointI] != passivePointsSync[pointI])
+        if ((passivePointsSync[pointI] != UNDEF_VECTOR) and
+            (passivePoints[pointI] != passivePointsSync[pointI]))
         {
             nPassivePoints[pointI] += 1;
         }
@@ -774,7 +777,7 @@ int findPropagationFrontPointIs
     std::ofstream myfile;
     if ((writeObj) and (islandI == debugIsland))
     {
-        myfile.open ("debug" + std::to_string(nLayer) + ".obj");
+        myfile.open("debugPropagationFrontPoints_" + std::to_string(nLayer) + "_proc" + std::to_string(Pstream::myProcNo()) + ".obj");
         myfile << "o obj\n";
     }
 
@@ -999,11 +1002,11 @@ int propagateIslandFronts
 
     // Debug option to set true for printing edges as a STL file
     // Best visualized as wireframe in Paraview
-    const bool exportEdgesAsStl = true;
+    const bool exportEdgesAsStl = false;
     std::ofstream myfile;
     if (exportEdgesAsStl)
     {
-        myfile.open ("debugPrismEdgesAsStl_" + std::to_string(nLayer) + ".stl");
+        myfile.open("debugPrismEdgesAsStl_" + std::to_string(nLayer) + "_proc" + std::to_string(Pstream::myProcNo()) + ".stl");
         myfile << "solid edgesAsStl\n";
     }
 
