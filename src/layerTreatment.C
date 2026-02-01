@@ -29,80 +29,6 @@ const label IGNORED_LABEL = 2 * PASSIVE_START_LABEL;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Calculate the minimum number of edge hops required to reach
-// any boundary point for all mesh points
-
-int calculateGlobalPointHops
-(
-    const fvMesh& mesh,
-    const boolList& isInternalPoint,
-    labelList& globalPointHops,
-    const label maxLayers
-)
-{
-    // Set boundary patch points to zero hops
-    forAll (mesh.points(), pointI)
-    {
-        if (! isInternalPoint[pointI])
-        {
-            globalPointHops[pointI] = 0;
-        }
-    }
-
-    // Storage for new hop counts
-    labelList newHopCounts(mesh.nPoints(), UNDEF_LABEL);
-
-    // Propagate hop information to internal mesh points
-    for (label iter = 0; iter < maxLayers; ++iter)
-    {
-        forAll(mesh.points(), pointI)
-        {
-            // Skip the point if a hop value exists already
-            if (globalPointHops[pointI] >= 0)
-                continue;
-
-            // Find the maximum count of neighbour hops
-            label maxHops = -1;
-
-            forAll(mesh.pointPoints(pointI), pointPpI)
-            {
-                const label neighI = mesh.pointPoints(pointI)[pointPpI];
-                if (globalPointHops[neighI] > maxHops)
-                {
-                    maxHops = globalPointHops[neighI];
-                }
-            }
-
-            // Set new hop count
-            if (maxHops >= 0)
-            {
-                newHopCounts[pointI] = maxHops + 1;
-            }
-        }
-
-        // Merge new values
-        forAll(mesh.points(), pointI)
-        {
-            if (newHopCounts[pointI] > globalPointHops[pointI])
-            {
-                globalPointHops[pointI] = newHopCounts[pointI];
-            }
-        }
-
-        // Synchronize hop counts among processors
-        syncTools::syncPointList
-        (
-            mesh,
-            globalPointHops,
-            maxEqOp<label>(),
-            UNDEF_LABEL               // null value
-        );
-    }
-
-    return 0;
-}
-
-
 // Help function to find an unprocessed prismatic boundary point
 
 label findNewPrismBoundaryPointI
@@ -853,7 +779,6 @@ int findPropagationFrontPointIs
     const labelList& prismIslands1,
     const labelList& prismIslands2,
     const labelList& prismIslands3,
-    const labelList& globalPointHops,
     const boolList& isIslandSlotsFull
 )
 {
@@ -892,6 +817,7 @@ int findPropagationFrontPointIs
         forAll (mesh.pointPoints()[pointI], pointPointI)
         {
             const label neighI = mesh.pointPoints()[pointI][pointPointI];
+            // Info << "debug islandI " << islandI << " pointI " << pointI << " neighI " << neighI << endl;
 
             // Skip neighbor if it's ignored // TODO: Remove?
             if (prismIslands1[neighI] == IGNORED_LABEL)
@@ -900,13 +826,6 @@ int findPropagationFrontPointIs
             // Can't propagate if slots are full
             if (isIslandSlotsFull[neighI])
                 continue;
-
-            // Must not propagate if neighbor is closer to a boundary
-            if (globalPointHops[neighI] < globalPointHops[neighI])
-            {
-                Pout << "   pointI " << pointI << " goes downhill" << endl;
-                continue;
-            }
 
             // Skip neighbor if it is not free
             if
@@ -1064,6 +983,25 @@ int addPrismaticMappingsForPoint
     return 0;
 }
 
+// Help function to check if two given points are prismatically
+// connected to any island
+
+bool oppositeFrontExists
+(
+    const label frontPointI,
+    const label candidatePointI,
+    const labelList& outerPrismPointLabels1,
+    const labelList& outerPrismPointLabels2,
+    const labelList& outerPrismPointLabels3
+)
+{
+    if (outerPrismPointLabels1[frontPointI] == candidatePointI) return true;
+    if (outerPrismPointLabels2[frontPointI] == candidatePointI) return true;
+    if (outerPrismPointLabels3[frontPointI] == candidatePointI) return true;
+
+    return false;
+}
+
 
 // Function to run one island info propagation iteration
 
@@ -1080,7 +1018,6 @@ int propagateIslandFronts
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
-    const labelList& globalPointHops,
     labelList& pointNormalSource1,
     labelList& pointNormalSource2,
     labelList& pointNormalSource3,
@@ -1123,7 +1060,7 @@ int propagateIslandFronts
 
     // Debug option to set true for printing edges as a STL file
     // Best visualized as wireframe in Paraview
-    const bool exportEdgesAsStl = false;
+    const bool exportEdgesAsStl = true;
     std::ofstream myfile;
     if (exportEdgesAsStl)
     {
@@ -1147,7 +1084,7 @@ int propagateIslandFronts
         // Find next front points (free unassigned point indices next
         // to active island points), and their neighboring active
         // current front point indices
-        findPropagationFrontPointIs(mesh, nLayer, islandI, nProcessorsOnPoint, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3, globalPointHops, isIslandSlotsFull);
+        findPropagationFrontPointIs(mesh, nLayer, islandI, nProcessorsOnPoint, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3, isIslandSlotsFull);
 
         // Info << "size of candidatePointIs " << candidatePointIs.size() << endl;
         // Info << "size of frontPointIs " << frontPointIs.size() << endl;
@@ -1163,14 +1100,24 @@ int propagateIslandFronts
 
             isVisitedPoint[pointI] = true;
 
-            if (isIslandSlotsFull[pointI])
+            const label frontPointI = frontPointIs[pointI];
+            const label candidatePointI = candidatePointIs[pointI];
+
+            if (isIslandSlotsFull[frontPointI])
                 continue;
+
+            // Must not propagate if opposing prismatic front connection exists
+            if (oppositeFrontExists(frontPointI, candidatePointI, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3))
+            {
+                Pout << "Opposite front found for points " << frontPointI << " and " << candidatePointI << endl;
+                continue;
+            }
 
             // Propagate active island index to candidate point only
             // if candidate is prismatic and propagation type is active
             if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
             {
-                addResult = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                addResult = addIslandInfoForPoint(mesh, candidatePointI, frontPointI, islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
                 // Stop if point was reset (run out of island slots)
                 if (addResult == 0)
@@ -1179,14 +1126,14 @@ int propagateIslandFronts
                 }
 
                 ++nAddedPrisms;
-                addPrismaticMappingsForPoint(mesh, islandI, frontPointIs[pointI], candidatePointIs[pointI], prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+                addPrismaticMappingsForPoint(mesh, islandI, frontPointI, candidatePointI, prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
 
                 // Debugging: export edge as a sliver triangle in STL ascii format,
                 // with fake normal direction
                 if (exportEdgesAsStl)
                 {
-                    const label i1 = candidatePointIs[pointI];
-                    const label i2 = frontPointIs[pointI];
+                    const label i1 = candidatePointI;
+                    const label i2 = frontPointI;
                     if (i1 == i2)
                         FatalError << "candidate point " << i1 << " is same as front point" << endl << abort(FatalError);
                     myfile << "facet normal 0 0 0" << "\n"
@@ -1212,16 +1159,17 @@ int propagateIslandFronts
             // unless it's already propagated
             else
             {
-                if (isPointInIsland(candidatePointIs[pointI], invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+                if (isPointInIsland(candidatePointI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
                     continue;
 
-                addResult = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                addResult = addIslandInfoForPoint(mesh, candidatePointI, frontPointI, invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
             }
 
-            // Run out of island slots, mark point as full
+            // Run out of island slots, mark points as full
             if (addResult == 0)
             {
-                isIslandSlotsFull[pointI] = true;
+                isIslandSlotsFull[frontPointI] = true;
+                isIslandSlotsFull[candidatePointI] = true;
             }
         }
 
