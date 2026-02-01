@@ -2039,6 +2039,9 @@ int main(int argc, char *argv[])
     labelList pointHops2;
     labelList pointHops3;
 
+    // Point hops calculated from all boundaries
+    labelList globalPointHops;
+
     // Indices of point normal source points
     labelList pointNormalSource1;
     labelList pointNormalSource2;
@@ -2068,6 +2071,9 @@ int main(int argc, char *argv[])
     labelList outerPrismPointLabels1;
     labelList outerPrismPointLabels2;
     labelList outerPrismPointLabels3;
+
+    // Flag for marking island slots being full
+    boolList isIslandSlotsFull;
 
     // End of boundary layer treatment variables
 
@@ -2273,6 +2279,7 @@ int main(int argc, char *argv[])
         pointHops1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        globalPointHops.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointNormalSource1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointNormalSource2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointNormalSource3.setSize(mesh.nPoints(), UNDEF_LABEL);
@@ -2291,10 +2298,12 @@ int main(int argc, char *argv[])
         outerPrismPointLabels1.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels2.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        isIslandSlotsFull.setSize(mesh.nPoints(), false);
 
         // Pre-calculate global boundary point normals and identify
         // sharp edge points
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
+        calculateGlobalPointHops(mesh, isInternalPoint, globalPointHops, maxLayers);
 
         // Identify prismatic islands
         Info << "Identifying prismatic boundary islands in the mesh" << endl;
@@ -2307,8 +2316,14 @@ int main(int argc, char *argv[])
         for (label i = 0; i < maxLayers; i++)
         {
             Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, globalPointHops, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, isIslandSlotsFull);
             Info << "  - Identified " << nPrisms << " prismatic edges" << endl;
+
+            const label nFull = returnReduce(count(isIslandSlotsFull, true), sumOp<label>());
+            if (nFull > 0)
+                {
+                    Info << "  - WARNING: Exceeded island slots for " << nFull << " points! Layer treatment may not work correctly." << endl;
+                }
         }
 
         // // Write selected point field, for debugging only
@@ -2556,9 +2571,8 @@ int main(int argc, char *argv[])
         label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
-            // !!! WIP #32 override !!!
-            // if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
-            if (isFrozenPoint[pointI])
+            // if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
+            if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
             {
                 newPoints[pointI] = mesh.points()[pointI];
                 ++nFrozenPoints;

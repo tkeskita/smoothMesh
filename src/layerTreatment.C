@@ -21,12 +21,87 @@ const label MAX_ISLANDS = 10000;
 // Passive island index start number
 const label PASSIVE_START_LABEL = 1000000000;
 
-// Ignored point island index number
+// Ignored point island index number. Set to largest used value so
+// that parallel synchronization with maxEqOp favors it.
 const label IGNORED_LABEL = 2 * PASSIVE_START_LABEL;
 
 // Note: Maximum allowed number of processors is PASSIVE_START_LABEL/MAX_ISLANDS
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Calculate the minimum number of edge hops required to reach
+// any boundary point for all mesh points
+
+int calculateGlobalPointHops
+(
+    const fvMesh& mesh,
+    const boolList& isInternalPoint,
+    labelList& globalPointHops,
+    const label maxLayers
+)
+{
+    // Set boundary patch points to zero hops
+    forAll (mesh.points(), pointI)
+    {
+        if (! isInternalPoint[pointI])
+        {
+            globalPointHops[pointI] = 0;
+        }
+    }
+
+    // Storage for new hop counts
+    labelList newHopCounts(mesh.nPoints(), UNDEF_LABEL);
+
+    // Propagate hop information to internal mesh points
+    for (label iter = 0; iter < maxLayers; ++iter)
+    {
+        forAll(mesh.points(), pointI)
+        {
+            // Skip the point if a hop value exists already
+            if (globalPointHops[pointI] >= 0)
+                continue;
+
+            // Find the maximum count of neighbour hops
+            label maxHops = -1;
+
+            forAll(mesh.pointPoints(pointI), pointPpI)
+            {
+                const label neighI = mesh.pointPoints(pointI)[pointPpI];
+                if (globalPointHops[neighI] > maxHops)
+                {
+                    maxHops = globalPointHops[neighI];
+                }
+            }
+
+            // Set new hop count
+            if (maxHops >= 0)
+            {
+                newHopCounts[pointI] = maxHops + 1;
+            }
+        }
+
+        // Merge new values
+        forAll(mesh.points(), pointI)
+        {
+            if (newHopCounts[pointI] > globalPointHops[pointI])
+            {
+                globalPointHops[pointI] = newHopCounts[pointI];
+            }
+        }
+
+        // Synchronize hop counts among processors
+        syncTools::syncPointList
+        (
+            mesh,
+            globalPointHops,
+            maxEqOp<label>(),
+            UNDEF_LABEL               // null value
+        );
+    }
+
+    return 0;
+}
+
 
 // Help function to find an unprocessed prismatic boundary point
 
@@ -162,22 +237,24 @@ label addIslandInfoForPoint
     // variables requires thinking through how to program it for
     // parallel processing. Fail for now.
 
-    FatalError << "Maximum limit of three prism islands exceeded for pointI " << pointI << " at " << mesh.points()[pointI] << ". Can't add islandI " << islandI << ". You need to either lower maxLayers or remove patch(es) from layerPatches, until storage overflow handling is improved." << endl << abort(FatalError);
+    // FatalError << "Maximum limit of three prism islands exceeded for pointI " << pointI << " at " << mesh.points()[pointI] << ". Can't add islandI " << islandI << ". You need to either lower maxLayers or remove patch(es) from layerPatches, until storage overflow handling is improved." << endl << abort(FatalError);
 
-    // All slots are already in use, reset slots to ignored
-    // Pout << "Reset island pointI " << pointI << " at " << mesh.points()[pointI] << endl;
-    prismIslands1[pointI] = IGNORED_LABEL;
-    prismIslands2[pointI] = IGNORED_LABEL;
-    prismIslands3[pointI] = IGNORED_LABEL;
-    pointNormalSource1[pointI] = UNDEF_LABEL;
-    pointNormalSource2[pointI] = UNDEF_LABEL;
-    pointNormalSource3[pointI] = UNDEF_LABEL;
-    pointNormals1[pointI] = Zero;
-    pointNormals2[pointI] = Zero;
-    pointNormals3[pointI] = Zero;
-    pointHops1[pointI] = UNDEF_LABEL;
-    pointHops2[pointI] = UNDEF_LABEL;
-    pointHops3[pointI] = UNDEF_LABEL;
+    // All slots are already in use
+
+    // // Pout << "Reset island pointI " << pointI << " at " << mesh.points()[pointI] << endl;
+    // prismIslands1[pointI] = IGNORED_LABEL;
+    // prismIslands2[pointI] = IGNORED_LABEL;
+    // prismIslands3[pointI] = IGNORED_LABEL;
+    // pointNormalSource1[pointI] = IGNORED_LABEL;
+    // pointNormalSource2[pointI] = IGNORED_LABEL;
+    // pointNormalSource3[pointI] = IGNORED_LABEL;
+    // pointNormals1[pointI] = Zero;
+    // pointNormals2[pointI] = Zero;
+    // pointNormals3[pointI] = Zero;
+    // pointHops1[pointI] = IGNORED_LABEL;
+    // pointHops2[pointI] = IGNORED_LABEL;
+    // pointHops3[pointI] = IGNORED_LABEL;
+
     return 0;
 }
 
@@ -606,7 +683,8 @@ label invertIslandI
 
 // Help function to calculate number of free (undefined) islands,
 // number of all front islands points, and passive front points
-// neighboring each point
+// neighboring each point. If island slots are full for a point, it is
+// considered as passive
 
 int countFrontPoints
 (
@@ -618,7 +696,8 @@ int countFrontPoints
     labelList& nPassivePoints,
     const labelList& prismIslands1,
     const labelList& prismIslands2,
-    const labelList& prismIslands3
+    const labelList& prismIslands3,
+    const boolList& isIslandSlotsFull
 )
 {
     vectorList freePoints(mesh.nPoints(), UNDEF_VECTOR);
@@ -640,7 +719,8 @@ int countFrontPoints
             if
             (
                 (! isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)) and
-                (! isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+                (! isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3)) and
+                (! isIslandSlotsFull[neighI])
             )
             {
                 freePoints[pointI] = neighP;
@@ -652,7 +732,8 @@ int countFrontPoints
             if
             (
                 (isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3)) or
-                (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+                (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3)) or
+                (isIslandSlotsFull[neighI])
             )
             {
                 frontPoints[pointI] = neighP;
@@ -661,7 +742,11 @@ int countFrontPoints
             }
 
             // Passive front points
-            if (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            if
+            (
+                (isPointInIsland(neighI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3)) or
+                (isIslandSlotsFull[neighI])
+            )
             {
                 passivePoints[pointI] = neighP;
                 passivePointsSync[pointI] = neighP;
@@ -758,7 +843,7 @@ int countFrontPoints
 int findPropagationFrontPointIs
 (
     const fvMesh& mesh,
-    const label nLayer,  // Remove after debugging
+    const label nLayer,
     const label islandI,
     const labelList& nProcessorsOnPoint,
     labelList& frontPointIs,
@@ -767,7 +852,9 @@ int findPropagationFrontPointIs
     boolList& isPropagationModeActive,
     const labelList& prismIslands1,
     const labelList& prismIslands2,
-    const labelList& prismIslands3
+    const labelList& prismIslands3,
+    const labelList& globalPointHops,
+    const boolList& isIslandSlotsFull
 )
 {
     // OBJ output for debugging
@@ -787,7 +874,7 @@ int findPropagationFrontPointIs
     labelList nFreePoints(mesh.nPoints(), Zero);
     labelList nFrontPoints(mesh.nPoints(), Zero);
     labelList nPassivePoints(mesh.nPoints(), Zero);
-    countFrontPoints(mesh, islandI, nProcessorsOnPoint, nFreePoints, nFrontPoints, nPassivePoints, prismIslands1, prismIslands2, prismIslands3);
+    countFrontPoints(mesh, islandI, nProcessorsOnPoint, nFreePoints, nFrontPoints, nPassivePoints, prismIslands1, prismIslands2, prismIslands3, isIslandSlotsFull);
 
     forAll (mesh.points(), pointI)
     {
@@ -797,14 +884,29 @@ int findPropagationFrontPointIs
         if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
             continue;
 
+        // Nothing to do if slots are full
+        if (isIslandSlotsFull[pointI])
+            continue;
+
         // Find and add pairs of front-to-free points into lists
         forAll (mesh.pointPoints()[pointI], pointPointI)
         {
             const label neighI = mesh.pointPoints()[pointI][pointPointI];
 
-            // Skip neighbor if it's ignored
+            // Skip neighbor if it's ignored // TODO: Remove?
             if (prismIslands1[neighI] == IGNORED_LABEL)
                 continue;
+
+            // Can't propagate if slots are full
+            if (isIslandSlotsFull[neighI])
+                continue;
+
+            // Must not propagate if neighbor is closer to a boundary
+            if (globalPointHops[neighI] < globalPointHops[neighI])
+            {
+                Pout << "   pointI " << pointI << " goes downhill" << endl;
+                continue;
+            }
 
             // Skip neighbor if it is not free
             if
@@ -978,6 +1080,7 @@ int propagateIslandFronts
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
+    const labelList& globalPointHops,
     labelList& pointNormalSource1,
     labelList& pointNormalSource2,
     labelList& pointNormalSource3,
@@ -989,7 +1092,8 @@ int propagateIslandFronts
     labelList& innerPrismPointLabels3,
     labelList& outerPrismPointLabels1,
     labelList& outerPrismPointLabels2,
-    labelList& outerPrismPointLabels3
+    labelList& outerPrismPointLabels3,
+    boolList& isIslandSlotsFull
 )
 {
     label nAddedPrisms = 0;
@@ -999,6 +1103,23 @@ int propagateIslandFronts
     boolList isCandidatePrismatic;
     boolList isPropagationModeActive;
     boolList isVisitedPoint(mesh.nPoints(), false);
+
+    // Back-up copies of state variables for exceeding island slots
+    labelList prismIslandsBackup1(prismIslands1);
+    labelList prismIslandsBackup2(prismIslands2);
+    labelList prismIslandsBackup3(prismIslands3);
+    labelList pointHopsBackup1(pointHops1);
+    labelList pointHopsBackup2(pointHops2);
+    labelList pointHopsBackup3(pointHops3);
+    labelList pointNormalSourceBackup1(pointNormalSource1);
+    labelList pointNormalSourceBackup2(pointNormalSource2);
+    labelList pointNormalSourceBackup3(pointNormalSource3);
+    labelList innerPrismPointLabelsBackup1(innerPrismPointLabels1);
+    labelList innerPrismPointLabelsBackup2(innerPrismPointLabels2);
+    labelList innerPrismPointLabelsBackup3(innerPrismPointLabels3);
+    labelList outerPrismPointLabelsBackup1(outerPrismPointLabels1);
+    labelList outerPrismPointLabelsBackup2(outerPrismPointLabels2);
+    labelList outerPrismPointLabelsBackup3(outerPrismPointLabels3);
 
     // Debug option to set true for printing edges as a STL file
     // Best visualized as wireframe in Paraview
@@ -1026,7 +1147,7 @@ int propagateIslandFronts
         // Find next front points (free unassigned point indices next
         // to active island points), and their neighboring active
         // current front point indices
-        findPropagationFrontPointIs(mesh, nLayer, islandI, nProcessorsOnPoint, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3);
+        findPropagationFrontPointIs(mesh, nLayer, islandI, nProcessorsOnPoint, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, prismIslands1, prismIslands2, prismIslands3, globalPointHops, isIslandSlotsFull);
 
         // Info << "size of candidatePointIs " << candidatePointIs.size() << endl;
         // Info << "size of frontPointIs " << frontPointIs.size() << endl;
@@ -1035,21 +1156,27 @@ int propagateIslandFronts
         // Process the candidate points
         forAll (candidatePointIs, pointI)
         {
+            label addResult = UNDEF_LABEL;
+
             if (isVisitedPoint[pointI])
                 continue;
 
             isVisitedPoint[pointI] = true;
 
+            if (isIslandSlotsFull[pointI])
+                continue;
+
             // Propagate active island index to candidate point only
             // if candidate is prismatic and propagation type is active
             if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
             {
+                addResult = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-                const label res = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-
-                // Stop if point was reset
-                if (res == 0)
+                // Stop if point was reset (run out of island slots)
+                if (addResult == 0)
+                {
                     continue;
+                }
 
                 ++nAddedPrisms;
                 addPrismaticMappingsForPoint(mesh, islandI, frontPointIs[pointI], candidatePointIs[pointI], prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
@@ -1079,7 +1206,6 @@ int propagateIslandFronts
                            << " endloop" << "\n"
                            << "endfacet" << "\n";
                 }
-
             }
 
             // Otherwise propagate the passive island index number
@@ -1089,11 +1215,52 @@ int propagateIslandFronts
                 if (isPointInIsland(candidatePointIs[pointI], invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
                     continue;
 
-                addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                addResult = addIslandInfoForPoint(mesh, candidatePointIs[pointI], frontPointIs[pointI], invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            }
+
+            // Run out of island slots, mark point as full
+            if (addResult == 0)
+            {
+                isIslandSlotsFull[pointI] = true;
             }
         }
 
-        // Synchronize propagation variables among processors
+        // Synchronize information of slots being full and restore
+        // original variables if needed
+
+        syncTools::syncPointList
+        (
+            mesh,
+            isIslandSlotsFull,
+            orEqOp<bool>(),
+            false                 // null value
+        );
+
+        forAll (mesh.points(), pointI)
+        {
+            if (isIslandSlotsFull[pointI])
+            {
+                Pout << "    WARNING: Island slots exceeded for point " << pointI << " at " << mesh.points()[pointI] << endl;
+                prismIslands1[pointI] = prismIslandsBackup1[pointI];
+                prismIslands2[pointI] = prismIslandsBackup2[pointI];
+                prismIslands3[pointI] = prismIslandsBackup3[pointI];
+                pointHops1[pointI] = pointHopsBackup1[pointI];
+                pointHops2[pointI] = pointHopsBackup2[pointI];
+                pointHops3[pointI] = pointHopsBackup3[pointI];
+                pointNormalSource1[pointI] = pointNormalSourceBackup1[pointI];
+                pointNormalSource2[pointI] = pointNormalSourceBackup2[pointI];
+                pointNormalSource3[pointI] = pointNormalSourceBackup3[pointI];
+                innerPrismPointLabels1[pointI] = innerPrismPointLabelsBackup1[pointI];
+                innerPrismPointLabels2[pointI] = innerPrismPointLabelsBackup2[pointI];
+                innerPrismPointLabels3[pointI] = innerPrismPointLabelsBackup3[pointI];
+                outerPrismPointLabels1[pointI] = outerPrismPointLabelsBackup1[pointI];
+                outerPrismPointLabels2[pointI] = outerPrismPointLabelsBackup2[pointI];
+                outerPrismPointLabels3[pointI] = outerPrismPointLabelsBackup3[pointI];
+            }
+        }
+
+        // Then synchronize the rest of propagation variables among
+        // processors
 
         syncTools::syncPointList
         (
