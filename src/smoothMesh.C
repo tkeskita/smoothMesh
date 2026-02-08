@@ -2072,9 +2072,6 @@ int main(int argc, char *argv[])
     labelList outerPrismPointLabels2;
     labelList outerPrismPointLabels3;
 
-    // Flag for disabled island propagation points
-    boolList isDisabledPropagationPoint;
-
     // End of boundary layer treatment variables
 
     // Check prerequisites for carrying out boundary layer treatment
@@ -2298,7 +2295,6 @@ int main(int argc, char *argv[])
         outerPrismPointLabels1.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels2.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels3.setSize(mesh.nPoints(), UNDEF_LABEL);
-        isDisabledPropagationPoint.setSize(mesh.nPoints(), false);
 
         // Pre-calculate global boundary point normals and identify
         // sharp edge points
@@ -2315,11 +2311,8 @@ int main(int argc, char *argv[])
         for (label i = 0; i < maxLayers; i++)
         {
             Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, isDisabledPropagationPoint);
+            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of suitable prismatic edges found: " << nPrisms << endl;
-
-            const label nFull = returnReduce(count(isDisabledPropagationPoint, true), sumOp<label>());
-            Info << "  - Disabled propagation points: " << nFull << endl;
         }
 
         // // Write selected point field, for debugging only

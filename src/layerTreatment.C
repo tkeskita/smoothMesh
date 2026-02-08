@@ -1025,7 +1025,7 @@ int countRequiredNumberOfSlots
 int disablePointsForOppositeFronts
 (
     const fvMesh& mesh,
-    boolList& isDisabledPropagationPoint,
+    boolList& isDisabledIs,
     const labelList& candidatePointIs,
     const labelList& frontPointIs,
     const labelList& outerPrismPointLabels1,
@@ -1046,30 +1046,21 @@ int disablePointsForOppositeFronts
                 (outerPrismPointLabels2[candidatePointI] == frontPointI) or
                 (outerPrismPointLabels3[candidatePointI] == frontPointI))
             {
-                isDisabledPropagationPoint[frontPointI] = true;
+                isDisabledIs[pointI] = true;
             }
 
-            // Check for new front point pairs. Note: This disables
-            // ALL propagations for front and candidate point. This is
-            // bit of an overkill, since only the propagation from
-            // front to cadidate needs to be cut off. Is this problem?
+            // Check for new front point pairs
+            const label altFrontPointI = frontPointIs[pointJ];
+            const label altCandidatePointI = candidatePointIs[pointI];
+
             if ((frontPointI == candidatePointI) and
-               (frontPointIs[pointJ] == candidatePointIs[pointI]))
+               (altFrontPointI == altCandidatePointI))
             {
-                isDisabledPropagationPoint[frontPointI] = true;
-                isDisabledPropagationPoint[candidatePointI] = true;
+                isDisabledIs[pointI] = true;
+                isDisabledIs[pointJ] = true;
             }
         }
     }
-
-    // Synchronize disabled points
-    syncTools::syncPointList
-    (
-         mesh,
-         isDisabledPropagationPoint,
-         orEqOp<bool>(),
-         false                      // null value
-    );
 
     return 0;
 }
@@ -1102,8 +1093,7 @@ int propagateIslandFronts
     labelList& innerPrismPointLabels3,
     labelList& outerPrismPointLabels1,
     labelList& outerPrismPointLabels2,
-    labelList& outerPrismPointLabels3,
-    boolList& isDisabledPropagationPoint
+    labelList& outerPrismPointLabels3
 )
 {
     label nAddedPrisms = 0;
@@ -1136,13 +1126,13 @@ int propagateIslandFronts
     }
 
     // Disable points if there will be lack of island slots
-
     labelList nIslandSlotsUsedTest(nIslandSlotsUsed);
     for (const label islandI : islandIs)
     {
         countRequiredNumberOfSlots(mesh, islandI, candidatePointIs, frontIslandIs, nIslandSlotsUsedTest);
     }
 
+    boolList isDisabledPropagationPoint(mesh.nPoints(), false);
     forAll(mesh.points(), pointI)
     {
         if (nIslandSlotsUsedTest[pointI] > 3)
@@ -1153,7 +1143,8 @@ int propagateIslandFronts
 
     // Disable points if there will be opposing fronts meeting, either
     // from previous rounds or this round
-    disablePointsForOppositeFronts(mesh, isDisabledPropagationPoint, candidatePointIs, frontPointIs, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+    boolList isDisabledIs(candidatePointIs.size(), false);
+    disablePointsForOppositeFronts(mesh, isDisabledIs, candidatePointIs, frontPointIs, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
 
     // Carry out propagation
     forAll (candidatePointIs, pointI)
@@ -1163,9 +1154,11 @@ int propagateIslandFronts
         const label islandI = frontIslandIs[pointI];
         nAddedPrisms = 0;
 
-        if (isDisabledPropagationPoint[frontPointI])
-            continue;
+        //if (isDisabledPropagationPoint[frontPointI])
+        //    continue;
         if (isDisabledPropagationPoint[candidatePointI])
+            continue;
+        if (isDisabledIs[pointI])
             continue;
 
         // Propagate active island index to candidate point only
