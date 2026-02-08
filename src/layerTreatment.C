@@ -1033,7 +1033,6 @@ int disablePointsForOppositeFronts
     const labelList& outerPrismPointLabels3
 )
 {
-
     forAll (frontPointIs, pointI)
     {
         const label frontPointI = frontPointIs[pointI];
@@ -1055,7 +1054,7 @@ int disablePointsForOppositeFronts
             // bit of an overkill, since only the propagation from
             // front to cadidate needs to be cut off. Is this problem?
             if ((frontPointI == candidatePointI) and
-               (frontPointIs[pointJ] == candidatePointI))
+               (frontPointIs[pointJ] == candidatePointIs[pointI]))
             {
                 isDisabledPropagationPoint[frontPointI] = true;
                 isDisabledPropagationPoint[candidatePointI] = true;
