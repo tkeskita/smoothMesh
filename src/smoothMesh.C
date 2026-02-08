@@ -2034,6 +2034,9 @@ int main(int argc, char *argv[])
     labelList prismIslands2;
     labelList prismIslands3;
 
+    // Number of prismIslands slots being in use for points
+    labelList nIslandSlotsUsed;
+
     // Number of edge hops to prismatic boundary island
     labelList pointHops1;
     labelList pointHops2;
@@ -2069,8 +2072,8 @@ int main(int argc, char *argv[])
     labelList outerPrismPointLabels2;
     labelList outerPrismPointLabels3;
 
-    // Flag for marking island slots being full
-    boolList isIslandSlotsFull;
+    // Flag for disabled island propagation points
+    boolList isDisabledPropagationPoint;
 
     // End of boundary layer treatment variables
 
@@ -2273,6 +2276,7 @@ int main(int argc, char *argv[])
         prismIslands1.setSize(mesh.nPoints(), UNDEF_LABEL);
         prismIslands2.setSize(mesh.nPoints(), UNDEF_LABEL);
         prismIslands3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        nIslandSlotsUsed.setSize(mesh.nPoints(), 0);
         pointHops1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops3.setSize(mesh.nPoints(), UNDEF_LABEL);
@@ -2294,7 +2298,7 @@ int main(int argc, char *argv[])
         outerPrismPointLabels1.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels2.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels3.setSize(mesh.nPoints(), UNDEF_LABEL);
-        isIslandSlotsFull.setSize(mesh.nPoints(), false);
+        isDisabledPropagationPoint.setSize(mesh.nPoints(), false);
 
         // Pre-calculate global boundary point normals and identify
         // sharp edge points
@@ -2302,7 +2306,7 @@ int main(int argc, char *argv[])
 
         // Identify prismatic islands
         Info << "Identifying prismatic boundary islands in the mesh" << endl;
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
 
         // Synchronize and sort a global list of islandIs
         mergeAndSortIslandIs(islandIs);
@@ -2311,14 +2315,11 @@ int main(int argc, char *argv[])
         for (label i = 0; i < maxLayers; i++)
         {
             Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, isIslandSlotsFull);
-            Info << "  - Identified " << nPrisms << " prismatic edges" << endl;
+            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, isDisabledPropagationPoint);
+            Info << "  - Number of suitable prismatic edges found: " << nPrisms << endl;
 
-            const label nFull = returnReduce(count(isIslandSlotsFull, true), sumOp<label>());
-            if (nFull > 0)
-                {
-                    Info << "  - WARNING: Exceeded island slots for " << nFull << " points! Layer treatment may not work correctly." << endl;
-                }
+            const label nFull = returnReduce(count(isDisabledPropagationPoint, true), sumOp<label>());
+            Info << "  - Disabled propagation points: " << nFull << endl;
         }
 
         // // Write selected point field, for debugging only
