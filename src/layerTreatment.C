@@ -996,11 +996,15 @@ int countRequiredNumberOfSlots
     const label islandI,
     const labelList& candidatePointIs,
     const labelList& frontIslandIs,
-    labelList& nIslandSlotsUsedTest
+    labelList& nIslandSlotsUsedTest,
+    const boolList isDisabledIs
 )
 {
     forAll(candidatePointIs, pointI)
     {
+        if (isDisabledIs[pointI])
+            continue;
+
         if (frontIslandIs[pointI] == islandI)
         {
             const label candidatePointI = candidatePointIs[pointI];
@@ -1036,25 +1040,24 @@ int disablePointsForOppositeFronts
     forAll (frontPointIs, pointI)
     {
         const label frontPointI = frontPointIs[pointI];
+        const label candidatePointI = candidatePointIs[pointI];
+
+        // Check for existing front
+        if ((outerPrismPointLabels1[frontPointI] == candidatePointI) or
+            (outerPrismPointLabels2[frontPointI] == candidatePointI) or
+            (outerPrismPointLabels3[frontPointI] == candidatePointI))
+        {
+            isDisabledIs[pointI] = true;
+        }
 
         forAll (candidatePointIs, pointJ)
         {
-            const label candidatePointI = candidatePointIs[pointJ];
-
-            // Check for existing front
-            if ((outerPrismPointLabels1[candidatePointI] == frontPointI) or
-                (outerPrismPointLabels2[candidatePointI] == frontPointI) or
-                (outerPrismPointLabels3[candidatePointI] == frontPointI))
-            {
-                isDisabledIs[pointI] = true;
-            }
-
             // Check for new front point pairs
-            const label altFrontPointI = frontPointIs[pointJ];
-            const label altCandidatePointI = candidatePointIs[pointI];
+            const label frontPointJ = frontPointIs[pointJ];
+            const label candidatePointJ = candidatePointIs[pointJ];
 
-            if ((frontPointI == candidatePointI) and
-               (altFrontPointI == altCandidatePointI))
+            if ((frontPointI == candidatePointJ) and
+               (candidatePointI == frontPointJ))
             {
                 isDisabledIs[pointI] = true;
                 isDisabledIs[pointJ] = true;
@@ -1125,11 +1128,16 @@ int propagateIslandFronts
         findPropagationFrontPointIs(mesh, nLayer, islandI, nProcessorsOnPoint, frontPointIs, candidatePointIs, isCandidatePrismatic, isPropagationModeActive, frontIslandIs, prismIslands1, prismIslands2, prismIslands3);
     }
 
+    // Disable points if there will be opposing fronts meeting, either
+    // from previous rounds or this round
+    boolList isDisabledIs(candidatePointIs.size(), false);
+    disablePointsForOppositeFronts(mesh, isDisabledIs, candidatePointIs, frontPointIs, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+
     // Disable points if there will be lack of island slots
     labelList nIslandSlotsUsedTest(nIslandSlotsUsed);
     for (const label islandI : islandIs)
     {
-        countRequiredNumberOfSlots(mesh, islandI, candidatePointIs, frontIslandIs, nIslandSlotsUsedTest);
+        countRequiredNumberOfSlots(mesh, islandI, candidatePointIs, frontIslandIs, nIslandSlotsUsedTest, isDisabledIs);
     }
 
     boolList isDisabledPropagationPoint(mesh.nPoints(), false);
@@ -1140,11 +1148,6 @@ int propagateIslandFronts
             isDisabledPropagationPoint[pointI] = true;
         }
     }
-
-    // Disable points if there will be opposing fronts meeting, either
-    // from previous rounds or this round
-    boolList isDisabledIs(candidatePointIs.size(), false);
-    disablePointsForOppositeFronts(mesh, isDisabledIs, candidatePointIs, frontPointIs, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
 
     // Carry out propagation
     forAll (candidatePointIs, pointI)
