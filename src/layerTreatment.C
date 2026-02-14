@@ -1624,10 +1624,9 @@ int blendWithLayerPoints
             // }
 
             // Target blending fraction
-            const double slope = -layerMaxBlendingFraction / (maxLayers - minLayers + REL_TOL);
-            const double y0 = -slope * maxLayers;
-            // const double y = y0 + slope * min(nHops);
-            const double y = y0 + slope;
+            const double slope = -layerMaxBlendingFraction / (maxLayers + 1.0 - minLayers);
+            const double y0 = -slope * (maxLayers + 1.0);
+            const double y = y0 + slope * min(nHops);
             const double blendFrac = max(0.0, min(y, layerMaxBlendingFraction));
 
             const point newPoint = newPoints[pointI];
