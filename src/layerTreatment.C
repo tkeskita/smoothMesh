@@ -814,7 +814,6 @@ int findPropagationFrontPointIs
     forAll (mesh.points(), pointI)
     {
         // Info << "islandI " << islandI << " pointI " << pointI << endl;
-
         // Consider only active front points
         if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
             continue;
@@ -1100,7 +1099,6 @@ int propagateIslandFronts
 )
 {
     label nAddedPrisms = 0;
-    label nSumAddedPrisms = 0;
     labelList candidatePointIs;
     labelList frontPointIs;
     boolList isCandidatePrismatic;
@@ -1149,68 +1147,81 @@ int propagateIslandFronts
         }
     }
 
-    // Carry out propagation
-    forAll (candidatePointIs, pointI)
+    // Carry out propagation, island by island to keep island info synced
+
+    for (const label islandI : islandIs)
     {
-        const label frontPointI = frontPointIs[pointI];
-        const label candidatePointI = candidatePointIs[pointI];
-        const label islandI = frontIslandIs[pointI];
-        nAddedPrisms = 0;
-
-        //if (isDisabledPropagationPoint[frontPointI])
-        //    continue;
-        if (isDisabledPropagationPoint[candidatePointI])
-            continue;
-        if (isDisabledIs[pointI])
-            continue;
-
-        // Propagate active island index to candidate point only
-        // if candidate is prismatic and propagation type is active
-        if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
+        forAll (candidatePointIs, pointI)
         {
-            addIslandInfoForPoint(mesh, candidatePointI, frontPointI, islandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            const label frontPointI = frontPointIs[pointI];
+            const label candidatePointI = candidatePointIs[pointI];
+            const label frontIslandI = frontIslandIs[pointI];
 
-            addPrismaticMappingsForPoint(mesh, islandI, frontPointI, candidatePointI, prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-            ++nAddedPrisms;
-        }
-
-        // Otherwise propagate the passive island index number
-        // unless it's already propagated
-        else
-        {
-            if (isPointInIsland(candidatePointI, invertIslandI(islandI), prismIslands1, prismIslands2, prismIslands3))
+            if (frontIslandI != islandI)
+                continue;
+            //if (isDisabledPropagationPoint[frontPointI])
+            //    continue;
+            if (isDisabledPropagationPoint[candidatePointI])
+                continue;
+            if (isDisabledIs[pointI])
                 continue;
 
-            addIslandInfoForPoint(mesh, candidatePointI, frontPointI, invertIslandI(islandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-        }
+            // Propagate active island index to candidate point only
+            // if candidate is prismatic and propagation type is active
+            if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
+            {
+                addIslandInfoForPoint(mesh, candidatePointI, frontPointI, frontIslandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-        // Debugging: export edge as a sliver triangle in STL ascii format,
-        // with fake normal direction.
-        if (exportEdgesAsStl)
-        {
-            const label i1 = candidatePointI;
-            const label i2 = frontPointI;
-            if (i1 == i2)
-                FatalError << "candidate point " << i1 << " is same as front point" << endl << abort(FatalError);
-            myfile << "facet normal 0 0 0" << "\n"
-                   << " outer loop" << "\n"
-                   << "  vertex "
-                   << mesh.points()[i1][0] << " "
-                   << mesh.points()[i1][1] << " "
-                   << mesh.points()[i1][2] << "\n"
-                   << "  vertex "
-                   << mesh.points()[i2][0] << " "
-                   << mesh.points()[i2][1] << " "
-                   << mesh.points()[i2][2] << "\n"
-                   << "  vertex "
-                   << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                   << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                   << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                   << " endloop" << "\n"
-                   << "endfacet" << "\n";
+                addPrismaticMappingsForPoint(mesh, frontIslandI, frontPointI, candidatePointI, prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+                ++nAddedPrisms;
+            }
+
+            // Otherwise propagate the passive island index number
+            // unless it's already propagated
+            else
+            {
+                if (isPointInIsland(candidatePointI, invertIslandI(frontIslandI), prismIslands1, prismIslands2, prismIslands3))
+                    continue;
+
+                addIslandInfoForPoint(mesh, candidatePointI, frontPointI, invertIslandI(frontIslandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            }
+
+            // Debugging: export edge as a sliver triangle in STL ascii format,
+            // with fake normal direction.
+            if (exportEdgesAsStl)
+            {
+                const label i1 = candidatePointI;
+                const label i2 = frontPointI;
+                if (i1 == i2)
+                    FatalError << "candidate point " << i1 << " is same as front point" << endl << abort(FatalError);
+                myfile << "facet normal 0 0 0" << "\n"
+                       << " outer loop" << "\n"
+                       << "  vertex "
+                       << mesh.points()[i1][0] << " "
+                       << mesh.points()[i1][1] << " "
+                       << mesh.points()[i1][2] << "\n"
+                       << "  vertex "
+                       << mesh.points()[i2][0] << " "
+                       << mesh.points()[i2][1] << " "
+                       << mesh.points()[i2][2] << "\n"
+                       << "  vertex "
+                       << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                       << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                       << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                       << " endloop" << "\n"
+                       << "endfacet" << "\n";
+            }
         }
 
         // Synchronize propagation variables among processors
+
+        syncTools::syncPointList
+        (
+            mesh,
+            nIslandSlotsUsed,
+            maxEqOp<label>(),
+            UNDEF_LABEL           // null value
+        );
 
         syncTools::syncPointList
         (
@@ -1262,7 +1273,29 @@ int propagateIslandFronts
             UNDEF_LABEL           // null value
         );
 
-        nSumAddedPrisms += nAddedPrisms;
+        syncTools::syncPointList
+        (
+            mesh,
+            pointNormals1,
+            minMagSqrEqOp<vector>(),
+            UNDEF_VECTOR           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            pointNormals2,
+            minMagSqrEqOp<vector>(),
+            UNDEF_VECTOR           // null value
+        );
+
+        syncTools::syncPointList
+        (
+            mesh,
+            pointNormals3,
+            minMagSqrEqOp<vector>(),
+            UNDEF_VECTOR           // null value
+        );
 
         // Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
     }
@@ -1273,8 +1306,8 @@ int propagateIslandFronts
         myfile.close();
     }
 
-    const label nAdditions = returnReduce(nSumAddedPrisms, sumOp<label>());
-    return nAdditions;
+    const label nSumAddedPrisms = returnReduce(nAddedPrisms, sumOp<label>());
+    return nSumAddedPrisms;
 }
 
 
