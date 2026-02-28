@@ -103,7 +103,7 @@ label addIslandInfoForPoint
 (
     const fvMesh& mesh,  // TODO: Can remove this after debugging
     const label pointI,
-    const label pointNormalSourceI,
+    const labelList& pointNormalSourceIs,
     const label islandI,
     const label nLayer,
     const vectorList& pointNormals,
@@ -114,9 +114,9 @@ label addIslandInfoForPoint
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
-    labelList& pointNormalSource1,
-    labelList& pointNormalSource2,
-    labelList& pointNormalSource3,
+    labelListList& pointNormalSources1,
+    labelListList& pointNormalSources2,
+    labelListList& pointNormalSources3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
     vectorList& pointNormals3
@@ -135,8 +135,8 @@ label addIslandInfoForPoint
     if (prismIslands1[pointI] == UNDEF_LABEL)
     {
         prismIslands1[pointI] = islandI;
-        pointNormalSource1[pointI] = pointNormalSourceI;
-        pointNormals1[pointI] = pointNormals[pointNormalSourceI];
+        pointNormalSources1[pointI].append(pointNormalSourceIs);
+        pointNormals1[pointI] = calcMeanVec(getVecListElements(pointNormals1, pointNormalSourceIs));
         pointHops1[pointI] = nLayer;
         nIslandSlotsUsed[pointI] = 1;
         return 1;
@@ -144,8 +144,8 @@ label addIslandInfoForPoint
     else if (prismIslands2[pointI] == UNDEF_LABEL)
     {
         prismIslands2[pointI] = islandI;
-        pointNormalSource2[pointI] = pointNormalSourceI;
-        pointNormals2[pointI] = pointNormals[pointNormalSourceI];
+        pointNormalSources2[pointI].append(pointNormalSourceIs);
+        pointNormals2[pointI] = calcMeanVec(getVecListElements(pointNormals2, pointNormalSourceIs));
         pointHops2[pointI] = nLayer;
         nIslandSlotsUsed[pointI] = 2;
         return 2;
@@ -153,8 +153,8 @@ label addIslandInfoForPoint
     else if (prismIslands3[pointI] == UNDEF_LABEL)
     {
         prismIslands3[pointI] = islandI;
-        pointNormalSource3[pointI] = pointNormalSourceI;
-        pointNormals3[pointI] = pointNormals[pointNormalSourceI];
+        pointNormalSources3[pointI].append(pointNormalSourceIs);
+        pointNormals3[pointI] = calcMeanVec(getVecListElements(pointNormals3, pointNormalSourceIs));
         pointHops3[pointI] = nLayer;
         nIslandSlotsUsed[pointI] = 3;
         return 3;
@@ -210,9 +210,9 @@ label propagateIslandInfoOnBoundary
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
-    labelList& pointNormalSource1,
-    labelList& pointNormalSource2,
-    labelList& pointNormalSource3,
+    labelListList& pointNormalSources1,
+    labelListList& pointNormalSources2,
+    labelListList& pointNormalSources3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
     vectorList& pointNormals3,
@@ -260,7 +260,7 @@ label propagateIslandInfoOnBoundary
                     if (isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
                         continue;
 
-                    addIslandInfoForPoint(mesh, pointI, pointI, islandI, 0, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                    addIslandInfoForPoint(mesh, pointI, labelList(1, pointI), islandI, 0, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
                     ++n;
                     ++nTot;
                     if (isProcessorPoint[pointI])
@@ -294,90 +294,67 @@ label addEdgePointsToIsland
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
-    labelList& pointNormalSource1,
-    labelList& pointNormalSource2,
-    labelList& pointNormalSource3,
+    labelListList& pointNormalSources1,
+    labelListList& pointNormalSources2,
+    labelListList& pointNormalSources3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
     vectorList& pointNormals3
 )
 {
-    labelList edgePoints;
+    label nTot = 0;
 
     // Identify edge points
     forAll(mesh.boundary(), patchI)
     {
+        // Skip faces on processor patches
+        const polyPatch& pp = mesh.boundaryMesh()[patchI];
+        if (isA<processorPolyPatch>(pp))
+            continue;
+
         const label startI = mesh.boundary()[patchI].start();
         const label endI = startI + mesh.boundary()[patchI].Cf().size();
 
         for (label faceI = startI; faceI < endI; faceI++)
         {
-            // Skip faces on processor patches
-            const polyPatch& pp = mesh.boundaryMesh()[patchI];
-            if (isA<processorPolyPatch>(pp))
-                continue;
-
             const face& f = mesh.faces()[faceI];
+            labelList islandPointIs;
+            labelList freePointIs;
 
-            // Is this face part of island?
-            bool isIslandFace = false;
+            // If this face is part of island, collect list of island
+            // point and free point indices.
             forAll (f, facePointI)
             {
                 const label pointI = mesh.faces()[faceI][facePointI];
-                if (isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
-                {
-                    isIslandFace = true;
-                    break;
-                }
-            }
-
-            // Add non-island face points to edge points
-            if (isIslandFace)
-            {
-                forAll (f, facePointI)
-                {
-                    const label pointI = mesh.faces()[faceI][facePointI];
-                    if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
-                    {
-                        if (findIndex(edgePoints, pointI) == -1)
-                        {
-                            edgePoints.append(pointI);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Propagate point normal source to edge points
-    label n = 1;
-    label nTot = 0;
-
-    while (n > 0)
-    {
-        n = 0;
-
-        forAll(edgePoints, edgePointI)
-        {
-            const label pointI = edgePoints[edgePointI];
-
-            if (! isLayerSurfacePoint[pointI])
-                continue;
-            if (isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
-                continue;
-
-            forAll (mesh.pointPoints()[pointI], pointPointI)
-            {
-                const label neighI = mesh.pointPoints()[pointI][pointPointI];
-                if (! isLayerSurfacePoint[neighI])
+                if (! isLayerSurfacePoint[pointI])
                     continue;
 
-                if (isPointInIsland(neighI, islandI, prismIslands1, prismIslands2, prismIslands3))
+                if (isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
                 {
-                    addIslandInfoForPoint(mesh, pointI, pointNormalSource1[neighI], islandI, 0, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-                    ++n;
+                    islandPointIs.append(pointI);
+                }
+                else
+                {
+                    freePointIs.append(pointI);
+                }
+            }
+
+            // If both free and island points exist, add island points
+            // as normal sources for the free points.
+
+            // TODO: This is the only occurrence where a list of
+            // normal source point indices are used, and therefore
+            // pointNormalSourcesX is of type labelListList. All other
+            // usages of addIslandInfoForPoint() add only one normal
+            // source point. Think of a better solution.
+
+            if ((islandPointIs.size() > 0) and (freePointIs.size() > 0))
+            {
+                forAll (freePointIs, freePointI)
+                {
+                    const label pointI = mesh.faces()[faceI][freePointI];
+                    addIslandInfoForPoint(mesh, pointI, islandPointIs, islandI, 0, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
                     ++nTot;
-                    break;
                 }
             }
         }
@@ -402,9 +379,9 @@ int identifyPrismaticBoundaryIslands
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
-    labelList& pointNormalSource1,
-    labelList& pointNormalSource2,
-    labelList& pointNormalSource3,
+    labelListList& pointNormalSources1,
+    labelListList& pointNormalSources2,
+    labelListList& pointNormalSources3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
     vectorList& pointNormals3,
@@ -443,10 +420,10 @@ int identifyPrismaticBoundaryIslands
 
         // Add and propagate the island id to all unprocessed prism
         // boundary points points on this island
-        addIslandInfoForPoint(mesh, startPointI, startPointI, islandI, 0, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+        addIslandInfoForPoint(mesh, startPointI, labelList(1, startPointI), islandI, 0, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
         // Pout << "Starting island " << islandI << " pointI " << startPointI << " at " << mesh.points()[startPointI] << endl;
 
-        const label n = propagateIslandInfoOnBoundary(mesh, startPointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, nProcPrisms);
+        const label n = propagateIslandInfoOnBoundary(mesh, startPointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, nProcPrisms);
 
         if (n < 1)
         {
@@ -539,7 +516,7 @@ int identifyPrismaticBoundaryIslands
     for (const label islandI : islandIs)
     {
         // const label ne =
-        addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+        addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
 
         // Pout << "Island " << islandI << " has " << ne << " edge points" << endl;
     }
@@ -1084,9 +1061,9 @@ int propagateIslandFronts
     labelList& pointHops1,
     labelList& pointHops2,
     labelList& pointHops3,
-    labelList& pointNormalSource1,
-    labelList& pointNormalSource2,
-    labelList& pointNormalSource3,
+    labelListList& pointNormalSources1,
+    labelListList& pointNormalSources2,
+    labelListList& pointNormalSources3,
     vectorList& pointNormals1,
     vectorList& pointNormals2,
     vectorList& pointNormals3,
@@ -1170,7 +1147,7 @@ int propagateIslandFronts
             // if candidate is prismatic and propagation type is active
             if ((isCandidatePrismatic[pointI]) and (isPropagationModeActive[pointI]))
             {
-                addIslandInfoForPoint(mesh, candidatePointI, frontPointI, frontIslandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                addIslandInfoForPoint(mesh, candidatePointI, labelList(1, frontPointI), frontIslandI, nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
 
                 addPrismaticMappingsForPoint(mesh, frontIslandI, frontPointI, candidatePointI, prismIslands1, prismIslands2, prismIslands3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
                 ++nAddedPrisms;
@@ -1183,7 +1160,7 @@ int propagateIslandFronts
                 if (isPointInIsland(candidatePointI, invertIslandI(frontIslandI), prismIslands1, prismIslands2, prismIslands3))
                     continue;
 
-                addIslandInfoForPoint(mesh, candidatePointI, frontPointI, invertIslandI(frontIslandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+                addIslandInfoForPoint(mesh, candidatePointI, labelList(1, frontPointI), invertIslandI(frontIslandI), nLayer, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
             }
 
             // Debugging: export edge as a sliver triangle in STL ascii format,
@@ -1431,16 +1408,16 @@ int updateBoundaryPointNormals
 // Help function to propagate neighboring point vector property to
 // points. Propagation is done for points in given hop order.
 
-int propagatePointVectorValues
+int propagatePrismaticEdgeNormals
 (
     const fvMesh& mesh,
     const labelList& hopOrder,
     const labelList& pointHops1,
     const labelList& pointHops2,
     const labelList& pointHops3,
-    const labelList& pointLabels1,
-    const labelList& pointLabels2,
-    const labelList& pointLabels3,
+    const labelListList& pointLabelLists1,
+    const labelListList& pointLabelLists2,
+    const labelListList& pointLabelLists3,
     vectorList& points1,
     vectorList& points2,
     vectorList& points3
@@ -1453,37 +1430,37 @@ int propagatePointVectorValues
         {
             if (pointHops1[pointI] == nHops)
             {
-                if (pointLabels1[pointI] == UNDEF_LABEL)
+                if (pointLabelLists1[pointI].size() == 1)
                 {
-                    points1[pointI] = UNDEF_VECTOR;
+                    points1[pointI] = points1[pointLabelLists1[pointI][0]];
                 }
                 else
                 {
-                    points1[pointI] = points1[pointLabels1[pointI]];
+                    points1[pointI] = UNDEF_VECTOR;
                 }
             }
 
             if (pointHops2[pointI] == nHops)
             {
-                if (pointLabels2[pointI] == UNDEF_LABEL)
+                if (pointLabelLists2[pointI].size() == 1)
                 {
-                    points2[pointI] = UNDEF_VECTOR;
+                    points2[pointI] = points2[pointLabelLists2[pointI][0]];
                 }
                 else
                 {
-                    points2[pointI] = points2[pointLabels2[pointI]];
+                    points2[pointI] = UNDEF_VECTOR;
                 }
             }
 
             if (pointHops3[pointI] == nHops)
             {
-                if (pointLabels3[pointI] == UNDEF_LABEL)
+                if (pointLabelLists3[pointI].size() == 1)
                 {
-                    points3[pointI] = UNDEF_VECTOR;
+                    points3[pointI] = points3[pointLabelLists3[pointI][0]];
                 }
                 else
                 {
-                    points3[pointI] = points3[pointLabels3[pointI]];
+                    points3[pointI] = UNDEF_VECTOR;
                 }
             }
         }
@@ -1517,6 +1494,26 @@ int propagatePointVectorValues
     return 0;
 }
 
+
+// Help function to calculate point normals for island edge points
+
+int updateIslandEdgePointNormals
+(
+    const fvMesh& mesh,
+    const labelList& pointHops1,
+    const labelList& pointHops2,
+    const labelList& pointHops3,
+    const labelListList& pointLabelLists1,
+    const labelListList& pointLabelLists2,
+    const labelListList& pointLabelLists3,
+    vectorList& pointNormals1,
+    vectorList& pointNormals2,
+    vectorList& pointNormals3
+)
+{
+    FatalError << "updateIslandEdgePointNormals not implemented" << endl << abort(FatalError);
+    return 0;
+}
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -1577,11 +1574,13 @@ vector calcLayerPointMove
     // Target length of edge towards boundary
     const label nHops = pointHops[pointI] - 1;
     const double layerThickness = layerEdgeLength * pow(layerExpansionRatio, nHops);
-
     const point movingPoint = mesh.points()[pointI];
     const point refPoint = outerPrismPoints[pointI];
     const vector endNormal = pointNormals[pointI];
     const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
+    if (pointI == 15)
+        Info << "15 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
+
 
     return layerTargetPoint;
 }
@@ -1624,6 +1623,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops1[pointI]);
+            if (pointI == 15)
+                Info << "15 move1 " << newCoords << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
@@ -1632,6 +1633,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops2[pointI]);
+            if (pointI == 15)
+                Info << "15 move2 " << newCoords << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
@@ -1640,12 +1643,17 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops3[pointI]);
+            if (pointI == 15)
+                Info << "15 move3 " << newCoords << endl;
         }
 
         if (n > 0)
         {
             // New point coordinates from layer treatment
             const point layerPoint = mesh.points()[pointI] + pointMove;
+            // Pout << layerPoint[0] << ","
+            //      << layerPoint[1] << ","
+            //      << layerPoint[2] << endl;
 
             // Artificially slow down smoothing of boundary points, to
             // get internal points to smoothen faster. This reduces

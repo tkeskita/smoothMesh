@@ -225,29 +225,6 @@ int generatePointNeighPoints
     return 0;
 }
 
-// Help function which compares values of vectors element by element
-// and returns true if first argument is smaller than second argument.
-
-bool isSmallerByVectorElements
-(
-    const vector vec1,
-    const vector vec2
-)
-{
-    if (vec1.size() != vec2.size())
-        FatalError << vec1 << " size does not equal size of " << vec2 << endl << abort(FatalError);
-
-    forAll(vec1, i)
-    {
-        if (vec1[i] < vec2[i])
-            return true;
-        else if (vec1[i] > vec2[i])
-            return false;
-    }
-    return false;
-}
-
-
 // Help function to determine if point1 is closer to origin than
 // point2. This function takes into account the special case where
 // distance is equal but point coordinates are different.
@@ -2042,10 +2019,10 @@ int main(int argc, char *argv[])
     labelList pointHops2;
     labelList pointHops3;
 
-    // Indices of point normal source points
-    labelList pointNormalSource1;
-    labelList pointNormalSource2;
-    labelList pointNormalSource3;
+    // Indice lists of point normal source points
+    labelListList pointNormalSources1;
+    labelListList pointNormalSources2;
+    labelListList pointNormalSources3;
 
     // Boundary point normal vectors per boundary island
     vectorList pointNormals1;
@@ -2277,9 +2254,9 @@ int main(int argc, char *argv[])
         pointHops1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops3.setSize(mesh.nPoints(), UNDEF_LABEL);
-        pointNormalSource1.setSize(mesh.nPoints(), UNDEF_LABEL);
-        pointNormalSource2.setSize(mesh.nPoints(), UNDEF_LABEL);
-        pointNormalSource3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        pointNormalSources1.setSize(mesh.nPoints());
+        pointNormalSources2.setSize(mesh.nPoints());
+        pointNormalSources3.setSize(mesh.nPoints());
         pointNormals1.setSize(mesh.nPoints(), Zero);
         pointNormals2.setSize(mesh.nPoints(), Zero);
         pointNormals3.setSize(mesh.nPoints(), Zero);
@@ -2302,7 +2279,7 @@ int main(int argc, char *argv[])
 
         // Identify prismatic islands
         Info << "Identifying prismatic boundary islands in the mesh" << endl;
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
 
         // Synchronize and sort a global list of islandIs
         mergeAndSortIslandIs(islandIs);
@@ -2311,7 +2288,7 @@ int main(int argc, char *argv[])
         for (label i = 0; i < maxLayers; i++)
         {
             Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of suitable prismatic edges found: " << nPrisms << endl;
         }
 
@@ -2450,13 +2427,17 @@ int main(int argc, char *argv[])
             // Update new point normals for boundary points
             updateBoundaryPointNormals(mesh, pointNormals, pointHops1, pointHops2, pointHops3, pointNormals1, pointNormals2, pointNormals3);
 
-            // Propagate point normals towards inner mesh
+            // Propagate point normals towards inner mesh for prismatic edge points
             labelList hopOrder;
             for (label i = maxLayers; i > 0; i--)
             {
                 hopOrder.append(i);
             }
-            propagatePointVectorValues(mesh, hopOrder, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            propagatePrismaticEdgeNormals(mesh, hopOrder, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
+
+            // Recalculate point normals for island edge points on the
+            // boundaries
+            updateIslandEdgePointNormals(mesh, pointHops1, pointHops2, pointHops3, pointNormalSources1, pointNormalSources2, pointNormalSources3, pointNormals1, pointNormals2, pointNormals3);
 
             // Blend centroidal coordinates with layer controlled points to newPoints
             blendWithLayerPoints
@@ -2475,7 +2456,7 @@ int main(int argc, char *argv[])
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+            // WIP constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
 
         if (doBoundarySmoothing)
@@ -2560,8 +2541,8 @@ int main(int argc, char *argv[])
         label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
-            // if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
-            if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
+            if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
+            // if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
             {
                 newPoints[pointI] = mesh.points()[pointI];
                 ++nFrozenPoints;
