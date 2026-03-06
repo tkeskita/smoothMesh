@@ -2042,6 +2042,15 @@ int main(int argc, char *argv[])
     labelList pointHops2;
     labelList pointHops3;
 
+    // Mark island boundary edge points (=points which use face normals
+    // instead of point normals for cell height direction)
+    boolList isIslandEdgePoint;
+
+    // Indices of point normal source faces
+    labelListList faceNormalSource1;
+    labelListList faceNormalSource2;
+    labelListList faceNormalSource3;
+
     // Indices of point normal source points
     labelList pointNormalSource1;
     labelList pointNormalSource2;
@@ -2277,6 +2286,10 @@ int main(int argc, char *argv[])
         pointHops1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointHops3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        isIslandEdgePoint.setSize(mesh.nPoints(), false);
+        faceNormalSource1.setSize(mesh.nPoints());
+        faceNormalSource2.setSize(mesh.nPoints());
+        faceNormalSource3.setSize(mesh.nPoints());
         pointNormalSource1.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointNormalSource2.setSize(mesh.nPoints(), UNDEF_LABEL);
         pointNormalSource3.setSize(mesh.nPoints(), UNDEF_LABEL);
@@ -2302,7 +2315,7 @@ int main(int argc, char *argv[])
 
         // Identify prismatic islands
         Info << "Identifying prismatic boundary islands in the mesh" << endl;
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, isProcessorPoint, islandIs);
+        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, isProcessorPoint, islandIs);
 
         // Synchronize and sort a global list of islandIs
         mergeAndSortIslandIs(islandIs);
@@ -2311,11 +2324,14 @@ int main(int argc, char *argv[])
         for (label i = 0; i < maxLayers; i++)
         {
             Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of suitable prismatic edges found: " << nPrisms << endl;
+
+            // Update and propagate point normals to inner mesh
+            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
         }
 
-        // // Write selected point field, for debugging only
+            // // Write selected point field, for debugging only
         // runTime++;
 
         // pointScalarField pointScalarDebugIO
@@ -2447,16 +2463,8 @@ int main(int argc, char *argv[])
             // Update neighbour coordinates and synchronize among processors
             updatePointVectorValues(mesh, mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
 
-            // Update new point normals for boundary points
-            updateBoundaryPointNormals(mesh, pointNormals, pointHops1, pointHops2, pointHops3, pointNormals1, pointNormals2, pointNormals3);
-
-            // Propagate point normals towards inner mesh
-            labelList hopOrder;
-            for (label i = maxLayers; i > 0; i--)
-            {
-                hopOrder.append(i);
-            }
-            propagatePointVectorValues(mesh, hopOrder, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            // Update boundary point normals and propagate point normals
+            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
             // Blend centroidal coordinates with layer controlled points to newPoints
             blendWithLayerPoints

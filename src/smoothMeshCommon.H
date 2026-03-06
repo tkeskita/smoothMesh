@@ -58,4 +58,33 @@ vector projectPointToLine
     return projPoint;
 }
 
+// Help function to get boundary face normal vector. This is needed
+// because boundary face info must be accessed through patches.
+
+vector getBoundaryNf
+(
+    const fvMesh& mesh,
+    const label faceI
+)
+{
+    forAll(mesh.boundaryMesh(), patchI)
+    {
+        const fvPatch& patch = mesh.boundary()[patchI];
+        const label startI = patch.start();
+        const label endI = startI + patch.size() - 1;
+
+        if ((faceI >= startI) and (faceI <= endI))
+        {
+            const label patchFaceI = faceI - startI;
+            const vector Sf = patch.Sf()[patchFaceI];
+            const vector nf = -Sf / patch.magSf()[patchFaceI];
+            return nf;
+        }
+    }
+
+    FatalError << "Did not find faceI " << faceI << " in patches" << endl << abort(FatalError);
+
+    return vector(Zero);
+}
+
 #endif
