@@ -2317,6 +2317,8 @@ int main(int argc, char *argv[])
         Info << "Identifying prismatic boundary islands in the mesh" << endl;
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, isProcessorPoint, islandIs);
 
+        // Info << "p51 fn1 " << getBoundaryFaceCf(mesh, faceNormalSource1[51][0]) << " fn2 " << getBoundaryFaceCf(mesh, faceNormalSource2[51][0]) << " fn3 " << getBoundaryFaceCf(mesh, faceNormalSource3[51][0]) << endl;
+
         // Synchronize and sort a global list of islandIs
         mergeAndSortIslandIs(islandIs);
 
@@ -2329,9 +2331,11 @@ int main(int argc, char *argv[])
 
             // Update and propagate point normals to inner mesh
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+
+            //Info << "p51 fn1 " << pointNormals1[51] << " fn2 " << pointNormals2[51] << " fn3 " << pointNormals3[51] << endl;
         }
 
-            // // Write selected point field, for debugging only
+        // // Write selected point field, for debugging only
         // runTime++;
 
         // pointScalarField pointScalarDebugIO

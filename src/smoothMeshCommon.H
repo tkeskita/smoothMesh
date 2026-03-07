@@ -87,4 +87,33 @@ vector getBoundaryNf
     return vector(Zero);
 }
 
+
+// Help function to get boundary face center coordinates. This is
+// needed because boundary face info must be accessed through patches.
+
+vector getBoundaryCf
+(
+    const fvMesh& mesh,
+    const label faceI
+)
+
+{
+    forAll(mesh.boundaryMesh(), patchI)
+    {
+        const fvPatch& patch = mesh.boundary()[patchI];
+        const label startI = patch.start();
+        const label endI = startI + patch.size() - 1;
+
+        if ((faceI >= startI) and (faceI <= endI))
+        {
+            const label patchFaceI = faceI - startI;
+            return patch.Cf()[patchFaceI];
+        }
+    }
+
+    FatalError << "getBoundaryCf did not find faceI " << faceI << " in patches" << endl << abort(FatalError);
+
+    return UNDEF_VECTOR;
+}
+
 #endif

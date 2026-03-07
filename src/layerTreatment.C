@@ -305,7 +305,8 @@ int addFaceNormalInfoForPoint
 }
 
 
-// Help function to add non-prismatic edge points to the island
+// Help function to add non-prismatic boundary edge points surrounding
+// the island to the island
 
 label addEdgePointsToIsland
 (
@@ -331,8 +332,10 @@ label addEdgePointsToIsland
 )
 {
     label nTot = 0;
+    labelList edgeFaces;
 
-    // Traverse all boundary faces
+    // Traverse all boundary faces to find island edge faces
+
     forAll(mesh.boundary(), patchI)
     {
         // Skip faces on processor patches
@@ -347,11 +350,11 @@ label addEdgePointsToIsland
         {
             const face& f = mesh.faces()[faceI];
 
-            labelList islandPointIs;
-            labelList freePointIs;
+            label nIslandPoints = 0;
+            label nFreePoints = 0;
 
-            // If this face is part of island, collect list of island
-            // point and free point indices.
+            // Count island and free points on the face
+
             forAll (f, facePointI)
             {
                 const label pointI = mesh.faces()[faceI][facePointI];
@@ -360,34 +363,43 @@ label addEdgePointsToIsland
 
                 if (isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
                 {
-                    islandPointIs.append(pointI);
+                    ++nIslandPoints;
                 }
                 else
                 {
-                    freePointIs.append(pointI);
+                    ++nFreePoints;
                 }
             }
 
-            // If both free and island points exist, add face index
-            // as normal source for the free points.
+            // If both free and island points exist, then face needs
+            // to be processed
 
-            if ((islandPointIs.size() > 0) and (freePointIs.size() > 0))
+            if ((nIslandPoints > 0) and (nFreePoints > 0))
             {
-                forAll (freePointIs, freePointI)
-                {
-                    const label pointI = freePointIs[freePointI];
-                    isIslandEdgePoint[pointI] = true;
+                edgeFaces.append(faceI);
+            }
+        }
+    }
 
-                    if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
-                    {
-                        addIslandInfoForPoint(mesh, pointI, UNDEF_LABEL, islandI, 0, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3);
-                    }
+    // Process edge faces
 
-                    // Add face index to face normal sources
-                    addFaceNormalInfoForPoint(mesh, pointI, faceI, islandI, prismIslands1, prismIslands2, prismIslands3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
+    forAll (edgeFaces, edgeFaceI)
+    {
+        const label faceI = edgeFaces[edgeFaceI];
+        const face& f = mesh.faces()[faceI];
 
-                    ++nTot;
-                }
+        forAll (f, facePointI)
+        {
+            const label pointI = f[facePointI];
+
+            if (! isPointInIsland(pointI, islandI, prismIslands1, prismIslands2, prismIslands3))
+            {
+                addIslandInfoForPoint(mesh, pointI, UNDEF_LABEL, islandI, 0, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3);
+
+                // Add face index to face normal sources
+                addFaceNormalInfoForPoint(mesh, pointI, faceI, islandI, prismIslands1, prismIslands2, prismIslands3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
+
+                ++nTot;
             }
         }
     }
@@ -457,6 +469,7 @@ int identifyPrismaticBoundaryIslands
         // Pout << "Starting island " << islandI << " pointI " << startPointI << " at " << mesh.points()[startPointI] << endl;
 
         const label n = propagateIslandInfoOnBoundary(mesh, startPointI, isVisitedPoint, isPrismaticPoint, isLayerSurfacePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, isProcessorPoint, nProcPrisms);
+        // Pout << "IslandI " << islandI << " startPointI " << startPointI << " at " << mesh.points()[startPointI] << " nIslandPoints " << n << endl;
 
         if (n < 1)
         {
@@ -548,10 +561,10 @@ int identifyPrismaticBoundaryIslands
     // Add the non-prismatic edge points to final islands
     for (const label islandI : islandIs)
     {
-        // const label ne =
+        const label ne =
         addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
 
-        // Pout << "Island " << islandI << " has " << ne << " edge points" << endl;
+        Pout << "Island " << islandI << " has " << ne << " edge points" << endl;
     }
 
     return 0;
@@ -1682,8 +1695,8 @@ vector calcLayerPointMove
     const point refPoint = outerPrismPoints[pointI];
     const vector endNormal = pointNormals[pointI];
     const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
-    if (pointI == 15)
-        Info << "15 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
+    if (pointI == 3)
+        Info << "p3 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
 
 
     return layerTargetPoint;
@@ -1735,8 +1748,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops1[pointI]);
-            if (pointI == 15)
-                Info << "15 move1 " << newCoords << endl;
+            if (pointI == 3)
+                Info << "p3 move1 " << newCoords << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
@@ -1745,8 +1758,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops2[pointI]);
-            if (pointI == 15)
-                Info << "15 move2 " << newCoords << endl;
+            if (pointI == 3)
+                Info << "p3 move2 " << newCoords << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
@@ -1755,8 +1768,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops3[pointI]);
-            if (pointI == 15)
-                Info << "15 move3 " << newCoords << endl;
+            if (pointI == 3)
+                Info << "p3 move3 " << newCoords << endl;
         }
 
         if (n > 0)
