@@ -2330,9 +2330,10 @@ int main(int argc, char *argv[])
             Info << "  - Number of suitable prismatic edges found: " << nPrisms << endl;
 
             // Update and propagate point normals to inner mesh
-            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-            //Info << "p51 fn1 " << pointNormals1[51] << " fn2 " << pointNormals2[51] << " fn3 " << pointNormals3[51] << endl;
+            Info << "p35 fn1 " << pointNormals1[35] << " fn2 " << pointNormals2[35] << " fn3 " << pointNormals3[35] << " pointNormalSource1 " << pointNormalSource1[35] << " pointNormalSource2 " << pointNormalSource2[35] << " pointNormalSource3 " << pointNormalSource3[35] << endl;
+            Info << "p41 fn1 " << pointNormals1[41] << " fn2 " << pointNormals2[41] << " fn3 " << pointNormals3[41] << " pointNormalSource1 " << pointNormalSource1[41] << " pointNormalSource2 " << pointNormalSource2[41] << " pointNormalSource3 " << pointNormalSource3[41] << endl;
         }
 
         // // Write selected point field, for debugging only
@@ -2468,7 +2469,7 @@ int main(int argc, char *argv[])
             updatePointVectorValues(mesh, mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
 
             // Update boundary point normals and propagate point normals
-            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals,  prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
             // Blend centroidal coordinates with layer controlled points to newPoints
             blendWithLayerPoints

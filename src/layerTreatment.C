@@ -1398,9 +1398,6 @@ int updateBoundaryPointNormals
     const labelList& pointHops1,
     const labelList& pointHops2,
     const labelList& pointHops3,
-    const labelList& pointNormalSource1,
-    const labelList& pointNormalSource2,
-    const labelList& pointNormalSource3,
     const labelListList& faceNormalSource1,
     const labelListList& faceNormalSource2,
     const labelListList& faceNormalSource3,
@@ -1504,6 +1501,42 @@ int updateBoundaryPointNormals
 }
 
 
+// Help function to return vector corresponding to a given island at a
+// point
+
+vector getSameIslandVectorFromPoint
+(
+    const label pointI,
+    const label islandI,
+    const labelList& prismIslands1,
+    const labelList& prismIslands2,
+    const labelList& prismIslands3,
+    const vectorList& points1,
+    const vectorList& points2,
+    const vectorList& points3
+)
+{
+    if (prismIslands1[pointI] == islandI)
+    {
+        return points1[pointI];
+    }
+    else if (prismIslands2[pointI] == islandI)
+    {
+        return points2[pointI];
+    }
+    else if (prismIslands3[pointI] == islandI)
+    {
+        return points3[pointI];
+    }
+    else
+    {
+        FatalError << "getSameIslandVectorFromPoint failed to find islandI " << islandI << " for pointI " << pointI << endl << abort(FatalError);
+    }
+
+    return UNDEF_VECTOR;
+}
+
+
 // Help function to propagate neighboring point vector property to
 // points. Propagation is done for points in given hop order.
 
@@ -1511,6 +1544,9 @@ int propagatePointVectorValues
 (
     const fvMesh& mesh,
     const labelList& hopOrder,
+    const labelList& prismIslands1,
+    const labelList& prismIslands2,
+    const labelList& prismIslands3,
     const labelList& pointHops1,
     const labelList& pointHops2,
     const labelList& pointHops3,
@@ -1535,7 +1571,9 @@ int propagatePointVectorValues
                 }
                 else
                 {
-                    points1[pointI] = points1[pointLabels1[pointI]];
+                    const label islandI = prismIslands1[pointI];
+                    const label sourceI = pointLabels1[pointI];
+                    points1[pointI] = getSameIslandVectorFromPoint(sourceI, islandI, prismIslands1, prismIslands2, prismIslands3, points1, points2, points3);
                 }
             }
 
@@ -1547,7 +1585,9 @@ int propagatePointVectorValues
                 }
                 else
                 {
-                    points2[pointI] = points2[pointLabels2[pointI]];
+                    const label islandI = prismIslands2[pointI];
+                    const label sourceI = pointLabels2[pointI];
+                    points2[pointI] = getSameIslandVectorFromPoint(sourceI, islandI, prismIslands1, prismIslands2, prismIslands3, points1, points2, points3);
                 }
             }
 
@@ -1559,7 +1599,9 @@ int propagatePointVectorValues
                 }
                 else
                 {
-                    points3[pointI] = points3[pointLabels3[pointI]];
+                    const label islandI = prismIslands3[pointI];
+                    const label sourceI = pointLabels3[pointI];
+                    points3[pointI] = getSameIslandVectorFromPoint(sourceI, islandI, prismIslands1, prismIslands2, prismIslands3, points1, points2, points3);
                 }
             }
         }
@@ -1603,6 +1645,9 @@ int updateAndPropagatePointNormals
     const label maxLayers,
     const boolList& isIslandEdgePoint,
     const vectorList& pointNormals,
+    const labelList& prismIslands1,
+    const labelList& prismIslands2,
+    const labelList& prismIslands3,
     const labelList& pointHops1,
     const labelList& pointHops2,
     const labelList& pointHops3,
@@ -1618,7 +1663,7 @@ int updateAndPropagatePointNormals
 )
 {
     // Update new point normals for boundary points
-    updateBoundaryPointNormals(mesh, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+    updateBoundaryPointNormals(mesh, isIslandEdgePoint, pointNormals, pointHops1, pointHops2, pointHops3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
     // Propagate point normals towards inner mesh
     labelList hopOrder;
@@ -1626,7 +1671,8 @@ int updateAndPropagatePointNormals
     {
         hopOrder.append(i);
     }
-    propagatePointVectorValues(mesh, hopOrder, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+
+    propagatePointVectorValues(mesh, hopOrder, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
     return 0;
 }
@@ -1694,9 +1740,15 @@ vector calcLayerPointMove
     const point movingPoint = mesh.points()[pointI];
     const point refPoint = outerPrismPoints[pointI];
     const vector endNormal = pointNormals[pointI];
+
+    if (abs(mag(endNormal) - 1.0) > ABS_TOL)
+    {
+        FatalError << "pointI " << pointI << " normal vector " << endNormal << " length is not unity" << endl << abort(FatalError);
+    }
+
     const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
-    if (pointI == 3)
-        Info << "p3 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
+    if (pointI == 35)
+        Info << "p35 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
 
 
     return layerTargetPoint;
@@ -1748,8 +1800,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops1[pointI]);
-            if (pointI == 3)
-                Info << "p3 move1 " << newCoords << endl;
+            if (pointI == 35)
+                Info << "p35 move1 " << newCoords << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
@@ -1758,8 +1810,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops2[pointI]);
-            if (pointI == 3)
-                Info << "p3 move2 " << newCoords << endl;
+            if (pointI == 35)
+                Info << "p35 move2 " << newCoords << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
@@ -1768,8 +1820,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops3[pointI]);
-            if (pointI == 3)
-                Info << "p3 move3 " << newCoords << endl;
+            if (pointI == 35)
+                Info << "p35 move3 " << newCoords << endl;
         }
 
         if (n > 0)
