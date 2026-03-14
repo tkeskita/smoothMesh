@@ -396,6 +396,9 @@ label addEdgePointsToIsland
             {
                 addIslandInfoForPoint(mesh, pointI, UNDEF_LABEL, islandI, 0, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3);
 
+                // Mark as edge point
+                isIslandEdgePoint[pointI] = true;
+
                 // Add face index to face normal sources
                 addFaceNormalInfoForPoint(mesh, pointI, faceI, islandI, prismIslands1, prismIslands2, prismIslands3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
 
@@ -1747,8 +1750,8 @@ vector calcLayerPointMove
     }
 
     const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
-    if (pointI == 35)
-        Info << "p35 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
+    if (pointI == 03)
+        Info << "p03 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
 
 
     return layerTargetPoint;
@@ -1800,8 +1803,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops1[pointI]);
-            if (pointI == 35)
-                Info << "p35 move1 " << newCoords << endl;
+            if (pointI == 03)
+                Info << "p03 move1 " << newCoords << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
@@ -1810,8 +1813,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops2[pointI]);
-            if (pointI == 35)
-                Info << "p35 move2 " << newCoords << endl;
+            if (pointI == 03)
+                Info << "p03 move2 " << newCoords << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
@@ -1820,8 +1823,8 @@ int blendWithLayerPoints
             pointMove += (newCoords - mesh.points()[pointI]);
             ++n;
             nHops.append(pointHops3[pointI]);
-            if (pointI == 35)
-                Info << "p35 move3 " << newCoords << endl;
+            if (pointI == 03)
+                Info << "p03 move3 " << newCoords << endl;
         }
 
         if (n > 0)
