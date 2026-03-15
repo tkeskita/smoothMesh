@@ -567,7 +567,7 @@ int identifyPrismaticBoundaryIslands
         const label ne =
         addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
 
-        Pout << "Island " << islandI << " has " << ne << " edge points" << endl;
+        Pout << "  - Island " << islandI << " has " << ne << " edge points" << endl;
     }
 
     return 0;
@@ -1792,45 +1792,45 @@ int blendWithLayerPoints
     forAll(mesh.points(), pointI)
     {
         label n = 0;
-        vector pointMove = ZERO_VECTOR;
+        vector newCoords = ZERO_VECTOR;
         labelList nHops;
 
-        // Calculate point movements for each slot and add to pointMove
+        // Calculate point movements for each slot and add to newCoords
 
         if (outerPrismPoints1[pointI] != UNDEF_VECTOR)
         {
-            const vector newCoords = calcLayerPointMove(mesh, pointI, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
-            pointMove += (newCoords - mesh.points()[pointI]);
+            const vector newP = calcLayerPointMove(mesh, pointI, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
+            newCoords += newP;
             ++n;
             nHops.append(pointHops1[pointI]);
             if (pointI == 03)
-                Info << "p03 move1 " << newCoords << endl;
+                Info << "p03 move1 " << newP << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
         {
-            const vector newCoords = calcLayerPointMove(mesh, pointI, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
-            pointMove += (newCoords - mesh.points()[pointI]);
+            const vector newP = calcLayerPointMove(mesh, pointI, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
+            newCoords += newP;
             ++n;
             nHops.append(pointHops2[pointI]);
             if (pointI == 03)
-                Info << "p03 move2 " << newCoords << endl;
+                Info << "p03 move2 " << newP << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
         {
-            const vector newCoords = calcLayerPointMove(mesh, pointI, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
-            pointMove += (newCoords - mesh.points()[pointI]);
+            const vector newP = calcLayerPointMove(mesh, pointI, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
+            newCoords += newP;
             ++n;
             nHops.append(pointHops3[pointI]);
             if (pointI == 03)
-                Info << "p03 move3 " << newCoords << endl;
+                Info << "p03 move3 " << newP << endl;
         }
 
         if (n > 0)
         {
             // New point coordinates from layer treatment
-            const point layerPoint = mesh.points()[pointI] + pointMove;
+            const point layerPoint = newCoords / n;
 
             if (writeCsv)
                 myfile << layerPoint[0] << ","

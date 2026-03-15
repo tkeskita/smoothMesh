@@ -2335,79 +2335,6 @@ int main(int argc, char *argv[])
             Info << "p03 fn1 " << pointNormals1[03] << " fn2 " << pointNormals2[03] << " fn3 " << pointNormals3[03] << " pointNormalSource1 " << pointNormalSource1[03] << " pointNormalSource2 " << pointNormalSource2[03] << " pointNormalSource3 " << pointNormalSource3[03] << endl;
         }
 
-        // Debug output of normal vectors as STL file
-        if (true)
-        {
-            std::ofstream myfile;
-            myfile.open("debugNormalVectors.stl");
-            myfile << "solid normalsAsStl\n";
-
-            forAll(mesh.points(), pointI)
-            {
-                const vector p = mesh.points()[pointI];
-                const scalar scale = 0.05;
-
-                const vector norVec1 = pointNormals1[pointI];
-                const vector p1 = p + scale*norVec1;
-                myfile << "facet normal 0 0 0" << "\n"
-                       << " outer loop" << "\n"
-                       << "  vertex "
-                       << p[0] << " "
-                       << p[1] << " "
-                       << p[2] << "\n"
-                       << "  vertex "
-                       << p1[0] << " "
-                       << p1[1] << " "
-                       << p1[2] << "\n"
-                       << "  vertex "
-                       << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                       << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                       << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                       << " endloop" << "\n"
-                       << "endfacet" << "\n";
-
-                const vector norVec2 = pointNormals2[pointI];
-                const vector p2 = p + scale*norVec2;
-                myfile << "facet normal 0 0 0" << "\n"
-                       << " outer loop" << "\n"
-                       << "  vertex "
-                       << p[0] << " "
-                       << p[1] << " "
-                       << p[2] << "\n"
-                       << "  vertex "
-                       << p2[0] << " "
-                       << p2[1] << " "
-                       << p2[2] << "\n"
-                       << "  vertex "
-                       << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                       << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                       << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                       << " endloop" << "\n"
-                       << "endfacet" << "\n";
-
-                const vector norVec3 = pointNormals3[pointI];
-                const vector p3 = p + scale*norVec3;
-                myfile << "facet normal 0 0 0" << "\n"
-                       << " outer loop" << "\n"
-                       << "  vertex "
-                       << p[0] << " "
-                       << p[1] << " "
-                       << p[2] << "\n"
-                       << "  vertex "
-                       << p3[0] << " "
-                       << p3[1] << " "
-                       << p3[2] << "\n"
-                       << "  vertex "
-                       << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                       << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                       << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                       << " endloop" << "\n"
-                       << "endfacet" << "\n";
-            }
-            myfile << "endsolid\n";
-            myfile.close();
-        }
-
         // // Write selected point field, for debugging only
         // runTime++;
 
@@ -2543,6 +2470,79 @@ int main(int argc, char *argv[])
             // Update boundary point normals and propagate point normals
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals,  prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
+            // Debug output of normal vectors as STL file
+            if (true)
+            {
+                std::ofstream myfile;
+                myfile.open("debugNormalVectors.stl");
+                myfile << "solid normalsAsStl\n";
+
+                forAll(mesh.points(), pointI)
+                {
+                    const vector p = mesh.points()[pointI];
+                    const scalar scale = 0.05;
+
+                    const vector norVec1 = pointNormals1[pointI];
+                    const vector p1 = p + scale*norVec1;
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << p[0] << " "
+                           << p[1] << " "
+                           << p[2] << "\n"
+                           << "  vertex "
+                           << p1[0] << " "
+                           << p1[1] << " "
+                           << p1[2] << "\n"
+                           << "  vertex "
+                           << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+
+                    const vector norVec2 = pointNormals2[pointI];
+                    const vector p2 = p + scale*norVec2;
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << p[0] << " "
+                           << p[1] << " "
+                           << p[2] << "\n"
+                           << "  vertex "
+                           << p2[0] << " "
+                           << p2[1] << " "
+                           << p2[2] << "\n"
+                           << "  vertex "
+                           << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+
+                    const vector norVec3 = pointNormals3[pointI];
+                    const vector p3 = p + scale*norVec3;
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << p[0] << " "
+                           << p[1] << " "
+                           << p[2] << "\n"
+                           << "  vertex "
+                           << p3[0] << " "
+                           << p3[1] << " "
+                           << p3[2] << "\n"
+                           << "  vertex "
+                           << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+                }
+                myfile << "endsolid\n";
+                myfile.close();
+            }
+
             // Blend centroidal coordinates with layer controlled points to newPoints
             blendWithLayerPoints
             (
@@ -2645,8 +2645,8 @@ int main(int argc, char *argv[])
         label nFrozenPoints = 0;
         forAll(newPoints, pointI)
         {
-            // if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
-            if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
+            if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
+            // if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
             {
                 newPoints[pointI] = mesh.points()[pointI];
                 ++nFrozenPoints;
