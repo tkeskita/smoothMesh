@@ -272,7 +272,7 @@ bool isCloserPoint
 
     // point1 and point2 are at same distance, prefer the point with
     // smaller x, y, or z coordinate
-    else if ((abs(deltaDistance) < VSMALL) and (isSmallerByVectorElements(point1, point2)))
+    else if ((fabs(deltaDistance) < VSMALL) and (isSmallerByVectorElements(point1, point2)))
     {
         return true;
     }
@@ -2332,7 +2332,7 @@ int main(int argc, char *argv[])
             // Update and propagate point normals to inner mesh
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
-            Info << "p03 fn1 " << pointNormals1[03] << " fn2 " << pointNormals2[03] << " fn3 " << pointNormals3[03] << " pointNormalSource1 " << pointNormalSource1[03] << " pointNormalSource2 " << pointNormalSource2[03] << " pointNormalSource3 " << pointNormalSource3[03] << endl;
+            Info << "p43 fn1 " << pointNormals1[43] << " fn2 " << pointNormals2[43] << " fn3 " << pointNormals3[43] << " pointNormalSource1 " << pointNormalSource1[43] << " pointNormalSource2 " << pointNormalSource2[43] << " pointNormalSource3 " << pointNormalSource3[43] << endl;
         }
 
         // // Write selected point field, for debugging only
@@ -2643,15 +2643,17 @@ int main(int argc, char *argv[])
         // Restore original coordinates for frozen points and boundary
         // points which are not to be smoothened
         label nFrozenPoints = 0;
-        forAll(newPoints, pointI)
-        {
-            if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
-            // if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
-            {
-                newPoints[pointI] = mesh.points()[pointI];
-                ++nFrozenPoints;
-            }
-        }
+
+        // WIP
+        // forAll(newPoints, pointI)
+        // {
+        //     // if (isFrozenPoint[pointI]) // !!! WIP #32 override !!!
+        //     if ((isFrozenPoint[pointI]) or ((! isInternalPoint[pointI]) and (! isSmoothingSurfacePoint[pointI])))
+        //     {
+        //         newPoints[pointI] = mesh.points()[pointI];
+        //         ++nFrozenPoints;
+        //     }
+        // }
 
         // Calculate and print residual
         const double res = calculateResidual(mesh, newPoints, isInternalPoint, maxStepLength);

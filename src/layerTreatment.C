@@ -1683,27 +1683,37 @@ int updateAndPropagatePointNormals
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 
-// Help function to calculate target point location for the first
-// argument point. The target is located a given distance from second
-// argument point, on a line defined by first point and second point,
-// so that a specific layer distance is reached in the given normal
-// direction from the second point.
+// Help function to calculate a line-plane intersecion point. The line
+// is defined with first point to second point, and the plane is a
+// normal plane, located at a given distance from the second point
+// towards the normal direction. Using equation for "d" for the
+// algebraic form from
+// https://en.wikipedia.org/wiki/Line-plane_intersection
 
 point calcPointSlideOnLine
 (
-    const point firstPoint,
-    const point secondPoint,
+    const point p1,
+    const point p2,
     const double distance,
     const vector normalVec
 )
 {
-    const point targetVec = distance * normalVec;
-    const point lineVec = firstPoint - secondPoint;
-    const double lineLength = mag(lineVec);
-    const double scaledDotProd = (targetVec & lineVec) / sqr(lineLength);
-    const point firstPointTarget = secondPoint + scaledDotProd * lineVec;
+    if (mag(p2 - p1) < ABS_TOL)
+    {
+        FatalError << "Points " << p1 << " and " << p2 << " are too close to each other" << endl << abort(FatalError);
+    }
 
-    return firstPointTarget;
+    const vector p0 = p2 + distance * normalVec;
+    const double c1 = (p0 - p1) & normalVec;
+    const vector lVec = (p2 - p1) / mag(p2 - p1);
+    const double c2 = lVec & normalVec;
+    if (fabs(c2) < ABS_TOL)
+    {
+        FatalError << "Line vector for points " << p1 << " and " << p2 << ", and normal vector " << normalVec << " are almost the same, c2 is " << c2 << endl << abort(FatalError);
+    }
+
+    const vector target = p1 + (c1 / c2) * lVec;
+    return target;
 }
 
 // Help function to calculate a layer point location for one island
@@ -1744,14 +1754,14 @@ vector calcLayerPointMove
     const point refPoint = outerPrismPoints[pointI];
     const vector endNormal = pointNormals[pointI];
 
-    if (abs(mag(endNormal) - 1.0) > ABS_TOL)
+    if (fabs(mag(endNormal) - 1.0) > ABS_TOL)
     {
         FatalError << "pointI " << pointI << " normal vector " << endNormal << " length is not unity" << endl << abort(FatalError);
     }
 
     const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
-    if (pointI == 03)
-        Info << "p03 layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
+    if (pointI == 43)
+        Info << "p43 move" << debugI << " layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
 
 
     return layerTargetPoint;
@@ -1803,8 +1813,8 @@ int blendWithLayerPoints
             newCoords += newP;
             ++n;
             nHops.append(pointHops1[pointI]);
-            if (pointI == 03)
-                Info << "p03 move1 " << newP << endl;
+            if (pointI == 43)
+                Info << "p43 move1 " << newP << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
@@ -1813,8 +1823,8 @@ int blendWithLayerPoints
             newCoords += newP;
             ++n;
             nHops.append(pointHops2[pointI]);
-            if (pointI == 03)
-                Info << "p03 move2 " << newP << endl;
+            if (pointI == 43)
+                Info << "p43 move2 " << newP << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
@@ -1823,14 +1833,17 @@ int blendWithLayerPoints
             newCoords += newP;
             ++n;
             nHops.append(pointHops3[pointI]);
-            if (pointI == 03)
-                Info << "p03 move3 " << newP << endl;
+            if (pointI == 43)
+                Info << "p43 move3 " << newP << endl;
         }
 
         if (n > 0)
         {
             // New point coordinates from layer treatment
             const point layerPoint = newCoords / n;
+
+            if (pointI == 43)
+                Info << "p43 layerPoint " << layerPoint << endl;
 
             if (writeCsv)
                 myfile << layerPoint[0] << ","
@@ -1849,8 +1862,11 @@ int blendWithLayerPoints
             // Target blending fraction
             const double slope = -layerMaxBlendingFraction / (maxLayers + 1.0 - minLayers);
             const double y0 = -slope * (maxLayers + 1.0);
-            const double y = y0 + slope * min(nHops);
+            const double y = y0 + slope * min(nHops); // CHECKME: is nHops 0 OK?
             const double blendFrac = max(0.0, min(y, layerMaxBlendingFraction));
+
+            if (pointI == 43)
+                Info << "p43 blendFrac " << blendFrac << endl;
 
             const point newPoint = newPoints[pointI];
             const vector blendedPoint = blendFrac * layerPoint +

@@ -71,7 +71,7 @@ int checkEdgeMeshSanity
     const double emPerimeter = bbMaxX - bbMinX + bbMaxY - bbMinY + bbMaxZ + bbMinZ;
     const double PERIMETER_TOLERANCE = 0.5;
 
-    if (abs((emPerimeter / meshPerimeter) - 1.0) > PERIMETER_TOLERANCE)
+    if (fabs((emPerimeter / meshPerimeter) - 1.0) > PERIMETER_TOLERANCE)
     {
         FatalError << "Perimeter (sum of bounding box side lengths) of edge mesh " << emPerimeter << " is too different in comparison to perimeter of polyMesh " << meshPerimeter << endl << abort(FatalError);
     }
@@ -450,7 +450,7 @@ int classifyBoundaryPoints
     forAll (mesh.points(), pointI)
     {
         // Prismatic points have exactly one internal connection
-        if (abs(internalConnections[pointI] - 1.0) < ABS_TOL)
+        if (fabs(internalConnections[pointI] - 1.0) < ABS_TOL)
         {
             isPrismaticPoint[pointI] = true;
             nPrismaticPoints += 1.0 / nProcessorsOnPoint[pointI];
