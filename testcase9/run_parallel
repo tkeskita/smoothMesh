@@ -13,6 +13,5 @@ extrudeMesh
 decomposePar
 
 for i in `seq 1 1`; do
-  mpirun -np 3 smoothMesh -parallel -layerPatches '(".*")'
-
+  mpirun -np 3 smoothMesh -parallel -layerPatches '(".*")' -writeInterval 1 -centroidalIters 50 -minLayers 2 -maxLayers 2 -layerMaxBlendingFraction 1.0 -edgeAngleConstraint false -faceAngleConstraint false -layerEdgeLength 0.05
 done

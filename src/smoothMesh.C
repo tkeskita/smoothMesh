@@ -2331,8 +2331,6 @@ int main(int argc, char *argv[])
 
             // Update and propagate point normals to inner mesh
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
-
-            Info << "p43 fn1 " << pointNormals1[43] << " fn2 " << pointNormals2[43] << " fn3 " << pointNormals3[43] << " pointNormalSource1 " << pointNormalSource1[43] << " pointNormalSource2 " << pointNormalSource2[43] << " pointNormalSource3 " << pointNormalSource3[43] << endl;
         }
 
         // // Write selected point field, for debugging only

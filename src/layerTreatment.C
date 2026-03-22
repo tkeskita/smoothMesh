@@ -566,8 +566,6 @@ int identifyPrismaticBoundaryIslands
     {
         const label ne =
         addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
-
-        Pout << "  - Island " << islandI << " has " << ne << " edge points" << endl;
     }
 
     return 0;
@@ -1760,9 +1758,6 @@ vector calcLayerPointMove
     }
 
     const vector layerTargetPoint = calcPointSlideOnLine(movingPoint, refPoint, layerThickness, endNormal);
-    if (pointI == 43)
-        Info << "p43 move" << debugI << " layerEdgeLenth " << layerEdgeLength << " layerthickness " << layerThickness << " nHops " << nHops << " movingPoint " << movingPoint << " refPoint " << refPoint << " endNormal " << endNormal << " layerTargetPoint " << layerTargetPoint << endl;
-
 
     return layerTargetPoint;
 }
@@ -1813,8 +1808,6 @@ int blendWithLayerPoints
             newCoords += newP;
             ++n;
             nHops.append(pointHops1[pointI]);
-            if (pointI == 43)
-                Info << "p43 move1 " << newP << endl;
         }
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
@@ -1823,8 +1816,6 @@ int blendWithLayerPoints
             newCoords += newP;
             ++n;
             nHops.append(pointHops2[pointI]);
-            if (pointI == 43)
-                Info << "p43 move2 " << newP << endl;
         }
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
@@ -1833,17 +1824,12 @@ int blendWithLayerPoints
             newCoords += newP;
             ++n;
             nHops.append(pointHops3[pointI]);
-            if (pointI == 43)
-                Info << "p43 move3 " << newP << endl;
         }
 
         if (n > 0)
         {
             // New point coordinates from layer treatment
             const point layerPoint = newCoords / n;
-
-            if (pointI == 43)
-                Info << "p43 layerPoint " << layerPoint << endl;
 
             if (writeCsv)
                 myfile << layerPoint[0] << ","
@@ -1864,9 +1850,6 @@ int blendWithLayerPoints
             const double y0 = -slope * (maxLayers + 1.0);
             const double y = y0 + slope * min(nHops); // CHECKME: is nHops 0 OK?
             const double blendFrac = max(0.0, min(y, layerMaxBlendingFraction));
-
-            if (pointI == 43)
-                Info << "p43 blendFrac " << blendFrac << endl;
 
             const point newPoint = newPoints[pointI];
             const vector blendedPoint = blendFrac * layerPoint +
