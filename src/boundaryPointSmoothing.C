@@ -449,7 +449,7 @@ int classifyBoundaryPoints
 
     forAll (mesh.points(), pointI)
     {
-        // Prismatic points have exactly one internal connection
+        // Prismatic boundary points have exactly one internal connection
         if (fabs(internalConnections[pointI] - 1.0) < ABS_TOL)
         {
             isPrismaticPoint[pointI] = true;

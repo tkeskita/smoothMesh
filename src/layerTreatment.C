@@ -564,7 +564,7 @@ int identifyPrismaticBoundaryIslands
     // Add the non-prismatic edge points to final islands
     for (const label islandI : islandIs)
     {
-        const label ne =
+        // const label ne =
         addEdgePointsToIsland(mesh, islandI, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
     }
 

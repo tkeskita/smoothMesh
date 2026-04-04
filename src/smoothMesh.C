@@ -2061,6 +2061,9 @@ int main(int argc, char *argv[])
     vectorList pointNormals2;
     vectorList pointNormals3;
 
+    // Slot number for innerPrismPoints for unique prismatic edges
+    labelList orthogonalPrismSlots;
+
     // Neigboring prismatic point locations towards internal mesh
     vectorList innerPrismPoints1;
     vectorList innerPrismPoints2;
@@ -2296,6 +2299,7 @@ int main(int argc, char *argv[])
         pointNormals1.setSize(mesh.nPoints(), Zero);
         pointNormals2.setSize(mesh.nPoints(), Zero);
         pointNormals3.setSize(mesh.nPoints(), Zero);
+        orthogonalPrismSlots.setSize(mesh.nPoints(), UNDEF_LABEL);
         innerPrismPoints1.setSize(mesh.nPoints(), UNDEF_VECTOR);
         innerPrismPoints2.setSize(mesh.nPoints(), UNDEF_VECTOR);
         innerPrismPoints3.setSize(mesh.nPoints(), UNDEF_VECTOR);
@@ -2314,24 +2318,30 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
         // Identify prismatic islands
-        Info << "Identifying prismatic boundary islands in the mesh" << endl;
+        Info << "Identifying prismatic boundary islands in the mesh.." << endl;
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, isProcessorPoint, islandIs);
-
-        // Info << "p51 fn1 " << getBoundaryFaceCf(mesh, faceNormalSource1[51][0]) << " fn2 " << getBoundaryFaceCf(mesh, faceNormalSource2[51][0]) << " fn3 " << getBoundaryFaceCf(mesh, faceNormalSource3[51][0]) << endl;
 
         // Synchronize and sort a global list of islandIs
         mergeAndSortIslandIs(islandIs);
+        Info << "  Done! Identified " << islandIs.size() << " prismatic boundary islands in the mesh" << endl << endl;
 
         // Propagate island fronts to inner mesh
+        Info << "Propagating prismatic edges to inner mesh.." << endl;
+
         for (label i = 0; i < maxLayers; i++)
         {
             Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
             const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-            Info << "  - Number of suitable prismatic edges found: " << nPrisms << endl;
+            Info << "  - Number of layer treatment prismatic edges: " << nPrisms << endl;
+
+            // Identify prism slots for orthogonal treatment
+            const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, orthogonalPrismSlots, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            Info << "  - Number of orthogonal treatment prismatic edges: " << nOuterPrismPoints << endl;
 
             // Update and propagate point normals to inner mesh
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
         }
+        Info << endl;
 
         // // Write selected point field, for debugging only
         // runTime++;
@@ -2561,12 +2571,38 @@ int main(int argc, char *argv[])
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
 
+        // Optional prismatic edge orthogonality treatment
+        const bool doOrthoTreatment = true;
+        const double orthoMaxBlendingFraction = 0.2;
+        const label orthoMinLayers = 2;
+        const label orthoMaxLayers = 2;
+
+        if (doOrthoTreatment)
+        {
+            // Update neighbour coordinates and synchronize among processors
+            updatePointVectorValues(mesh, mesh.points(), innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, innerPrismPoints1, innerPrismPoints2, innerPrismPoints3);
+
+            // Blend orthogonality treatment to newPoints
+            blendWithOrthoPoints
+            (
+                 mesh,
+                 newPoints,
+                 orthogonalPrismSlots,
+                 innerPrismPoints1, innerPrismPoints2, innerPrismPoints3,
+                 pointNormals1, pointNormals2, pointNormals3,
+                 orthoMaxBlendingFraction,
+                 orthoMinLayers,
+                 orthoMaxLayers
+            );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+        }
+
         if (doBoundarySmoothing)
         {
             // Update neighbour coordinates and synchronize among processors
             // WIP updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerPrismPoints);
-            updatePointVectorValues(mesh, mesh.points(), innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, innerPrismPoints1, innerPrismPoints2, innerPrismPoints3);
-
             // Project boundary points
             projectBoundaryPointsToEdgesAndSurfaces
             (
@@ -2590,7 +2626,7 @@ int main(int argc, char *argv[])
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
 
             // Use the locations of first cell layer points for
             // projecting points to boundary surfaces

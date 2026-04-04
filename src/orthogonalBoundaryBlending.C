@@ -16,6 +16,250 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Help function to identify prisms slots for orthogonal treatment
+
+label identifyOrthogonalPrismSlots
+(
+    const fvMesh& mesh,
+    labelList& orthogonalPrismSlots,
+    const labelList& innerPrismPointLabels1,
+    const labelList& innerPrismPointLabels2,
+    const labelList& innerPrismPointLabels3,
+    const labelList& outerPrismPointLabels1,
+    const labelList& outerPrismPointLabels2,
+    const labelList& outerPrismPointLabels3
+)
+{
+    label n = 0;
+
+    // Debug option to set true for printing edges as a STL file
+    // Best visualized as wireframe in Paraview
+    const bool exportEdgesAsStl = true;
+    std::ofstream myfile;
+    if (exportEdgesAsStl)
+    {
+        myfile.open("debugOrthogonalPrismEdgesAsStl_proc" + std::to_string(Pstream::myProcNo()) + ".stl");
+        myfile << "solid orthoEdgesAsStl\n";
+    }
+
+    forAll (mesh.points(), pointI)
+    {
+        // Skip non-front points
+        if ((innerPrismPointLabels1[pointI] != UNDEF_LABEL) or
+            (innerPrismPointLabels2[pointI] != UNDEF_LABEL) or
+            (innerPrismPointLabels3[pointI] != UNDEF_LABEL))
+        {
+            continue;
+        }
+
+        // If the outer point is pointing to this point, add the
+        // correct slot number
+
+        if (outerPrismPointLabels1[pointI] != UNDEF_LABEL)
+        {
+            const label outerI = outerPrismPointLabels1[pointI];
+            if ((innerPrismPointLabels1[outerI] == pointI) and
+                (orthogonalPrismSlots[outerI] == UNDEF_LABEL))
+            {
+                orthogonalPrismSlots[outerI] = 1;
+                ++n;
+
+                // Debugging: export edge as a sliver triangle in STL ascii format,
+                // with fake normal direction.
+                if (exportEdgesAsStl)
+                {
+                    const label i1 = pointI;
+                    const label i2 = outerI;
+                    if (i1 == i2)
+                        FatalError << "pointI " << i1 << " is same as outer point" << endl << abort(FatalError);
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] << " "
+                           << mesh.points()[i1][1] << " "
+                           << mesh.points()[i1][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i2][0] << " "
+                           << mesh.points()[i2][1] << " "
+                           << mesh.points()[i2][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+                }
+            }
+        }
+
+        if (outerPrismPointLabels2[pointI] != UNDEF_LABEL)
+        {
+            const label outerI = outerPrismPointLabels2[pointI];
+            if ((innerPrismPointLabels2[outerI] == pointI) and
+                (orthogonalPrismSlots[outerI] == UNDEF_LABEL))
+            {
+                orthogonalPrismSlots[outerI] = 2;
+                ++n;
+
+                // Debugging: export edge as a sliver triangle in STL ascii format,
+                // with fake normal direction.
+                if (exportEdgesAsStl)
+                {
+                    const label i1 = pointI;
+                    const label i2 = outerI;
+                    if (i1 == i2)
+                        FatalError << "pointI " << i1 << " is same as outer point" << endl << abort(FatalError);
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] << " "
+                           << mesh.points()[i1][1] << " "
+                           << mesh.points()[i1][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i2][0] << " "
+                           << mesh.points()[i2][1] << " "
+                           << mesh.points()[i2][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+                }
+            }
+        }
+
+        if (outerPrismPointLabels3[pointI] != UNDEF_LABEL)
+        {
+            const label outerI = outerPrismPointLabels3[pointI];
+            if ((innerPrismPointLabels3[outerI] == pointI) and
+                (orthogonalPrismSlots[outerI] == UNDEF_LABEL))
+            {
+                orthogonalPrismSlots[outerI] = 3;
+                ++n;
+
+                // Debugging: export edge as a sliver triangle in STL ascii format,
+                // with fake normal direction.
+                if (exportEdgesAsStl)
+                {
+                    const label i1 = pointI;
+                    const label i2 = outerI;
+                    if (i1 == i2)
+                        FatalError << "pointI " << i1 << " is same as outer point" << endl << abort(FatalError);
+                    myfile << "facet normal 0 0 0" << "\n"
+                           << " outer loop" << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] << " "
+                           << mesh.points()[i1][1] << " "
+                           << mesh.points()[i1][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i2][0] << " "
+                           << mesh.points()[i2][1] << " "
+                           << mesh.points()[i2][2] << "\n"
+                           << "  vertex "
+                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                           << " endloop" << "\n"
+                           << "endfacet" << "\n";
+                }
+            }
+        }
+    }
+
+    if (exportEdgesAsStl)
+    {
+        myfile << "endsolid\n";
+        myfile.close();
+    }
+
+    return n;
+}
+
+
+// Help function to project point orthogonally to a plane
+
+point projectPointToPlane
+(
+    const point p,
+    const point planePoint,
+    const vector normalVec
+)
+{
+    if (mag(p - planePoint) < ABS_TOL)
+    {
+        FatalError << "Point " << p << " and plane point " << planePoint << " are too close to each other" << endl << abort(FatalError);
+    }
+
+    const double c1 = (p - planePoint) & normalVec;
+    if (fabs(c1) < ABS_TOL)
+    {
+        FatalError << "Line vector for point " << p << " and plane point " << planePoint << ", and normal vector " << normalVec << " are almost the same" << endl << abort(FatalError);
+    }
+
+    const vector target = p - c1 * normalVec;
+    return target;
+}
+
+
+// Function to improve orthogonality of prismatic boundary edges
+
+int blendWithOrthoPoints
+(
+    const fvMesh& mesh,
+    pointField& newPoints,
+    const labelList& orthogonalPrismSlots,
+    const vectorList& innerPrismPoints1,
+    const vectorList& innerPrismPoints2,
+    const vectorList& innerPrismPoints3,
+    const vectorList& pointNormals1,
+    const vectorList& pointNormals2,
+    const vectorList& pointNormals3,
+    const double orthoBlendingFraction,
+    const double orthoMinLayers,
+    const double orthoMaxLayers
+)
+{
+    forAll(mesh.points(), pointI)
+    {
+        vector orthoPoint(UNDEF_VECTOR);
+
+        // Projection of inner point is done only for the unique
+        // non-overlapping prismatic edges
+
+        if (orthogonalPrismSlots[pointI] == 1)
+        {
+            orthoPoint = projectPointToPlane(innerPrismPoints1[pointI], newPoints[pointI], pointNormals1[pointI]);
+        }
+
+        else if (orthogonalPrismSlots[pointI] == 2)
+        {
+            orthoPoint = projectPointToPlane(innerPrismPoints2[pointI], newPoints[pointI], pointNormals2[pointI]);
+        }
+
+        else if (orthogonalPrismSlots[pointI] == 3)
+        {
+            orthoPoint = projectPointToPlane(innerPrismPoints3[pointI], newPoints[pointI], pointNormals3[pointI]);
+        }
+
+        // Update point coordinates
+        if (orthoPoint != UNDEF_VECTOR)
+        {
+            const point newPoint = newPoints[pointI];
+            const vector blendedPoint = orthoBlendingFraction * orthoPoint +
+                (1.0 - orthoBlendingFraction) * newPoint;
+            newPoints[pointI] = blendedPoint;
+        }
+    }
+
+    return 0;
+}
+
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+// OBSOLETE BELOW
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
 // Help function to get list of point indices belonging to patch
 // with index patchI
 
