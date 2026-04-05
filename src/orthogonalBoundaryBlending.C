@@ -16,6 +16,75 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Help function to find an store the orthogonal prism slot number
+// which points from the outer point towards the inner point
+
+void setOuterPointOrthogonalSlot
+(
+    const fvMesh& mesh,
+    const label innerPointI,
+    const label outerPointI,
+    labelList& orthogonalPrismSlots,
+    label& n,
+    const labelList& innerPrismPointLabels1,
+    const labelList& innerPrismPointLabels2,
+    const labelList& innerPrismPointLabels3,
+    std::ofstream& myfile,
+    const bool exportEdgesAsStl
+)
+{
+    if ((outerPointI != UNDEF_LABEL) and
+        (orthogonalPrismSlots[outerPointI] == UNDEF_LABEL))
+    {
+        bool writeDebugEdge = false;
+
+        if (innerPrismPointLabels1[outerPointI] == innerPointI)
+        {
+            orthogonalPrismSlots[outerPointI] = 1;
+            ++n;
+            writeDebugEdge = true;
+        }
+        if (innerPrismPointLabels2[outerPointI] == innerPointI)
+        {
+            orthogonalPrismSlots[outerPointI] = 2;
+            ++n;
+            writeDebugEdge = true;
+        }
+        if (innerPrismPointLabels3[outerPointI] == innerPointI)
+        {
+            orthogonalPrismSlots[outerPointI] = 3;
+            ++n;
+            writeDebugEdge = true;
+        }
+
+        if ((writeDebugEdge) and (exportEdgesAsStl))
+        {
+            const label i1 = innerPointI;
+            const label i2 = outerPointI;
+            if (i1 == i2)
+                FatalError << "inner point " << i1 << " is same as outer point" << endl << abort(FatalError);
+            myfile
+                << "facet normal 0 0 0" << "\n"
+                << " outer loop" << "\n"
+                << "  vertex "
+                << mesh.points()[i1][0] << " "
+                << mesh.points()[i1][1] << " "
+                << mesh.points()[i1][2] << "\n"
+                << "  vertex "
+                << mesh.points()[i2][0] << " "
+                << mesh.points()[i2][1] << " "
+                << mesh.points()[i2][2] << "\n"
+                << "  vertex "
+                << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+                << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+                << " endloop" << "\n"
+                << "endfacet" << "\n";
+        }
+    }
+}
+
+
 // Help function to identify prisms slots for orthogonal treatment
 
 label identifyOrthogonalPrismSlots
@@ -52,119 +121,16 @@ label identifyOrthogonalPrismSlots
             continue;
         }
 
-        // If the outer point is pointing to this point, add the
-        // correct slot number
+        // Go through outer points. If outer point is pointing to this
+        // point, add the correct slot number for orthogonal
+        // treatment.
+        const label outerI1 = outerPrismPointLabels1[pointI];
+        const label outerI2 = outerPrismPointLabels2[pointI];
+        const label outerI3 = outerPrismPointLabels3[pointI];
 
-        if (outerPrismPointLabels1[pointI] != UNDEF_LABEL)
-        {
-            const label outerI = outerPrismPointLabels1[pointI];
-            if ((innerPrismPointLabels1[outerI] == pointI) and
-                (orthogonalPrismSlots[outerI] == UNDEF_LABEL))
-            {
-                orthogonalPrismSlots[outerI] = 1;
-                ++n;
-
-                // Debugging: export edge as a sliver triangle in STL ascii format,
-                // with fake normal direction.
-                if (exportEdgesAsStl)
-                {
-                    const label i1 = pointI;
-                    const label i2 = outerI;
-                    if (i1 == i2)
-                        FatalError << "pointI " << i1 << " is same as outer point" << endl << abort(FatalError);
-                    myfile << "facet normal 0 0 0" << "\n"
-                           << " outer loop" << "\n"
-                           << "  vertex "
-                           << mesh.points()[i1][0] << " "
-                           << mesh.points()[i1][1] << " "
-                           << mesh.points()[i1][2] << "\n"
-                           << "  vertex "
-                           << mesh.points()[i2][0] << " "
-                           << mesh.points()[i2][1] << " "
-                           << mesh.points()[i2][2] << "\n"
-                           << "  vertex "
-                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                           << " endloop" << "\n"
-                           << "endfacet" << "\n";
-                }
-            }
-        }
-
-        if (outerPrismPointLabels2[pointI] != UNDEF_LABEL)
-        {
-            const label outerI = outerPrismPointLabels2[pointI];
-            if ((innerPrismPointLabels2[outerI] == pointI) and
-                (orthogonalPrismSlots[outerI] == UNDEF_LABEL))
-            {
-                orthogonalPrismSlots[outerI] = 2;
-                ++n;
-
-                // Debugging: export edge as a sliver triangle in STL ascii format,
-                // with fake normal direction.
-                if (exportEdgesAsStl)
-                {
-                    const label i1 = pointI;
-                    const label i2 = outerI;
-                    if (i1 == i2)
-                        FatalError << "pointI " << i1 << " is same as outer point" << endl << abort(FatalError);
-                    myfile << "facet normal 0 0 0" << "\n"
-                           << " outer loop" << "\n"
-                           << "  vertex "
-                           << mesh.points()[i1][0] << " "
-                           << mesh.points()[i1][1] << " "
-                           << mesh.points()[i1][2] << "\n"
-                           << "  vertex "
-                           << mesh.points()[i2][0] << " "
-                           << mesh.points()[i2][1] << " "
-                           << mesh.points()[i2][2] << "\n"
-                           << "  vertex "
-                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                           << " endloop" << "\n"
-                           << "endfacet" << "\n";
-                }
-            }
-        }
-
-        if (outerPrismPointLabels3[pointI] != UNDEF_LABEL)
-        {
-            const label outerI = outerPrismPointLabels3[pointI];
-            if ((innerPrismPointLabels3[outerI] == pointI) and
-                (orthogonalPrismSlots[outerI] == UNDEF_LABEL))
-            {
-                orthogonalPrismSlots[outerI] = 3;
-                ++n;
-
-                // Debugging: export edge as a sliver triangle in STL ascii format,
-                // with fake normal direction.
-                if (exportEdgesAsStl)
-                {
-                    const label i1 = pointI;
-                    const label i2 = outerI;
-                    if (i1 == i2)
-                        FatalError << "pointI " << i1 << " is same as outer point" << endl << abort(FatalError);
-                    myfile << "facet normal 0 0 0" << "\n"
-                           << " outer loop" << "\n"
-                           << "  vertex "
-                           << mesh.points()[i1][0] << " "
-                           << mesh.points()[i1][1] << " "
-                           << mesh.points()[i1][2] << "\n"
-                           << "  vertex "
-                           << mesh.points()[i2][0] << " "
-                           << mesh.points()[i2][1] << " "
-                           << mesh.points()[i2][2] << "\n"
-                           << "  vertex "
-                           << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                           << " endloop" << "\n"
-                           << "endfacet" << "\n";
-                }
-            }
-        }
+        setOuterPointOrthogonalSlot(mesh, pointI, outerI1, orthogonalPrismSlots, n, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, myfile, exportEdgesAsStl);
+        setOuterPointOrthogonalSlot(mesh, pointI, outerI2, orthogonalPrismSlots, n, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, myfile, exportEdgesAsStl);
+        setOuterPointOrthogonalSlot(mesh, pointI, outerI3, orthogonalPrismSlots, n, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, myfile, exportEdgesAsStl);
     }
 
     if (exportEdgesAsStl)

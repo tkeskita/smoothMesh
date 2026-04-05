@@ -2326,7 +2326,7 @@ int main(int argc, char *argv[])
         Info << "  Done! Identified " << islandIs.size() << " prismatic boundary islands in the mesh" << endl << endl;
 
         // Propagate island fronts to inner mesh
-        Info << "Propagating prismatic edges to inner mesh.." << endl;
+        Info << "Propagating boundary islands to inner mesh.." << endl;
 
         for (label i = 0; i < maxLayers; i++)
         {
