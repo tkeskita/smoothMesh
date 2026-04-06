@@ -2492,60 +2492,15 @@ int main(int argc, char *argv[])
 
                     const vector norVec1 = pointNormals1[pointI];
                     const vector p1 = p + scale*norVec1;
-                    myfile << "facet normal 0 0 0" << "\n"
-                           << " outer loop" << "\n"
-                           << "  vertex "
-                           << p[0] << " "
-                           << p[1] << " "
-                           << p[2] << "\n"
-                           << "  vertex "
-                           << p1[0] << " "
-                           << p1[1] << " "
-                           << p1[2] << "\n"
-                           << "  vertex "
-                           << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                           << " endloop" << "\n"
-                           << "endfacet" << "\n";
+                    myfile << edgeToStl(p, p1);
 
                     const vector norVec2 = pointNormals2[pointI];
                     const vector p2 = p + scale*norVec2;
-                    myfile << "facet normal 0 0 0" << "\n"
-                           << " outer loop" << "\n"
-                           << "  vertex "
-                           << p[0] << " "
-                           << p[1] << " "
-                           << p[2] << "\n"
-                           << "  vertex "
-                           << p2[0] << " "
-                           << p2[1] << " "
-                           << p2[2] << "\n"
-                           << "  vertex "
-                           << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                           << " endloop" << "\n"
-                           << "endfacet" << "\n";
+                    myfile << edgeToStl(p, p2);
 
                     const vector norVec3 = pointNormals3[pointI];
                     const vector p3 = p + scale*norVec3;
-                    myfile << "facet normal 0 0 0" << "\n"
-                           << " outer loop" << "\n"
-                           << "  vertex "
-                           << p[0] << " "
-                           << p[1] << " "
-                           << p[2] << "\n"
-                           << "  vertex "
-                           << p3[0] << " "
-                           << p3[1] << " "
-                           << p3[2] << "\n"
-                           << "  vertex "
-                           << p[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << p[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                           << p[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                           << " endloop" << "\n"
-                           << "endfacet" << "\n";
+                    myfile << edgeToStl(p, p3);
                 }
                 myfile << "endsolid\n";
                 myfile.close();
@@ -2572,7 +2527,7 @@ int main(int argc, char *argv[])
         }
 
         // Optional prismatic edge orthogonality treatment
-        const bool doOrthoTreatment = true;
+        const bool doOrthoTreatment = false;
         const double orthoMaxBlendingFraction = 0.2;
         const label orthoMinLayers = 2;
         const label orthoMaxLayers = 2;

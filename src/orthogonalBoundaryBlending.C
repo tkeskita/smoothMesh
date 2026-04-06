@@ -63,23 +63,7 @@ void setOuterPointOrthogonalSlot
             const label i2 = outerPointI;
             if (i1 == i2)
                 FatalError << "inner point " << i1 << " is same as outer point" << endl << abort(FatalError);
-            myfile
-                << "facet normal 0 0 0" << "\n"
-                << " outer loop" << "\n"
-                << "  vertex "
-                << mesh.points()[i1][0] << " "
-                << mesh.points()[i1][1] << " "
-                << mesh.points()[i1][2] << "\n"
-                << "  vertex "
-                << mesh.points()[i2][0] << " "
-                << mesh.points()[i2][1] << " "
-                << mesh.points()[i2][2] << "\n"
-                << "  vertex "
-                << mesh.points()[i1][0] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                << mesh.points()[i1][1] * (1.0 + ABS_TOL) + ABS_TOL << " "
-                << mesh.points()[i1][2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
-                << " endloop" << "\n"
-                << "endfacet" << "\n";
+            myfile << edgeToStl(mesh.points()[i1], mesh.points()[i2]);
         }
     }
 }

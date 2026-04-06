@@ -116,4 +116,37 @@ vector getBoundaryCf
     return UNDEF_VECTOR;
 }
 
+
+// Help function to export an edge, defined as the two argument
+// points, as a string defining a STL facet. Since STL only handles
+// triangles the edge is represented as a sliver triangle.
+
+string edgeToStl
+(
+    const point p1,
+    const point p2
+)
+{
+    std::stringstream facet;
+    facet
+        << "facet normal 0 0 0\n"
+        << " outer loop\n"
+        << "  vertex "
+        << p1[0] << " "
+        << p1[1] << " "
+        << p1[2] << "\n"
+        << "  vertex "
+        << p2[0] << " "
+        << p2[1] << " "
+        << p2[2] << "\n"
+        << "  vertex "
+        << p1[0] * (1.0 + ABS_TOL) + ABS_TOL << " "
+        << p1[1] * (1.0 + ABS_TOL) + ABS_TOL << " "
+        << p1[2] * (1.0 + ABS_TOL) + ABS_TOL << "\n"
+        << " endloop\n"
+        << "endfacet\n";
+
+    return facet.str();
+}
+
 #endif
