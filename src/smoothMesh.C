@@ -2474,12 +2474,13 @@ int main(int argc, char *argv[])
         {
             // Update neighbour coordinates and synchronize among processors
             updatePointVectorValues(mesh, mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
+            writeDebugStlEdges("debugOuterPrismEdges", mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
 
             // Update boundary point normals and propagate point normals
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals,  prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
 
             // Debug output of normal vectors as STL file
-            if (true)
+            if (WRITE_DEBUG_FILES)
             {
                 std::ofstream myfile;
                 myfile.open("debugNormalVectors.stl");
@@ -2527,7 +2528,7 @@ int main(int argc, char *argv[])
         }
 
         // Optional prismatic edge orthogonality treatment
-        const bool doOrthoTreatment = false;
+        const bool doOrthoTreatment = true;
         const double orthoMaxBlendingFraction = 0.2;
         const label orthoMinLayers = 2;
         const label orthoMaxLayers = 2;
@@ -2536,6 +2537,7 @@ int main(int argc, char *argv[])
         {
             // Update neighbour coordinates and synchronize among processors
             updatePointVectorValues(mesh, mesh.points(), innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, innerPrismPoints1, innerPrismPoints2, innerPrismPoints3);
+            writeDebugStlEdges("debugInnerPrismEdges", mesh.points(), innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3);
 
             // Blend orthogonality treatment to newPoints
             blendWithOrthoPoints

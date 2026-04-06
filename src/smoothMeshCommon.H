@@ -20,6 +20,9 @@ Description
 #define REL_TOL 1e-4
 #define ABS_TOL 1e-6
 
+// Option to write extra debugging files
+#define WRITE_DEBUG_FILES true
+
 // Boolean for developer mode. Set to false to use bleeding edge
 // work in progress features.
 // #define USE_STABLE_FEATURES_ONLY true
@@ -147,6 +150,49 @@ string edgeToStl
         << "endfacet\n";
 
     return facet.str();
+}
+
+// Help function to export edges using given vector values (point
+// locations) and edge end point labels to an STL file
+
+void writeDebugStlEdges
+(
+    const string& filename,
+    const vectorList& vectorValues,
+    const labelList& pointLabels1,
+    const labelList& pointLabels2,
+    const labelList& pointLabels3
+)
+{
+    if (! WRITE_DEBUG_FILES)
+        return;
+
+    std::ofstream myfile;
+    myfile.open(filename + "_proc" + std::to_string(Pstream::myProcNo()) + ".stl");
+    myfile << "solid " << filename << "\n";
+
+    forAll(vectorValues, pointI)
+    {
+        const point p = vectorValues[pointI];
+
+        if (pointLabels1[pointI] != UNDEF_LABEL)
+        {
+            myfile << edgeToStl(p, vectorValues[pointLabels1[pointI]]);
+        }
+
+        if (pointLabels2[pointI] != UNDEF_LABEL)
+        {
+            myfile << edgeToStl(p, vectorValues[pointLabels2[pointI]]);
+        }
+
+        if (pointLabels3[pointI] != UNDEF_LABEL)
+        {
+            myfile << edgeToStl(p, vectorValues[pointLabels3[pointI]]);
+        }
+    }
+
+    myfile << "endsolid\n";
+    myfile.close();
 }
 
 #endif

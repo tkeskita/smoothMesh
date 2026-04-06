@@ -817,11 +817,10 @@ int findPropagationFrontPointIs
 )
 {
     // OBJ output for debugging
-    const bool writeObj = false;
     const label debugIsland = 3;
     label debugV = 0;
     std::ofstream myfile;
-    if ((writeObj) and (islandI == debugIsland))
+    if ((WRITE_DEBUG_FILES) and (islandI == debugIsland))
     {
         myfile.open("debugPropagationFrontPoints_" + std::to_string(nLayer) + "_proc" + std::to_string(Pstream::myProcNo()) + ".obj");
         myfile << "o obj\n";
@@ -905,7 +904,7 @@ int findPropagationFrontPointIs
                     isPropagationModeActive.append(true);
 
                     // OBJ format debug printout for viewing prismatic edges
-                    if ((writeObj) and (islandI == debugIsland))
+                    if ((WRITE_DEBUG_FILES) and (islandI == debugIsland))
                     {
                         myfile << "v " << mesh.points()[pointI][0] << " " << mesh.points()[pointI][1] << " " << mesh.points()[pointI][2] << "\n";
                         myfile << "v " << mesh.points()[neighI][0] << " " << mesh.points()[neighI][1] << " " << mesh.points()[neighI][2] << "\n";
@@ -917,7 +916,7 @@ int findPropagationFrontPointIs
         }
     }
 
-    if ((writeObj) and (islandI == debugIsland))
+    if ((WRITE_DEBUG_FILES) and (islandI == debugIsland))
     {
         myfile.close();
     }
@@ -1129,9 +1128,8 @@ int propagateIslandFronts
 
     // Debug option to set true for printing edges as a STL file
     // Best visualized as wireframe in Paraview
-    const bool exportEdgesAsStl = true;
     std::ofstream myfile;
-    if (exportEdgesAsStl)
+    if (WRITE_DEBUG_FILES)
     {
         myfile.open("debugPrismEdgesAsStl_" + std::to_string(nLayer) + "_proc" + std::to_string(Pstream::myProcNo()) + ".stl");
         myfile << "solid edgesAsStl\n";
@@ -1209,7 +1207,7 @@ int propagateIslandFronts
 
             // Debugging: export edge as a sliver triangle in STL ascii format,
             // with fake normal direction.
-            if (exportEdgesAsStl)
+            if (WRITE_DEBUG_FILES)
             {
                 const label i1 = candidatePointI;
                 const label i2 = frontPointI;
@@ -1282,7 +1280,7 @@ int propagateIslandFronts
         // Info << "Layer " << nLayer << " island " << islandI << " added prisms " << nSumAddedPrisms << endl;
     }
 
-    if (exportEdgesAsStl)
+    if (WRITE_DEBUG_FILES)
     {
         myfile << "endsolid\n";
         myfile.close();
