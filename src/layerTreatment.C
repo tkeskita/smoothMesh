@@ -398,7 +398,10 @@ label addEdgePointsToIsland
 
                 // Mark as edge point
                 isIslandEdgePoint[pointI] = true;
+            }
 
+            if (isIslandEdgePoint[pointI])
+            {
                 // Add face index to face normal sources
                 addFaceNormalInfoForPoint(mesh, pointI, faceI, islandI, prismIslands1, prismIslands2, prismIslands3, faceNormalSource1, faceNormalSource2, faceNormalSource3);
 

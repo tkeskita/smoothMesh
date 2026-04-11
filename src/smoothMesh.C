@@ -2316,10 +2316,12 @@ int main(int argc, char *argv[])
         // Pre-calculate global boundary point normals and identify
         // sharp edge points
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
+        Info << "- Sharp edge points: " << countBoolListValues(isSharpEdgePoint, nProcessorsOnPoint) << endl << endl;
 
         // Identify prismatic islands
         Info << "Identifying prismatic boundary islands in the mesh.." << endl;
         identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, isProcessorPoint, islandIs);
+        Info << "  Island edge points: " << countBoolListValues(isIslandEdgePoint, nProcessorsOnPoint) << endl;
 
         // Synchronize and sort a global list of islandIs
         mergeAndSortIslandIs(islandIs);
@@ -2528,7 +2530,7 @@ int main(int argc, char *argv[])
         }
 
         // Optional prismatic edge orthogonality treatment
-        const bool doOrthoTreatment = true;
+        const bool doOrthoTreatment = false;
         const double orthoMaxBlendingFraction = 0.2;
         const label orthoMinLayers = 2;
         const label orthoMaxLayers = 2;

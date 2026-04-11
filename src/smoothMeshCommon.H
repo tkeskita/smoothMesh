@@ -195,4 +195,26 @@ void writeDebugStlEdges
     myfile.close();
 }
 
+
+// Help function to count boolean true values for point lists
+
+scalar countBoolListValues
+(
+    const boolList bList,
+    const labelList nProcessorsOnPoint
+)
+{
+    scalar nVals = 0.0;
+
+    forAll (bList, i)
+    {
+        if (bList[i])
+        {
+            nVals += 1.0 / nProcessorsOnPoint[i];
+        }
+    }
+
+    return returnReduce(nVals, sumOp<scalar>());
+}
+
 #endif

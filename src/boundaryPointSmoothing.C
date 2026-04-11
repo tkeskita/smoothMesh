@@ -504,7 +504,6 @@ int classifyBoundaryPoints
     {
         Info << "- Processor points: " << nSumProcessorPoints << endl;
     }
-    Info << endl;
 
     return 0;
 }
