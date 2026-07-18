@@ -192,6 +192,18 @@ int blendWithOrthoPoints
             orthoPoint = projectPointToPlane(innerPrismPoints3[pointI], newPoints[pointI], pointNormals3[pointI]);
         }
 
+        // if (pointI == 109)
+        //     Info<< "pointI109"
+        //         << " orthogonalPrismSlots " << orthogonalPrismSlots[pointI]
+        //         << " innerPrismPoints1 " << innerPrismPoints1[pointI]
+        //         << " innerPrismPoints2 " << innerPrismPoints2[pointI]
+        //         << " innerPrismPoints3 " << innerPrismPoints3[pointI]
+        //         << " pointNormals1 " << pointNormals1[pointI]
+        //         << " pointNormals2 " << pointNormals2[pointI]
+        //         << " pointNormals3 " << pointNormals3[pointI]
+        //         << " orthoPoint " << orthoPoint
+        //         << endl;
+                
         // Update point coordinates
         if (orthoPoint != UNDEF_VECTOR)
         {

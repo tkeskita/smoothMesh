@@ -1792,6 +1792,13 @@ int main(int argc, char *argv[])
         "Interval to write mesh during iterations (default value: Same as centroidalIters)"
     );
 
+    argList::addOption
+    (
+        "doOrthoTreatment",
+        "bool",
+        "Option to apply the orthogonality treatment to improve the orthogonality of prismatic edges (default: false)"
+    );
+
     #include "setRootCase.H"
     #include "createTime.H"
 
@@ -1926,6 +1933,9 @@ int main(int argc, char *argv[])
         // args.optionLookupOrDefault("writeInterval", 5); // for debugging test cases
         args.optionLookupOrDefault("writeInterval", centroidalIters);
 
+    bool doOrthoTreatment =
+        args.optionLookupOrDefault("doOrthoTreatment", false);
+        
     // Absolute distance between points to consider points overlap
     const double distanceTolerance = REL_TOL * min(meshMinEdgeLength, layerEdgeLength);
 
@@ -2530,7 +2540,6 @@ int main(int argc, char *argv[])
         }
 
         // Optional prismatic edge orthogonality treatment
-        const bool doOrthoTreatment = false;
         const double orthoMaxBlendingFraction = 0.2;
         const label orthoMinLayers = 2;
         const label orthoMaxLayers = 2;
