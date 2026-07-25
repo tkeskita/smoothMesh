@@ -2071,8 +2071,8 @@ int main(int argc, char *argv[])
     vectorList pointNormals2;
     vectorList pointNormals3;
 
-    // Slot number for innerPrismPoints for unique prismatic edges
-    labelList orthogonalPrismSlots;
+    // Indices of inner mesh point label for orthogonal treatment
+    labelList orthogonalPointLabels;
 
     // Neigboring prismatic point locations towards internal mesh
     vectorList innerPrismPoints1;
@@ -2309,7 +2309,7 @@ int main(int argc, char *argv[])
         pointNormals1.setSize(mesh.nPoints(), Zero);
         pointNormals2.setSize(mesh.nPoints(), Zero);
         pointNormals3.setSize(mesh.nPoints(), Zero);
-        orthogonalPrismSlots.setSize(mesh.nPoints(), UNDEF_LABEL);
+        orthogonalPointLabels.setSize(mesh.nPoints(), UNDEF_LABEL);
         innerPrismPoints1.setSize(mesh.nPoints(), UNDEF_VECTOR);
         innerPrismPoints2.setSize(mesh.nPoints(), UNDEF_VECTOR);
         innerPrismPoints3.setSize(mesh.nPoints(), UNDEF_VECTOR);
@@ -2347,7 +2347,7 @@ int main(int argc, char *argv[])
             Info << "  - Number of layer treatment prismatic edges: " << nPrisms << endl;
 
             // Identify prism slots for orthogonal treatment
-            const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, orthogonalPrismSlots, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, i, orthogonalPointLabels, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of orthogonal treatment prismatic edges: " << nOuterPrismPoints << endl;
 
             // Update and propagate point normals to inner mesh
@@ -2555,7 +2555,7 @@ int main(int argc, char *argv[])
             (
                  mesh,
                  newPoints,
-                 orthogonalPrismSlots,
+                 orthogonalPointLabels,
                  innerPrismPoints1, innerPrismPoints2, innerPrismPoints3,
                  pointNormals1, pointNormals2, pointNormals3,
                  orthoMaxBlendingFraction,
