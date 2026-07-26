@@ -2346,9 +2346,9 @@ int main(int argc, char *argv[])
             const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of layer treatment prismatic edges: " << nPrisms << endl;
 
-            // Identify prism slots for orthogonal treatment
-            const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, i, orthogonalPointLabels, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-            Info << "  - Number of orthogonal treatment prismatic edges: " << nOuterPrismPoints << endl;
+            // Identify prism point indices for orthogonal treatment
+            const label nOuterPrismPoints = identifyOrthogonalPrismPoints(mesh, i, orthogonalPointLabels, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            Info << "  - Number of orthogonal treatment prismatic points: " << nOuterPrismPoints << endl;
 
             // Update and propagate point normals to inner mesh
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);

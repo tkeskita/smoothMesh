@@ -55,11 +55,11 @@ label getUniqueSlotIndex
 }
 
 
-// Help function to identify prisms slots for orthogonal treatment.
+// Help function to identify prisms points for orthogonal treatment.
 // Only unique prismatic edges are considered, so there is maximum one
 // orthogonal point label per point.
 
-label identifyOrthogonalPrismSlots
+label identifyOrthogonalPrismPoints
 (
     const fvMesh& mesh,
     const label i,
