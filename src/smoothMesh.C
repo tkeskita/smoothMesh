@@ -2072,7 +2072,7 @@ int main(int argc, char *argv[])
     vectorList pointNormals3;
 
     // Indices of inner mesh point label for orthogonal treatment
-    labelList orthogonalPointLabels;
+    labelList orthogonalPrismSlots;
 
     // Neigboring prismatic point locations towards internal mesh
     vectorList innerPrismPoints1;
@@ -2309,7 +2309,7 @@ int main(int argc, char *argv[])
         pointNormals1.setSize(mesh.nPoints(), Zero);
         pointNormals2.setSize(mesh.nPoints(), Zero);
         pointNormals3.setSize(mesh.nPoints(), Zero);
-        orthogonalPointLabels.setSize(mesh.nPoints(), UNDEF_LABEL);
+        orthogonalPrismSlots.setSize(mesh.nPoints(), UNDEF_LABEL);
         innerPrismPoints1.setSize(mesh.nPoints(), UNDEF_VECTOR);
         innerPrismPoints2.setSize(mesh.nPoints(), UNDEF_VECTOR);
         innerPrismPoints3.setSize(mesh.nPoints(), UNDEF_VECTOR);
@@ -2346,8 +2346,8 @@ int main(int argc, char *argv[])
             const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of layer treatment prismatic edges: " << nPrisms << endl;
 
-            // Identify prism point indices for orthogonal treatment
-            const label nOuterPrismPoints = identifyOrthogonalPrismPoints(mesh, i, orthogonalPointLabels, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            // Identify prism slot indices for orthogonal treatment
+            const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, i, orthogonalPrismSlots, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
             Info << "  - Number of orthogonal treatment prismatic points: " << nOuterPrismPoints << endl;
 
             // Update and propagate point normals to inner mesh
@@ -2555,7 +2555,7 @@ int main(int argc, char *argv[])
             (
                  mesh,
                  newPoints,
-                 orthogonalPointLabels,
+                 orthogonalPrismSlots,
                  innerPrismPoints1, innerPrismPoints2, innerPrismPoints3,
                  pointNormals1, pointNormals2, pointNormals3,
                  orthoMaxBlendingFraction,

@@ -55,15 +55,15 @@ label getUniqueSlotIndex
 }
 
 
-// Help function to identify prisms points for orthogonal treatment.
+// Help function to identify prisms slots for orthogonal treatment.
 // Only unique prismatic edges are considered, so there is maximum one
 // orthogonal point label per point.
 
-label identifyOrthogonalPrismPoints
+label identifyOrthogonalPrismSlots
 (
     const fvMesh& mesh,
     const label i,
-    labelList& orthogonalPointLabels,
+    labelList& orthogonalPrismSlots,
     const labelList& innerPrismPointLabels1,
     const labelList& innerPrismPointLabels2,
     const labelList& innerPrismPointLabels3,
@@ -89,31 +89,27 @@ label identifyOrthogonalPrismPoints
         // Skip point if it is processed already, or if it does not
         // have exactly one internal point
         const label slotI = getUniqueSlotIndex(pointI, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3);
-        if ((orthogonalPointLabels[pointI] != UNDEF_LABEL) or
+
+        if ((orthogonalPrismSlots[pointI] != UNDEF_LABEL) or
             (slotI == UNDEF_LABEL))
         {
             continue;
         }
 
-        if (slotI == 1)
-        {
-            orthogonalPointLabels[pointI] = innerPrismPointLabels1[pointI];
-        }
-        else if (slotI == 2)
-        {
-            orthogonalPointLabels[pointI] = innerPrismPointLabels2[pointI];
-        }
-        else if (slotI == 3)
-        {
-            orthogonalPointLabels[pointI] = innerPrismPointLabels3[pointI];
-        }
-
+        orthogonalPrismSlots[pointI] = slotI;
         ++n;
 
         if (exportEdgesAsStl)
         {
             const label i1 = pointI;
-            const label i2 = orthogonalPointLabels[pointI];
+            label i2;
+            if (slotI == 1)
+                i2 = innerPrismPointLabels1[pointI];
+            else if (slotI == 2)
+                i2 = innerPrismPointLabels2[pointI];
+            else if (slotI == 3)
+                i2 = innerPrismPointLabels3[pointI];
+
             if (i1 == i2)
                 FatalError << "inner point " << i1 << " is same as outer point" << endl << abort(FatalError);
             myfile << edgeToStl(mesh.points()[i1], mesh.points()[i2]);
@@ -175,6 +171,9 @@ int blendWithOrthoPoints
 {
     forAll(mesh.points(), pointI)
     {
+        if (orthogonalPrismSlots[pointI] == UNDEF_LABEL)
+            continue;
+
         vector orthoPoint(UNDEF_VECTOR);
 
         // Projection of inner point is done only for the unique
