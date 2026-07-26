@@ -16,6 +16,45 @@ using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Help function which returns index of the slot for the only
+// labelList with a defined value in the given point index
+
+label getUniqueSlotIndex
+(
+    const label pointI,
+    const labelList& pointLabels1,
+    const labelList& pointLabels2,
+    const labelList& pointLabels3
+)
+{
+    label n = 0;
+    label slotI = 0;
+
+    if (pointLabels1[pointI] != UNDEF_LABEL)
+    {
+        ++n;
+        slotI = 1;
+    }
+    if (pointLabels2[pointI] != UNDEF_LABEL)
+    {
+        ++n;
+        slotI = 2;
+    }
+    if (pointLabels3[pointI] != UNDEF_LABEL)
+    {
+        ++n;
+        slotI = 3;
+    }
+
+    if (n == 1)
+    {
+        return slotI;
+    }
+
+    return UNDEF_LABEL;
+}
+
+
 // Help function to identify prisms slots for orthogonal treatment.
 // Only unique prismatic edges are considered, so there is maximum one
 // orthogonal point label per point.
@@ -47,27 +86,34 @@ label identifyOrthogonalPrismSlots
 
     forAll (mesh.points(), pointI)
     {
-        // Skip point if it does not have exactly one internal point
-        if ((innerPrismPointLabels1[pointI] == UNDEF_LABEL) or
-            (innerPrismPointLabels2[pointI] != UNDEF_LABEL) or
-            (innerPrismPointLabels3[pointI] != UNDEF_LABEL) or
-            (orthogonalPointLabels[pointI] != UNDEF_LABEL))
+        // Skip point if it is processed already, or if it does not
+        // have exactly one internal point
+        const label slotI = getUniqueSlotIndex(pointI, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3);
+        if ((orthogonalPointLabels[pointI] != UNDEF_LABEL) or
+            (slotI == UNDEF_LABEL))
         {
             continue;
         }
 
-        orthogonalPointLabels[pointI] = innerPrismPointLabels1[pointI];
+        if (slotI == 1)
+        {
+            orthogonalPointLabels[pointI] = innerPrismPointLabels1[pointI];
+        }
+        else if (slotI == 2)
+        {
+            orthogonalPointLabels[pointI] = innerPrismPointLabels2[pointI];
+        }
+        else if (slotI == 3)
+        {
+            orthogonalPointLabels[pointI] = innerPrismPointLabels3[pointI];
+        }
+
         ++n;
 
         if (exportEdgesAsStl)
         {
             const label i1 = pointI;
-            const label i2 = innerPrismPointLabels1[pointI];
-            if (pointI == 56)
-            {
-                Info << mesh.points()[i1] << "--" << mesh.points()[i2] << endl;
-                myfile << "\nTESTI\n";
-            }
+            const label i2 = orthogonalPointLabels[pointI];
             if (i1 == i2)
                 FatalError << "inner point " << i1 << " is same as outer point" << endl << abort(FatalError);
             myfile << edgeToStl(mesh.points()[i1], mesh.points()[i2]);

@@ -1059,13 +1059,36 @@ int disablePointsForOppositeFronts
     const labelList& frontPointIs,
     const labelList& outerPrismPointLabels1,
     const labelList& outerPrismPointLabels2,
-    const labelList& outerPrismPointLabels3
+    const labelList& outerPrismPointLabels3,
+    const labelList& frontIslandIs
 )
 {
+    labelList candidateIslandIs(mesh.nPoints(), UNDEF_LABEL);
+
     forAll (frontPointIs, pointI)
     {
         const label frontPointI = frontPointIs[pointI];
         const label candidatePointI = candidatePointIs[pointI];
+
+        // Check for another point on this island, which has already
+        // added this candidate point (fronts touching)
+        if (candidateIslandIs[candidatePointI] == frontIslandIs[pointI])
+        {
+            isDisabledIs[pointI] = true;
+
+            // Search and disable the other candidate point
+            forAll (candidatePointIs, pointJ)
+            {
+                if (candidatePointIs[pointJ] == candidatePointI)
+                {
+                    isDisabledIs[pointJ] = true;
+                }
+            }
+        }
+        else
+        {
+            candidateIslandIs[candidatePointI] = frontIslandIs[pointI];
+        }
 
         // Check for existing front
         if ((outerPrismPointLabels1[frontPointI] == candidatePointI) or
@@ -1075,9 +1098,9 @@ int disablePointsForOppositeFronts
             isDisabledIs[pointI] = true;
         }
 
+        // Check for new crossing front point pairs
         forAll (candidatePointIs, pointJ)
         {
-            // Check for new front point pairs
             const label frontPointJ = frontPointIs[pointJ];
             const label candidatePointJ = candidatePointIs[pointJ];
 
@@ -1151,7 +1174,7 @@ int propagateIslandFronts
     // Disable points if there will be opposing fronts meeting, either
     // from previous rounds or this round
     boolList isDisabledIs(candidatePointIs.size(), false);
-    disablePointsForOppositeFronts(mesh, isDisabledIs, candidatePointIs, frontPointIs, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+    disablePointsForOppositeFronts(mesh, isDisabledIs, candidatePointIs, frontPointIs, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, frontIslandIs);
 
     // Disable points if there will be lack of island slots
     labelList nIslandSlotsUsedTest(nIslandSlotsUsed);
