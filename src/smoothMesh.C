@@ -1794,6 +1794,20 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "doBoundarySmoothing",
+        "bool",
+        "Option to carry out boundary point smoothing (default: false)"
+    );
+
+    argList::addOption
+    (
+        "doLayerTreatment",
+        "bool",
+        "Option to carry out boundary layer treatment (default: false)"
+    );
+
+    argList::addOption
+    (
         "doOrthoTreatment",
         "bool",
         "Option to apply the orthogonality treatment to improve the orthogonality of prismatic edges (default: false)"
@@ -1933,9 +1947,15 @@ int main(int argc, char *argv[])
         // args.optionLookupOrDefault("writeInterval", 5); // for debugging test cases
         args.optionLookupOrDefault("writeInterval", centroidalIters);
 
+    bool doBoundarySmoothing =
+        args.optionLookupOrDefault("doBoundarySmoothing", false);
+
+    bool doLayerTreatment =
+        args.optionLookupOrDefault("doLayerTreatment", false);
+
     bool doOrthoTreatment =
         args.optionLookupOrDefault("doOrthoTreatment", false);
-        
+
     // Absolute distance between points to consider points overlap
     const double distanceTolerance = REL_TOL * min(meshMinEdgeLength, layerEdgeLength);
 
@@ -2097,16 +2117,35 @@ int main(int argc, char *argv[])
     // End of boundary layer treatment variables
 
     // Check prerequisites for carrying out boundary layer treatment
-    bool doLayerTreatment = false;
-    if ((layerPatchIds.size() > 0) and (layerMaxBlendingFraction > SMALL))
+    if (! doLayerTreatment)
     {
-        doLayerTreatment = true;
-        Info << "Enabled boundary layer treatment" << endl << endl;
+        Info << "Disabled boundary layer treatment (missing -doLayerTreatment yes)" << endl;
+    }
+    else if (layerMaxBlendingFraction <= SMALL)
+    {
+        FatalError << "doLayerTreatment enabled, but layerMaxBlendingFraction is too small" << endl << abort(FatalError);
+    }
+    else if (layerPatchIds.size() < 1)
+    {
+        FatalError << "doLayerTreatment enabled, but did not find any layer patches" << endl << abort(FatalError);
     }
     else
     {
-        Info << "Boundary layer treatment is disabled. Either no layerPatches were specified or boundaryMaxBlendingFraction is zero" << endl << endl;
+        Info << "Enabled boundary layer treatment" << endl;
     }
+    Info << endl;
+
+
+    if (! doOrthoTreatment)
+    {
+        Info << "Disabled orthogonal treatment (missing -doOrthoTreatment yes)" << endl;
+    }
+    else
+    {
+        Info << "Enabled orthogonal treatment" << endl;
+    }
+    Info << endl;
+
 
     // IOLists for communication of isCornerPoint and
     // isFeatureEdgePoint between consequent runs.
@@ -2140,33 +2179,38 @@ int main(int argc, char *argv[])
         labelList(mesh.nPoints(), 0)
     );
 
+
+    // Check prerequisites for carrying out boundary point smoothing
+
     // Determine do the labelIOLists contain classification data
     bool labelIOListsHaveData = false;
     if ((findIndex(isCornerPointIO, 1) >= 0) or (findIndex(isFeatureEdgePointIO, 1) >= 0))
     {
         labelIOListsHaveData = true;
-        Info << "Found corners and feature edges in isCornerPoint and isFeatureEdgePoint files" << endl << endl;
-    }
-    else
-    {
-        Info << "Did not find corners and feature edges in isCornerPoint and isFeatureEdgePoint files" << endl << endl;
     }
 
-    // Check prerequisites for carrying out boundary point smoothing
-    bool doBoundarySmoothing = false;
-    if ((fileExists(targetSurfacesFileString)) and
-        ((fileExists(initEdgesFileString)) or (labelIOListsHaveData)) and
-        (smoothingPatchIds.size() > 0))
+    if (! doBoundarySmoothing)
     {
-        doBoundarySmoothing = true;
-        Info << "Enabled boundary point smoothing" << endl << endl;
+        Info << "Disabled boundary point smoothing (missing -doBoundarySmoothing yes)" << endl;
+    }
+    else if (! fileExists(targetSurfacesFileString))
+    {
+        FatalError << "doBoundarySmoothing enabled, but missing file " << targetSurfacesFileString << endl << abort(FatalError);
+    }
+    else if ((! fileExists(initEdgesFileString)) and (! labelIOListsHaveData))
+    {
+        FatalError << "doBoundarySmoothing enabled, but missing file " << initEdgesFileString << " and did not find corners and feature edges in isCornerPoint and isFeatureEdgePoint files" << endl << abort(FatalError);
+    }
+    else if (smoothingPatchIds.size() == 0)
+    {
+        FatalError << "doBoundarySmoothing enabled, but did not find any smoothing patches" << endl << abort(FatalError);
     }
     else
     {
-        Info << "Boundary point smoothing is disabled. Missing smoothingPatches, or one or both of files:" << endl
-             << targetSurfacesFileString << endl
-             << initEdgesFileString << endl << endl;
+        Info << "Enabled boundary point smoothing" << endl;
     }
+    Info << endl;
+
 
     // Objects for boundary point snapping to surfaces
     autoPtr<triSurface> surf(nullptr);
@@ -2328,32 +2372,35 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
         Info << "- Sharp edge points: " << countBoolListValues(isSharpEdgePoint, nProcessorsOnPoint) << endl << endl;
 
-        // Identify prismatic islands
-        Info << "Identifying prismatic boundary islands in the mesh.." << endl;
-        identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, isProcessorPoint, islandIs);
-        Info << "  Island edge points: " << countBoolListValues(isIslandEdgePoint, nProcessorsOnPoint) << endl;
-
-        // Synchronize and sort a global list of islandIs
-        mergeAndSortIslandIs(islandIs);
-        Info << "  Done! Identified " << islandIs.size() << " prismatic boundary islands in the mesh" << endl << endl;
-
-        // Propagate island fronts to inner mesh
-        Info << "Propagating boundary islands to inner mesh.." << endl;
-
-        for (label i = 0; i < maxLayers; i++)
+        if (doOrthoTreatment)
         {
-            Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
-            const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-            Info << "  - Number of layer treatment prismatic edges: " << nPrisms << endl;
+            // Identify prismatic islands
+            Info << "Identifying prismatic boundary islands in the mesh.." << endl;
+            identifyPrismaticBoundaryIslands(mesh, isPrismaticPoint, isLayerSurfacePoint, pointNormals, isIslandEdgePoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, isProcessorPoint, islandIs);
+            Info << "  Island edge points: " << countBoolListValues(isIslandEdgePoint, nProcessorsOnPoint) << endl;
 
-            // Identify prism slot indices for orthogonal treatment
-            const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, i, orthogonalPrismSlots, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
-            Info << "  - Number of orthogonal treatment prismatic points: " << nOuterPrismPoints << endl;
+            // Synchronize and sort a global list of islandIs
+            mergeAndSortIslandIs(islandIs);
+            Info << "  Done! Identified " << islandIs.size() << " prismatic boundary islands in the mesh" << endl << endl;
 
-            // Update and propagate point normals to inner mesh
-            updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            // Propagate island fronts to inner mesh
+            Info << "Propagating boundary islands to inner mesh.." << endl;
+
+            for (label i = 0; i < maxLayers; i++)
+            {
+                Info << "  Prismatic edge propagation iteration " << i + 1 << endl;
+                const label nPrisms = propagateIslandFronts(mesh, i + 1, islandIs, pointNormals, nProcessorsOnPoint, prismIslands1, prismIslands2, prismIslands3, nIslandSlotsUsed, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+                Info << "  - Number of layer treatment prismatic edges: " << nPrisms << endl;
+
+                // Identify prism slot indices for orthogonal treatment
+                const label nOuterPrismPoints = identifyOrthogonalPrismSlots(mesh, i, orthogonalPrismSlots, innerPrismPointLabels1, innerPrismPointLabels2, innerPrismPointLabels3, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+                Info << "  - Number of orthogonal treatment prismatic points: " << nOuterPrismPoints << endl;
+
+                // Update and propagate point normals to inner mesh
+                updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals, prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
+            }
+            Info << endl;
         }
-        Info << endl;
 
         // // Write selected point field, for debugging only
         // runTime++;
