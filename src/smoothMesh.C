@@ -2114,6 +2114,10 @@ int main(int argc, char *argv[])
     labelList outerPrismPointLabels2;
     labelList outerPrismPointLabels3;
 
+    // Target edge mesh edge indices for feature edge points
+    labelList closestEdgeIs;
+    labelList closestNeighborEdgeIs;
+
     // End of boundary layer treatment variables
 
     // Check prerequisites for carrying out boundary layer treatment
@@ -2366,6 +2370,8 @@ int main(int argc, char *argv[])
         outerPrismPointLabels1.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels2.setSize(mesh.nPoints(), UNDEF_LABEL);
         outerPrismPointLabels3.setSize(mesh.nPoints(), UNDEF_LABEL);
+        closestEdgeIs.setSize(mesh.nPoints(), UNDEF_LABEL);
+        closestNeighborEdgeIs.setSize(mesh.nPoints(), UNDEF_LABEL);
 
         // Pre-calculate global boundary point normals and identify
         // sharp edge points
@@ -2491,10 +2497,11 @@ int main(int argc, char *argv[])
             }
 
             point dummyPoint;
-            label dummy, dummy2;
-            label pointStringI = UNDEF_LABEL;
-            findClosestEdgeInfo(mesh.points()[pointI], targetEdges, -1, targetEdgeStrings, distanceTolerance, dummyPoint, dummy, pointStringI, dummy2);
+            label dummy, pointStringI, closestEdgeI, closestNeighborEdgeI;
+            findClosestEdgeInfo(mesh.points()[pointI], targetEdges, labelList(), -1, targetEdgeStrings, distanceTolerance, dummyPoint, closestEdgeI, pointStringI, dummy, closestNeighborEdgeI);
             pointStrings[pointI] = pointStringI;
+            closestEdgeIs[pointI] = closestEdgeI;
+            closestNeighborEdgeIs[pointI] = closestNeighborEdgeI;
         }
     }
 
@@ -2637,6 +2644,8 @@ int main(int argc, char *argv[])
                 pointStrings,
                 isSharpEdgePoint,
                 distanceTolerance,
+                closestEdgeIs,
+                closestNeighborEdgeIs,
                 isFrozenPoint
             );
 
