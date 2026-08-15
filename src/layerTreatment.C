@@ -1728,7 +1728,7 @@ point calcPointSlideOnLine
 
 vector calcLayerPointMove
 (
-    const fvMesh& mesh,
+    const pointField& newPoints,
     const label pointI,
     const labelList& pointHops,
     const vectorList& outerPrismPoints,
@@ -1742,14 +1742,14 @@ vector calcLayerPointMove
     {
         FatalError
             << "Sanity broken, pointNormals" << debugI << " is zero for pointI"
-            << pointI << " at " << mesh.points()[pointI] << endl << abort(FatalError);
+            << pointI << " at " << newPoints[pointI] << endl << abort(FatalError);
     }
 
     if (pointHops[pointI] < 1)
     {
         FatalError
             << "Sanity broken, pointHops" << debugI << " is " << pointHops[pointI]
-            << " for pointI " << pointI << " at " << mesh.points()[pointI]
+            << " for pointI " << pointI << " at " << newPoints[pointI]
             << endl << abort(FatalError);
     }
 
@@ -1757,7 +1757,7 @@ vector calcLayerPointMove
     const label nHops = pointHops[pointI] - 1;
     const double layerThickness = layerEdgeLength * pow(layerExpansionRatio, nHops);
 
-    const point movingPoint = mesh.points()[pointI];
+    const point movingPoint = newPoints[pointI];
     const point refPoint = outerPrismPoints[pointI];
     const vector endNormal = pointNormals[pointI];
 
@@ -1813,7 +1813,7 @@ int blendWithLayerPoints
 
         if (outerPrismPoints1[pointI] != UNDEF_VECTOR)
         {
-            const vector newP = calcLayerPointMove(mesh, pointI, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
+            const vector newP = calcLayerPointMove(newPoints, pointI, pointHops1, outerPrismPoints1, pointNormals1, layerEdgeLength, layerExpansionRatio, 1);
             newCoords += newP;
             ++n;
             nHops.append(pointHops1[pointI]);
@@ -1821,7 +1821,7 @@ int blendWithLayerPoints
 
         if (outerPrismPoints2[pointI] != UNDEF_VECTOR)
         {
-            const vector newP = calcLayerPointMove(mesh, pointI, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
+            const vector newP = calcLayerPointMove(newPoints, pointI, pointHops2, outerPrismPoints2, pointNormals2, layerEdgeLength, layerExpansionRatio, 2);
             newCoords += newP;
             ++n;
             nHops.append(pointHops2[pointI]);
@@ -1829,7 +1829,7 @@ int blendWithLayerPoints
 
         if (outerPrismPoints3[pointI] != UNDEF_VECTOR)
         {
-            const vector newP = calcLayerPointMove(mesh, pointI, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
+            const vector newP = calcLayerPointMove(newPoints, pointI, pointHops3, outerPrismPoints3, pointNormals3, layerEdgeLength, layerExpansionRatio, 3);
             newCoords += newP;
             ++n;
             nHops.append(pointHops3[pointI]);

@@ -1948,7 +1948,7 @@ int main(int argc, char *argv[])
     //         args.optionLookupOrDefault("internalSmoothingBlendingFraction", 0.0);
 
     double relTol =
-        args.optionLookupOrDefault("relTol", 0.02);
+        args.optionLookupOrDefault("relTol", 0.005);
 
     label centroidalIters =
         args.optionLookupOrDefault("centroidalIters", 1000);
@@ -2397,7 +2397,7 @@ int main(int argc, char *argv[])
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
         Info << "- Sharp edge points: " << countBoolListValues(isSharpEdgePoint, nProcessorsOnPoint) << endl << endl;
 
-        if (doOrthoTreatment)
+        if ((doLayerTreatment) or (doOrthoTreatment))
         {
             // Identify prismatic islands
             Info << "Identifying prismatic boundary islands in the mesh.." << endl;
@@ -2581,7 +2581,7 @@ int main(int argc, char *argv[])
             );
 
             // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
+            // constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
 
             // Use the locations of first cell layer points for
             // projecting points to boundary surfaces
@@ -2600,24 +2600,24 @@ int main(int argc, char *argv[])
             //     internalSmoothingBlendingFraction,
             //     isSharpEdgePoint
             // );
-
-            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
+
+        // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+        constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
 
         // Stage 3. Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-        constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+        // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
 
         // Stage 4. Optional boundary layer treatment
         if (doLayerTreatment)
         {
             // Update neighbour coordinates and synchronize among processors
-            updatePointVectorValues(mesh, mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
-            writeDebugStlEdges("debugOuterPrismEdges", mesh.points(), outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
+            updatePointVectorValues(mesh, newPoints, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3, outerPrismPoints1, outerPrismPoints2, outerPrismPoints3);
+            writeDebugStlEdges("debugOuterPrismEdges", newPoints, outerPrismPointLabels1, outerPrismPointLabels2, outerPrismPointLabels3);
 
             // Update boundary point normals and propagate point normals
             updateAndPropagatePointNormals(mesh, maxLayers, isIslandEdgePoint, pointNormals,  prismIslands1, prismIslands2, prismIslands3, pointHops1, pointHops2, pointHops3, pointNormalSource1, pointNormalSource2, pointNormalSource3, faceNormalSource1, faceNormalSource2, faceNormalSource3, pointNormals1, pointNormals2, pointNormals3);
