@@ -1678,6 +1678,13 @@ int main(int argc, char *argv[])
 
     argList::addOption
     (
+        "edgeLengthConstraint",
+        "bool",
+        "Option to apply the minimum edge length constraint (default: true)"
+    );
+
+    argList::addOption
+    (
         "edgeAngleConstraint",
         "bool",
         "Option to apply the minimum edge angle control constraint (default: true)"
@@ -1913,6 +1920,9 @@ int main(int argc, char *argv[])
     double maxAngle =
         args.optionLookupOrDefault("maxAngle", 160.0);
 
+    bool edgeLengthConstraint =
+        args.optionLookupOrDefault("edgeLengthConstraint", true);
+
     bool edgeAngleConstraint =
         args.optionLookupOrDefault("edgeAngleConstraint", true);
 
@@ -1980,6 +1990,15 @@ int main(int argc, char *argv[])
     Info << "    maxStepLength          " << maxStepLength << endl;
     Info << "    relStepFrac            " << relStepFrac << endl;
     Info << "    totalMinFreeze         " << totalMinFreeze << endl;
+
+    if (edgeLengthConstraint)
+    {
+        Info << "    edgeLengthConstraint   true" << endl;
+    }
+    else
+    {
+        Info << "    edgeLengthConstraint   false (edge min length quality constraint is NOT applied)" << endl;
+    }
 
     if (edgeAngleConstraint)
     {
@@ -2506,6 +2525,7 @@ int main(int argc, char *argv[])
     }
 
 
+    // ------------------------------
     // Carry out smoothing iterations
     // ------------------------------
 
@@ -2522,20 +2542,77 @@ int main(int argc, char *argv[])
         // Recalculate point normals
         calculateBoundaryPointNormals(mesh, pointNormals, isSharpEdgePoint);
 
-        // Calculate new point locations using centroidal smoothing
+        // Stage 1. Calculate new point locations using centroidal smoothing
         tmp<pointField> tCentroidalPoints = centroidalSmoothing(mesh, isInternalPoint, doBoundarySmoothing);
         pointField& centroidalPoints = tCentroidalPoints.ref();
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         // constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
-        // Blend centroidal points with points from aspect ratio smoothing
+
+        // Stage 2. Boundary point smoothing: Projection of boundary
+        // points to back to closest corners, feature edges and
+        // surfaces
+        if (doBoundarySmoothing)
+        {
+            // Update neighbour coordinates and synchronize among processors
+            // WIP updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerPrismPoints);
+            // Project boundary points
+            projectBoundaryPointsToEdgesAndSurfaces
+            (
+                mesh,
+                centroidalPoints,
+                pointNormals,
+                isInternalPoint,
+                isSmoothingSurfacePoint,
+                isFeatureEdgePoint,
+                isCornerPoint,
+                cornerPoints,
+                targetEdges,
+                surf,
+                tree,
+                meshMinEdgeLength,
+                targetEdgeStrings,
+                pointStrings,
+                isSharpEdgePoint,
+                distanceTolerance,
+                closestEdgeIs,
+                closestNeighborEdgeIs,
+                isFrozenPoint
+            );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            constrainMaxStepLength(mesh, centroidalPoints, maxStepLength, relStepFrac, false);
+
+            // Use the locations of first cell layer points for
+            // projecting points to boundary surfaces
+            // WIP projectPrismaticInternalPointsToSurfaces
+            // (
+            //     mesh,
+            //     newPoints,
+            //     pointHopsToSmoothingBoundary,
+            //     pointNormals,
+            //     isSmoothingSurfacePoint,
+            //     isConnectedToInternalPoint,
+            //     isFeatureEdgePoint,
+            //     isCornerPoint,
+            //     pointToInnerPointMap,
+            //     innerPrismPoints,
+            //     internalSmoothingBlendingFraction,
+            //     isSharpEdgePoint
+            // );
+
+            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
+            // constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
+        }
+
+        // Stage 3. Blend centroidal points with points from aspect ratio smoothing
         tmp<pointField> tNewPoints = aspectRatioSmoothing(mesh, isInternalPoint, centroidalPoints, pointNeighPoints);
         pointField& newPoints = tNewPoints.ref();
 
         // Constrain absolute length of jump to new coordinates, to stabilize smoothing
         constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
 
-        // Optional boundary layer treatment
+        // Stage 4. Optional boundary layer treatment
         if (doLayerTreatment)
         {
             // Update neighbour coordinates and synchronize among processors
@@ -2593,7 +2670,7 @@ int main(int argc, char *argv[])
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
 
-        // Optional prismatic edge orthogonality treatment
+        // Stage 5. Optional prismatic edge orthogonality treatment
         const double orthoMaxBlendingFraction = 0.2;
         const label orthoMinLayers = 2;
         const label orthoMaxLayers = 2;
@@ -2621,73 +2698,29 @@ int main(int argc, char *argv[])
             constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
         }
 
-        if (doBoundarySmoothing)
-        {
-            // Update neighbour coordinates and synchronize among processors
-            // WIP updateNeighCoords(mesh, isInnerNeighInProc, pointToInnerPointMap, innerPrismPoints);
-            // Project boundary points
-            projectBoundaryPointsToEdgesAndSurfaces
-            (
-                mesh,
-                newPoints,
-                pointNormals,
-                isInternalPoint,
-                isSmoothingSurfacePoint,
-                isFeatureEdgePoint,
-                isCornerPoint,
-                cornerPoints,
-                targetEdges,
-                surf,
-                tree,
-                meshMinEdgeLength,
-                targetEdgeStrings,
-                pointStrings,
-                isSharpEdgePoint,
-                distanceTolerance,
-                closestEdgeIs,
-                closestNeighborEdgeIs,
-                isFrozenPoint
-            );
-
-            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
-
-            // Use the locations of first cell layer points for
-            // projecting points to boundary surfaces
-            // WIP projectPrismaticInternalPointsToSurfaces
-            // (
-            //     mesh,
-            //     newPoints,
-            //     pointHopsToSmoothingBoundary,
-            //     pointNormals,
-            //     isSmoothingSurfacePoint,
-            //     isConnectedToInternalPoint,
-            //     isFeatureEdgePoint,
-            //     isCornerPoint,
-            //     pointToInnerPointMap,
-            //     innerPrismPoints,
-            //     internalSmoothingBlendingFraction,
-            //     isSharpEdgePoint
-            // );
-
-            // Constrain absolute length of jump to new coordinates, to stabilize smoothing
-            constrainMaxStepLength(mesh, newPoints, maxStepLength, relStepFrac, false);
-        }
+        // Quality constraints
+        // -------------------
 
         // Avoid shortening of short edge length
-        restrictEdgeShortening(mesh, newPoints, minEdgeLength, totalMinFreeze, isFrozenPoint);
+        if (edgeLengthConstraint)
+        {
+            restrictEdgeShortening(mesh, newPoints, minEdgeLength, totalMinFreeze, isFrozenPoint);
+        }
 
+        // Restrict decrease of smallest edge-edge angle
         if (edgeAngleConstraint)
         {
-            // Restrict decrease of smallest edge-edge angle
             restrictMinEdgeAngleDecrease(mesh, newPoints, minAngle, isFrozenPoint);
         }
 
+        // Restrict deterioration of face-face angles
         if (faceAngleConstraint)
         {
-            // Restrict deterioration of face-face angles
             restrictFaceAngleDeterioration(mesh, cellFaces, newPoints, minAngle, maxAngle, isFrozenPoint);
         }
+
+        // Finishing steps
+        // ---------------
 
         // Synchronize and combine the list of frozen points
         syncTools::syncPointList

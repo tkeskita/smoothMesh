@@ -767,6 +767,7 @@ labelList findNeighborSurfacePoints
 int calculateFeatureEdgeProjections
 (
     const fvMesh& mesh,
+    const pointField& newPoints,
     const edgeMesh& em,
     const boolList& isInternalPoint,
     const boolList& isFeatureEdgePoint,
@@ -786,37 +787,47 @@ int calculateFeatureEdgeProjections
         if (! isFeatureEdgePoint[pointI])
             continue;
 
-        // Find the valid surface neighbor points
-        const labelList neighPointIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
+        // TODO: Commented out closest and neighbor edge projection, to be removed
 
-        // Update closest edge indices for this point
-        {
-            const label pointStringI = pointStrings[pointI];
-            const point pt = mesh.points()[pointI];
-            point dummyPoint;
-            label dummy, dummy2, closestEdgeI, closestNeighborEdgeI;
-            findClosestEdgeInfo(pt, em, labelList(), pointStringI, targetEdgeStrings, distanceTolerance, dummyPoint, closestEdgeI, dummy, dummy2, closestNeighborEdgeI);
-            closestEdgeIs[pointI] = closestEdgeI;
-            closestNeighborEdgeIs[pointI] = closestNeighborEdgeI;
-        }
+        // // Find the valid surface neighbor points
+        // const labelList neighPointIs = findNeighborSurfacePoints(mesh, pointI, isInternalPoint, isFeatureEdgePoint, isCornerPoint);
 
-        // List of edges for projections
-        labelList edgeIs;
-        edgeIs.append(closestEdgeIs[pointI]);
-        edgeIs.append(closestNeighborEdgeIs[pointI]);
+        // // Update closest edge indices for this point
+        // {
+        //     const label pointStringI = pointStrings[pointI];
+        //     const point pt = mesh.points()[pointI];
+        //     point dummyPoint;
+        //     label dummy, dummy2, closestEdgeI, closestNeighborEdgeI;
+        //     findClosestEdgeInfo(pt, em, labelList(), pointStringI, targetEdgeStrings, distanceTolerance, dummyPoint, closestEdgeI, dummy, dummy2, closestNeighborEdgeI);
+        //     closestEdgeIs[pointI] = closestEdgeI;
+        //     closestNeighborEdgeIs[pointI] = closestNeighborEdgeI;
+        // }
 
-        // Project neighbor points to the edges closest to this point
-        // and add the projected point
-        forAll (neighPointIs, neighPointI)
-        {
-            const label pointStringI = pointStrings[pointI];
-            const point neighPoint = mesh.points()[neighPointIs[neighPointI]];
-            point projPoint;
-            label dummy, dummy2, closestEdgeI, closestNeighborEdgeI;
-            findClosestEdgeInfo(neighPoint, em, edgeIs, pointStringI, targetEdgeStrings, distanceTolerance, projPoint, closestEdgeI, dummy, dummy2, closestNeighborEdgeI);
-            featureEdgeProjections[pointI] += projPoint;
-            ++nFeatureEdgeProjections[pointI];
-        }
+        // // List of edges for projections
+        // labelList edgeIs;
+        // edgeIs.append(closestEdgeIs[pointI]);
+        // edgeIs.append(closestNeighborEdgeIs[pointI]);
+
+        // // Project neighbor points to the edges closest to this point
+        // // and add the projected point
+        // forAll (neighPointIs, neighPointI)
+        // {
+        //     const label pointStringI = pointStrings[pointI];
+        //     const point neighPoint = mesh.points()[neighPointIs[neighPointI]];
+        //     point projPoint;
+        //     label dummy, dummy2, closestEdgeI, closestNeighborEdgeI;
+        //     findClosestEdgeInfo(neighPoint, em, edgeIs, pointStringI, targetEdgeStrings, distanceTolerance, projPoint, closestEdgeI, dummy, dummy2, closestNeighborEdgeI);
+        //     featureEdgeProjections[pointI] += projPoint;
+        //     ++nFeatureEdgeProjections[pointI];
+        // }
+
+             const label pointStringI = pointStrings[pointI];
+             const point p = newPoints[pointI];
+             point projPoint;
+             label dummy, dummy2, dummy3, dummy4;
+             findClosestEdgeInfo(p, em, labelList(), pointStringI, targetEdgeStrings, distanceTolerance, projPoint, dummy, dummy2, dummy3, dummy4);
+             featureEdgeProjections[pointI] += projPoint;
+             ++nFeatureEdgeProjections[pointI];
     }
 
     // Synchronize among processors (using sum combination)
@@ -1029,7 +1040,7 @@ int projectBoundaryPointsToEdgesAndSurfaces
     // Calculate new feature edge point positions a priori
     vectorList featureEdgeProjections(mesh.nPoints(), ZERO_VECTOR);
     labelList nFeatureEdgeProjections(mesh.nPoints(), 0);
-    calculateFeatureEdgeProjections(mesh, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, targetEdgeStrings, pointStrings, distanceTolerance, closestEdgeIs, closestNeighborEdgeIs, featureEdgeProjections, nFeatureEdgeProjections);
+    calculateFeatureEdgeProjections(mesh, newPoints, targetEdges, isInternalPoint, isFeatureEdgePoint, isCornerPoint, targetEdgeStrings, pointStrings, distanceTolerance, closestEdgeIs, closestNeighborEdgeIs, featureEdgeProjections, nFeatureEdgeProjections);
 
     // Calculate boundary surface face centroids a priori
     vectorList faceCentroids(mesh.nPoints(), ZERO_VECTOR);
