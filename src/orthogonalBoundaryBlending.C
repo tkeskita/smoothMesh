@@ -126,6 +126,31 @@ label identifyOrthogonalPrismSlots
 }
 
 
+// Help function to project point orthogonally to a plane
+
+point projectPointToPlane
+(
+    const point p,
+    const point planePoint,
+    const vector normalVec
+)
+{
+    if (mag(p - planePoint) < ABS_TOL)
+    {
+        FatalError << "Point " << p << " and plane point " << planePoint << " are too close to each other" << endl << abort(FatalError);
+    }
+
+    const double c1 = (p - planePoint) & normalVec;
+    if (fabs(c1) < ABS_TOL)
+    {
+        FatalError << "Line vector for point " << p << " and plane point " << planePoint << ", and normal vector " << normalVec << " are almost the same" << endl << abort(FatalError);
+    }
+
+    const vector target = p - c1 * normalVec;
+    return target;
+}
+
+
 // Function to improve orthogonality of prismatic boundary edges
 
 int blendWithOrthoPoints
