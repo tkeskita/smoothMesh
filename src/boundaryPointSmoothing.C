@@ -1012,6 +1012,112 @@ int calculateSurfaceCentroids
     return 0;
 }
 
+
+// Help function for testing does a point lie within a 3D triangle of
+// points. Reference: W. Heidrich, Journal of Graphics, GPU, and Game
+// Tools, Volume 10, Issue 3, 2005.
+
+bool isPointWithinTriangle
+(
+    const point& p,
+    const point& p1,
+    const point& p2,
+    const point& p3
+)
+{
+    const vector u = p2 - p1;
+    const vector v = p3 - p1;
+    const vector w = p - p1;
+
+    // In OpenFOAM, cross product is ^ and inner product (dot product) is &
+
+    const vector n = u ^ v;
+    if (magSqr(n) < VSMALL)
+    {
+        FatalError << "magSqr(n) < VSMALL" << endl << abort(FatalError);
+    }
+    const vector npn = n / magSqr(n);
+
+    // Barycentric coordinates
+    const double gamma = (u ^ w) & npn;
+    const double beta = (w ^ v) & npn;
+    const double alpha = 1.0 - beta - gamma;
+
+    // The test
+    return
+    (
+        (alpha >= 0) and (alpha <= 1.0) and
+        (beta >= 0) and (beta <= 1.0) and
+        (gamma >= 0) and (gamma <= 1.0)
+    );
+}
+
+// Help function to calculate normalized normal vector from triangle
+// points
+
+vector calcTriangleNormal
+(
+    const point& p1,
+    const point& p2,
+    const point& p3
+)
+{
+    const vector i = p2 - p1;
+    const vector j = p3 - p1;
+    const vector n = i ^ j;
+    if (mag(n) < VSMALL)
+    {
+        FatalError << "mag(n) < VSMALL" << endl << abort(FatalError);
+    }
+
+    return n / mag(n);
+}
+
+
+// Help function to project a point to a triangle of points
+
+point projectPointToTriangle
+(
+    const point& p,
+    const point& p1,
+    const point& p2,
+    const point& p3
+)
+{
+    // Check for point equality
+    if (p == p1) return p;
+    if (p == p2) return p;
+    if (p == p3) return p;
+
+    // Project point to triangle plane
+    const vector n = calcTriangleNormal(p1, p2, p3);
+    const point pproj = projectPointToPlane(p, p1, n);
+
+    // If point is on triangle, return it
+    if (isPointWithinTriangle(pproj, p1, p2, p3))
+    {
+        return pproj;
+    }
+
+    // Otherwise project to triangle edges and choose closest
+    const point pproj1 = projectPointToLine(p, p1, p2);
+    const point pproj2 = projectPointToLine(p, p2, p3);
+    const point pproj3 = projectPointToLine(p, p3, p1);
+
+    const double len1 = mag(pproj1 - p);
+    const double len2 = mag(pproj2 - p);
+    const double len3 = mag(pproj3 - p);
+
+    if ((len1 <= len2) and (len1 <= len3)) return pproj1;
+    if ((len2 <= len1) and (len2 <= len3)) return pproj2;
+    if ((len3 <= len2) and (len3 <= len1)) return pproj3;
+
+    FatalError << "Sanity failed in projectPointToTriangle" << endl << abort(FatalError);
+
+    return p;
+}
+
+
 // Projection of boundary points to feature edges and boundary surfaces
 
 int projectBoundaryPointsToEdgesAndSurfaces
