@@ -17,7 +17,7 @@ Description
 #define ZERO 0.0
 
 // General safety factors or tolerances
-#define REL_TOL 1e-4
+#define REL_TOL 1e-3
 #define ABS_TOL 1e-6
 
 // Boolean for developer mode. Set to false to use bleeding edge

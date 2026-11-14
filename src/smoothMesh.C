@@ -1859,7 +1859,7 @@ int main(int argc, char *argv[])
     // Default minimum edge length is smaller than the minimum edge
     // length from initial mesh to allow good boundary smoothing
     double minEdgeLength =
-        args.optionLookupOrDefault("minEdgeLength", 0.5 * meshMinEdgeLength);
+        args.optionLookupOrDefault("minEdgeLength", 0.1 * meshMinEdgeLength);
 
     double maxStepLength =
         args.optionLookupOrDefault("maxStepLength", 0.3 * minEdgeLength);
